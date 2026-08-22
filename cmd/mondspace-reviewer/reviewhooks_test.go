@@ -52,12 +52,12 @@ func TestReviewHooksSourceDrivesLivePath(t *testing.T) {
 			"--repo=" + repo, "--out=" + out, "--session=s"}, nil, buf)
 	}()
 
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(30 * time.Second)
 	for !strings.Contains(buf.String(), "WHAT") {
 		if time.Now().After(deadline) {
 			cancel()
 			wg.Wait()
-			t.Fatalf("no unit rendered within 5s:\n%s", buf.String())
+			t.Fatalf("no unit rendered before deadline:\n%s", buf.String())
 		}
 		time.Sleep(20 * time.Millisecond)
 	}

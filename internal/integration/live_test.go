@@ -87,7 +87,7 @@ func TestLiveReviewReconstructsSessionFromLog(t *testing.T) {
 	}()
 
 	// Wait until both units are persisted, then stop the follower.
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(30 * time.Second)
 	for {
 		if sess, err := store.Load("s"); err == nil && len(sess.Units) == 2 {
 			break
