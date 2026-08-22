@@ -21,6 +21,12 @@ type Snapshotter interface {
 	Diff(ctx context.Context, from, to domain.SnapshotRef, paths []string) (domain.Diff, error)
 }
 
+// Summarizer turns a unit and its diff into a headline. It must degrade
+// gracefully: callers fall back to the mechanical headline on any error.
+type Summarizer interface {
+	Headline(ctx context.Context, u domain.Unit, d domain.Diff) (domain.Headline, error)
+}
+
 // Store persists the append-only session log.
 type Store interface {
 	AppendEvent(domain.Event) error
