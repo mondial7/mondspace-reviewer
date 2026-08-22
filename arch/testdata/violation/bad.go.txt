@@ -1,0 +1,9 @@
+package violation
+
+import (
+	"fmt"
+
+	"github.com/marcomondini/mondspace-reviewer/internal/adapter/store/jsonl"
+)
+
+func Bad() { fmt.Println(jsonl.Name) }
