@@ -111,6 +111,31 @@ func TestFlagSwallowedErr(t *testing.T) {
 	}
 }
 
+func TestFlagsOrderedAndCleanUnit(t *testing.T) {
+	// A unit that trips no-test, todo, new-dep and public-api at once.
+	u := domain.Unit{Files: []string{"api.go"}}
+	d := domain.Diff{Text: strings.Join([]string{
+		`-func OldAPI() {`,
+		`+import "github.com/x/y"`,
+		`+// TODO: revisit`,
+	}, "\n")}
+
+	got := usecase.Flags(u, d)
+	want := []domain.Flag{domain.FlagNoTest, domain.FlagTodo, domain.FlagNewDep, domain.FlagPublicAPI}
+	if len(got) != len(want) {
+		t.Fatalf("flags = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("flags = %v, want %v (order matters)", got, want)
+		}
+	}
+
+	if flags := usecase.Flags(domain.Unit{Files: []string{"a.go", "a_test.go"}}, domain.Diff{}); len(flags) != 0 {
+		t.Errorf("clean unit flags = %v, want none", flags)
+	}
+}
+
 func TestFlagPublicAPI(t *testing.T) {
 	changed := []string{
 		"-func Foo() {",
