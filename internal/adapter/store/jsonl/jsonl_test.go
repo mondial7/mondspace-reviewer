@@ -120,6 +120,29 @@ func TestAppendsAreAdditiveAcrossInstances(t *testing.T) {
 	}
 }
 
+func TestStoreRejectsUnsafeSessionID(t *testing.T) {
+	root := t.TempDir()
+	s := jsonl.New(root)
+
+	unsafe := []string{"../evil", "a/b", "..", "", ".", "/etc/passwd", `a\b`}
+	for _, id := range unsafe {
+		t.Run(id, func(t *testing.T) {
+			if err := s.AppendEvent(domain.Event{ID: "e", SessionID: id, Kind: domain.KindEdit}); err == nil {
+				t.Errorf("AppendEvent(%q) should be rejected", id)
+			}
+			if _, err := s.Load(id); err == nil {
+				t.Errorf("Load(%q) should be rejected", id)
+			}
+		})
+	}
+
+	// Nothing may be written outside the store root.
+	escaped := filepath.Join(root, "..", "evil")
+	if _, err := os.Stat(escaped); err == nil {
+		t.Errorf("a file escaped the store root at %s", escaped)
+	}
+}
+
 func TestAppendNoteWritesToNotesFile(t *testing.T) {
 	root := t.TempDir()
 	s := jsonl.New(root)

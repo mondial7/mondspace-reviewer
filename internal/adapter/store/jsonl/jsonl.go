@@ -7,9 +7,11 @@ import (
 	"bufio"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/marcomondini/mondspace-reviewer/internal/domain"
 )
@@ -37,6 +39,9 @@ func (s *Store) AppendNote(n domain.Note) error {
 // Load reconstructs a Session from its append-only files. The task prompt is
 // the first prompt event's stated intent.
 func (s *Store) Load(sessionID string) (domain.Session, error) {
+	if err := validSessionID(sessionID); err != nil {
+		return domain.Session{}, err
+	}
 	sess := domain.Session{ID: sessionID}
 
 	events, err := readLines[domain.Event](filepath.Join(s.root, sessionID, "events.jsonl"))
@@ -91,7 +96,23 @@ func readLines[T any](path string) ([]T, error) {
 	return items, sc.Err()
 }
 
+// validSessionID guards against path traversal: a session ID arrives from an
+// agent hook payload and is used as a directory name, so it must be a single,
+// benign path segment.
+func validSessionID(sessionID string) error {
+	if sessionID == "" || sessionID == "." || sessionID == ".." {
+		return fmt.Errorf("invalid session id %q", sessionID)
+	}
+	if strings.ContainsAny(sessionID, `/\`) || strings.Contains(sessionID, "..") {
+		return fmt.Errorf("invalid session id %q", sessionID)
+	}
+	return nil
+}
+
 func (s *Store) appendLine(sessionID, file string, v any) error {
+	if err := validSessionID(sessionID); err != nil {
+		return err
+	}
 	dir := filepath.Join(s.root, sessionID)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
