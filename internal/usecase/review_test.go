@@ -43,7 +43,10 @@ func (s *fakeStore) Load(string) (domain.Session, error) {
 // fakePresenter records the units it is shown, in order.
 type fakePresenter struct{ units []domain.Unit }
 
-func (p *fakePresenter) Present(u domain.Unit) error { p.units = append(p.units, u); return nil }
+func (p *fakePresenter) Present(u domain.Unit, _ []domain.Event) error {
+	p.units = append(p.units, u)
+	return nil
+}
 
 func TestReviewPresentsUnitsInSealOrderWithHeadlines(t *testing.T) {
 	events := []domain.Event{

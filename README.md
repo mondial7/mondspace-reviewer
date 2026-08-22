@@ -120,7 +120,7 @@ msr review --source=replay --file=testdata/sessions/basic.jsonl --plain
 |---|---|
 | `msr install-hooks --dir=.` | Write the four agent hooks into `.claude/settings.json` (merges, never clobbers). |
 | `msr ingest --kind=…` | Append one hook event (reads hook JSON on stdin, always exits 0). |
-| `msr review --source=replay\|hooks [--plain\|--tui]` | Cluster and present the session. |
+| `msr review --source=replay\|hooks [--plain\|--tui] [--verbose]` | Cluster and present the session. `--verbose` (`-v`) lists each unit's member events and snapshot refs. |
 | `msr ask --scope=unit\|session --session=… "question"` | Answer a question from the bounded log context. |
 | `msr export --format=md\|json --session=…` | Produce the review report, debt list, and open agenda. |
 

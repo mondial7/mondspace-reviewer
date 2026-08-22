@@ -9,6 +9,32 @@ import (
 	"testing"
 )
 
+func TestReviewCommandVerboseListsEvents(t *testing.T) {
+	var out bytes.Buffer
+	args := []string{
+		"review", "--source=replay",
+		"--file=" + filepath.Join("..", "..", "testdata", "sessions", "basic.jsonl"),
+		"--plain", "--verbose",
+		"--out=" + t.TempDir(),
+	}
+	if err := run(context.Background(), args, nil, &out); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	got := out.String()
+	// Verbose-only signals: per-event bullets, including bash events that never
+	// appear in the non-verbose headline/files.
+	for _, want := range []string{"  · edit", "  · write", "  · bash"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("verbose output missing %q", want)
+		}
+	}
+	// A stated intent should show on its event line.
+	if !strings.Contains(got, `extract validation behind a TokenValidator interface`) {
+		t.Errorf("verbose output missing a stated intent on an event line")
+	}
+}
+
 func TestReviewCommandPrintsClusteredUnits(t *testing.T) {
 	var out bytes.Buffer
 	args := []string{

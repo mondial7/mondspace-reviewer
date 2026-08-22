@@ -51,7 +51,7 @@ func ReviewLive(ctx context.Context, src port.EventSource, snap port.Snapshotter
 		if err := store.AppendUnit(u); err != nil {
 			return err
 		}
-		return pres.Present(u)
+		return pres.Present(u, members)
 	}
 
 	for e := range ch {

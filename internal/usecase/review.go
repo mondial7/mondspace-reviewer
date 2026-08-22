@@ -40,7 +40,7 @@ func Review(ctx context.Context, src port.EventSource, store port.Store, pres po
 		if err := store.AppendUnit(u); err != nil {
 			return err
 		}
-		if err := pres.Present(u); err != nil {
+		if err := pres.Present(u, members); err != nil {
 			return err
 		}
 	}

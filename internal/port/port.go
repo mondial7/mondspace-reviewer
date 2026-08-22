@@ -37,7 +37,8 @@ type Store interface {
 	Load(sessionID string) (domain.Session, error)
 }
 
-// Presenter renders sealed units for review.
+// Presenter renders sealed units for review. It receives the unit's member
+// events so a verbose presenter can show what was clustered into it.
 type Presenter interface {
-	Present(domain.Unit) error
+	Present(u domain.Unit, events []domain.Event) error
 }

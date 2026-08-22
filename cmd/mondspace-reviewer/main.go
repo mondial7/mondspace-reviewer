@@ -66,6 +66,8 @@ func runReview(ctx context.Context, args []string, stdout io.Writer) error {
 	file := fs.String("file", "", "recorded log to replay; for hooks, the events.jsonl to tail")
 	usePlain := fs.Bool("plain", false, "use the plain presenter")
 	useTUI := fs.Bool("tui", false, "review a stored session in the interactive TUI")
+	verbose := fs.Bool("verbose", false, "list each unit's member events and snapshot refs")
+	fs.BoolVar(verbose, "v", false, "shorthand for --verbose")
 	out := fs.String("out", ".mondspace-reviewer", "store root directory")
 	repo := fs.String("repo", ".", "repository to snapshot (hooks source / tui)")
 	session := fs.String("session", "", "session id (hooks/tui)")
@@ -89,6 +91,9 @@ func runReview(ctx context.Context, args []string, stdout io.Writer) error {
 
 	store := jsonl.New(*out)
 	pres := plain.New(stdout)
+	if *verbose {
+		pres.Verbose()
+	}
 
 	switch *source {
 	case "replay":
