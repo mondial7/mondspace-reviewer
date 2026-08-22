@@ -40,6 +40,25 @@ func TestIngestAssignsULIDAndTimestamp(t *testing.T) {
 	}
 }
 
+func TestIngestAppendsExactlyOneLineAtSessionPath(t *testing.T) {
+	root := t.TempDir()
+	stdin := strings.NewReader(`{"session_id":"sess-xyz","hook_event_name":"PostToolBatch"}`)
+
+	if err := run([]string{"ingest", "--kind=batch_end", "--out=" + root}, stdin, &bytes.Buffer{}); err != nil {
+		t.Fatalf("ingest: %v", err)
+	}
+
+	path := filepath.Join(root, "sess-xyz", "events.jsonl")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("expected events.jsonl at %s: %v", path, err)
+	}
+	lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
+	if len(lines) != 1 {
+		t.Errorf("got %d lines, want exactly 1", len(lines))
+	}
+}
+
 func TestIngestMalformedJSONExitsZeroAndAppendsNothing(t *testing.T) {
 	root := t.TempDir()
 	stdin := strings.NewReader("{ this is not valid json")
