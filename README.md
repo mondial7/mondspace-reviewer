@@ -103,9 +103,13 @@ msr review --source=replay --file=testdata/sessions/basic.jsonl --plain
 2. Review the session in the interactive queue:
 
    ```sh
-   msr review --source=hooks --plain --session=<session-id>   # line-oriented
-   msr review --tui --session=<session-id>                    # full TUI
+   msr review --source=hooks --plain --session=<session-id>          # line-oriented
+   msr review --tui --session=<session-id>                           # TUI over the stored session
+   msr review --tui --source=hooks --session=<session-id> --repo=.   # live TUI: units stream in as the agent works
    ```
+
+   In live mode the queue starts empty and fills as each unit seals — the cursor
+   stays where you are (the agent outruns you by construction).
 
 3. Ask questions and export your review:
 

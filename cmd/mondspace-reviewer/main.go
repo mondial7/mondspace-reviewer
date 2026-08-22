@@ -83,6 +83,13 @@ func runReview(ctx context.Context, args []string, stdout io.Writer) error {
 		}
 		snap := gitsnap.New(*repo, *session)
 		sum := chooseSummarizer(*summarizerURL, *model)
+		if *source == "hooks" {
+			events := *file
+			if events == "" {
+				events = filepath.Join(*out, *session, "events.jsonl")
+			}
+			return runLiveTUI(ctx, jsonl.New(*out), snap, sum, *session, *repo, *out, events, stdout)
+		}
 		return runTUIReview(jsonl.New(*out), snap, sum, *session, *repo, stdout)
 	}
 	if !*usePlain {
@@ -245,6 +252,43 @@ func chooseSummarizer(baseURL, model string) port.Summarizer {
 		}
 	}
 	return null.New()
+}
+
+// teaPresenter streams sealed units into a running TUI program.
+type teaPresenter struct{ send func(tea.Msg) }
+
+func (t teaPresenter) Present(u domain.Unit, _ []domain.Event) error {
+	t.send(tui.UnitAddedMsg{Unit: u})
+	return nil
+}
+
+// runLiveTUI opens the queue empty and streams units into it as the agent works:
+// a background pipeline tails the hook log, clusters, snapshots, and flags, and
+// hands each sealed unit to the TUI. Units are a deterministic cache of events,
+// so they are rebuilt cleanly on attach.
+func runLiveTUI(ctx context.Context, store port.Store, snap port.Snapshotter, sum port.Summarizer, sessionID, repo, out, eventsPath string, stdout io.Writer) error {
+	_ = os.Remove(filepath.Join(out, sessionID, "units.jsonl"))
+
+	sess, err := store.Load(sessionID)
+	if err != nil {
+		return err
+	}
+	notes := usecase.MarkSuperseded(sess.Units, sess.Notes)
+	model := tui.New(nil, notes, store).
+		RelativeTo(repo).
+		WithSummarize(summarizeFunc(snap, sum)).
+		WithAsk(askFunc(sess, snap, sum))
+
+	p := tea.NewProgram(model, tea.WithInput(os.Stdin), tea.WithOutput(stdout))
+
+	liveCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	go func() {
+		_ = usecase.ReviewLive(liveCtx, hooks.New(eventsPath), snap, store, teaPresenter{send: p.Send})
+	}()
+
+	_, err = p.Run()
+	return err
 }
 
 func runTUIReview(store port.Store, snap port.Snapshotter, sum port.Summarizer, sessionID, repo string, stdout io.Writer) error {

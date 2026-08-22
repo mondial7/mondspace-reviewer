@@ -49,6 +49,9 @@ type Model struct {
 // AnswerReadyMsg carries an interrogation answer back into the queue.
 type AnswerReadyMsg struct{ Text string }
 
+// UnitAddedMsg streams a newly-sealed unit into a live queue.
+type UnitAddedMsg struct{ Unit domain.Unit }
+
 func New(units []domain.Unit, notes []domain.Note, store port.Store) Model {
 	return Model{
 		units:    units,
@@ -118,6 +121,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	if ans, ok := msg.(AnswerReadyMsg); ok {
 		m.answer = ans.Text
+		return m, nil
+	}
+	if added, ok := msg.(UnitAddedMsg); ok {
+		units := make([]domain.Unit, len(m.units)+1)
+		copy(units, m.units)
+		units[len(m.units)] = added.Unit
+		m.units = units
+		if m.summarize != nil {
+			u := added.Unit
+			return m, func() tea.Msg { return m.summarize(u) }
+		}
 		return m, nil
 	}
 	if ws, ok := msg.(tea.WindowSizeMsg); ok {
@@ -301,7 +315,7 @@ func (m Model) View() string {
 	var b strings.Builder
 
 	b.WriteString("  " + titleStyle.Render("mondspace-reviewer") + "   " +
-		dimStyle.Render(fmt.Sprintf("%d units · %d unread", len(m.units), m.unreadCount())) + "\n")
+		dimStyle.Render(fmt.Sprintf("%d %s · %d unread", len(m.units), plural("unit", len(m.units)), m.unreadCount())) + "\n")
 	b.WriteString(rule + "\n")
 
 	if m.filtering {
@@ -414,6 +428,13 @@ func renderWhy(h domain.Headline) string {
 		return inferredStyle.Render("inferred: (none stated)")
 	}
 	return inferredStyle.Render("inferred: " + h.Why)
+}
+
+func plural(word string, n int) string {
+	if n == 1 {
+		return word
+	}
+	return word + "s"
 }
 
 // shortHandle trims the session prefix, leaving the readable unit suffix (u013).

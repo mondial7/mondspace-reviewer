@@ -121,3 +121,15 @@ func TestBuildTUIModelLoadsAndPersistsAnnotations(t *testing.T) {
 		t.Errorf("note not persisted correctly: %s", data)
 	}
 }
+
+func TestTeaPresenterStreamsUnits(t *testing.T) {
+	var got tea.Msg
+	p := teaPresenter{send: func(m tea.Msg) { got = m }}
+	if err := p.Present(domain.Unit{ID: "s-u009"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	added, ok := got.(tui.UnitAddedMsg)
+	if !ok || added.Unit.ID != "s-u009" {
+		t.Errorf("presenter should send UnitAddedMsg for the unit, got %#v", got)
+	}
+}

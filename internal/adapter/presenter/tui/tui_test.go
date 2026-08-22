@@ -50,6 +50,31 @@ func TestCtrlCAlwaysQuits(t *testing.T) {
 	quitsOnCtrlC(t, tui.New(nil, nil, nil), "with an empty session")
 }
 
+func TestUnitAddedStreamsIntoQueueWithoutMovingCursor(t *testing.T) {
+	m := tui.New(nil, nil, nil)
+	if m.VisibleCount() != 0 {
+		t.Fatalf("fresh live queue should be empty, got %d", m.VisibleCount())
+	}
+
+	add := func(m tui.Model, id string) tui.Model {
+		next, _ := m.Update(tui.UnitAddedMsg{Unit: domain.Unit{ID: id, Files: []string{"a.go"}}})
+		return next.(tui.Model)
+	}
+
+	m = add(m, "s-u001")
+	m = add(m, "s-u002")
+	if m.VisibleCount() != 2 {
+		t.Errorf("streamed units should append, got %d want 2", m.VisibleCount())
+	}
+	// The cursor never jumps to new arrivals — the reviewer stays where they are.
+	if m.Cursor() != 0 {
+		t.Errorf("cursor should stay put as units stream in, got %d", m.Cursor())
+	}
+	if !strings.Contains(m.View(), "u002") {
+		t.Errorf("streamed unit not shown:\n%s", m.View())
+	}
+}
+
 func TestArrowKeysMoveCursor(t *testing.T) {
 	m := tui.New(threeUnits(), nil, nil)
 
