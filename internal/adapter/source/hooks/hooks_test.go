@@ -75,6 +75,28 @@ func TestHooksFollowsAppendedLines(t *testing.T) {
 	}
 }
 
+func TestHooksSkipsMalformedAppendedLine(t *testing.T) {
+	path := t.TempDir() + "/events.jsonl"
+	writeFile(t, path, `{"id":"e1","session_id":"s","kind":"edit"}`+"\n")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	ch, err := hooks.New(path).Events(ctx)
+	if err != nil {
+		t.Fatalf("Events: %v", err)
+	}
+	collectN(t, ch, 1) // e1
+
+	appendLine(t, path, `{ truncated garbage`)
+	appendLine(t, path, `{"id":"e3","session_id":"s","kind":"edit"}`)
+
+	got := collectN(t, ch, 1)
+	if got[0].ID != "e3" {
+		t.Errorf("got %q, want e3 (malformed line must be skipped)", got[0].ID)
+	}
+}
+
 func TestHooksEmitsExistingEventsAtStart(t *testing.T) {
 	path := t.TempDir() + "/events.jsonl"
 	writeFile(t, path,
