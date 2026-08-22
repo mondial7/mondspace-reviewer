@@ -2,6 +2,7 @@ package replay_test
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -16,6 +17,30 @@ func collect(t *testing.T, ch <-chan domain.Event) []domain.Event {
 		got = append(got, e)
 	}
 	return got
+}
+
+func TestReplaySkipsMalformedLine(t *testing.T) {
+	content := `{"id":"e1","kind":"edit","files":["a.go"]}
+{ this is not valid json
+{"id":"e3","kind":"edit","files":["c.go"]}
+`
+	file := filepath.Join(t.TempDir(), "partial.jsonl")
+	if err := os.WriteFile(file, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	ch, err := replay.New(file).Events(context.Background())
+	if err != nil {
+		t.Fatalf("Events: %v", err)
+	}
+	got := collect(t, ch)
+
+	if len(got) != 2 {
+		t.Fatalf("emitted %d events, want 2 (malformed line skipped)", len(got))
+	}
+	if got[0].ID != "e1" || got[1].ID != "e3" {
+		t.Errorf("got IDs %q,%q, want e1,e3", got[0].ID, got[1].ID)
+	}
 }
 
 func TestReplayEmitsEveryEventInOrder(t *testing.T) {
