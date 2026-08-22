@@ -296,6 +296,31 @@ func TestInitFiresSummarizeCommandsPerUnit(t *testing.T) {
 	}
 }
 
+func TestAskSubmitFiresCommandYieldingAnswer(t *testing.T) {
+	askFn := func(scope domain.AskScope, u domain.Unit, q string) tea.Msg {
+		return tui.AnswerReadyMsg{Text: "scope=" + string(scope) + " unit=" + u.ID + " q=" + q}
+	}
+	m := tui.New(threeUnits(), nil, nil).WithAsk(askFn)
+
+	m = send(m, 'a', 'h', 'i')
+	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = next.(tui.Model)
+
+	if m.Asking() {
+		t.Error("submitting should close the ask prompt")
+	}
+	if cmd == nil {
+		t.Fatal("enter should fire an ask command")
+	}
+	msg, ok := cmd().(tui.AnswerReadyMsg)
+	if !ok {
+		t.Fatalf("cmd yielded %T, want AnswerReadyMsg", cmd())
+	}
+	if msg.Text != "scope=unit unit=s-u001 q=hi" {
+		t.Errorf("answer msg = %q, want the closure's output with scope/unit/question", msg.Text)
+	}
+}
+
 func TestAskModeEntryAndTyping(t *testing.T) {
 	m := send(tui.New(threeUnits(), nil, nil), 'a')
 	if !m.Asking() {

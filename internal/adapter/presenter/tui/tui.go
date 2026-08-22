@@ -37,7 +37,12 @@ type Model struct {
 
 	// summarize, when set, turns a unit into a HeadlineReadyMsg asynchronously.
 	summarize func(domain.Unit) tea.Msg
+	// ask, when set, answers a question asynchronously.
+	ask func(scope domain.AskScope, unit domain.Unit, question string) tea.Msg
 }
+
+// AnswerReadyMsg carries an interrogation answer back into the queue.
+type AnswerReadyMsg struct{ Text string }
 
 func New(units []domain.Unit, notes []domain.Note, store port.Store) Model {
 	return Model{
@@ -61,6 +66,12 @@ func (m Model) WithClock(newID func() string, now func() time.Time) Model {
 // Init, filling in over the mechanical headlines as results arrive.
 func (m Model) WithSummarize(fn func(domain.Unit) tea.Msg) Model {
 	m.summarize = fn
+	return m
+}
+
+// WithAsk wires an async interrogation handler used by the a/A keys.
+func (m Model) WithAsk(fn func(domain.AskScope, domain.Unit, string) tea.Msg) Model {
+	m.ask = fn
 	return m
 }
 
@@ -89,6 +100,10 @@ type HeadlineReadyMsg struct {
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if ready, ok := msg.(HeadlineReadyMsg); ok {
 		return m.fillHeadline(ready), nil
+	}
+	if ans, ok := msg.(AnswerReadyMsg); ok {
+		m.answer = ans.Text
+		return m, nil
 	}
 	key, ok := msg.(tea.KeyMsg)
 	if !ok {
@@ -145,6 +160,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // cancels, and every other key edits the question text.
 func (m Model) updateAsk(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch key.Type {
+	case tea.KeyEnter:
+		q, scope := m.question, m.askScope
+		m.asking, m.question = false, ""
+		if m.ask == nil || q == "" {
+			return m, nil
+		}
+		unit, _ := m.current()
+		return m, func() tea.Msg { return m.ask(scope, unit, q) }
 	case tea.KeyEsc:
 		m.asking, m.question = false, ""
 	case tea.KeyBackspace:
