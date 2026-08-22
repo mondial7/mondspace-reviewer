@@ -10,6 +10,33 @@ import (
 	"github.com/marcomondini/mondspace-reviewer/internal/domain"
 )
 
+func TestAppendsAreAdditiveAcrossInstances(t *testing.T) {
+	root := t.TempDir()
+
+	first := jsonl.New(root)
+	if err := first.AppendEvent(domain.Event{ID: "e1", SessionID: "s", Kind: domain.KindEdit}); err != nil {
+		t.Fatal(err)
+	}
+
+	// A fresh Store, as if the process had restarted, must append, not truncate.
+	second := jsonl.New(root)
+	if err := second.AppendEvent(domain.Event{ID: "e2", SessionID: "s", Kind: domain.KindEdit}); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(root, "s", "events.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("got %d lines, want 2 (append must not truncate)", len(lines))
+	}
+	if !strings.Contains(lines[0], `"id":"e1"`) || !strings.Contains(lines[1], `"id":"e2"`) {
+		t.Errorf("lines out of order or missing: %q", lines)
+	}
+}
+
 func TestAppendUnitWritesToUnitsFile(t *testing.T) {
 	root := t.TempDir()
 	s := jsonl.New(root)
