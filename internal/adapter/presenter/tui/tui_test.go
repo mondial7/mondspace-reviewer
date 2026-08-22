@@ -121,6 +121,32 @@ func TestTabTogglesUnreadOnly(t *testing.T) {
 	}
 }
 
+func TestSlashFiltersByFileFlagAndKind(t *testing.T) {
+	units := []domain.Unit{
+		{ID: "s-u001", SessionID: "s", Files: []string{"auth/token.go"}, Flags: []domain.Flag{domain.FlagNoTest}},
+		{ID: "s-u002", SessionID: "s", Files: []string{"http/mw.go"}},
+		{ID: "s-u003", SessionID: "s", Files: []string{"auth/util.go"}, Flags: []domain.Flag{domain.FlagLarge}},
+	}
+	notes := []domain.Note{{ID: "n1", UnitID: "s-u002", Kind: domain.NoteObjection}}
+
+	filterTo := func(q string) int {
+		m := tui.New(units, notes, nil)
+		m = send(m, '/')
+		m = send(m, []rune(q)...)
+		return m.VisibleCount()
+	}
+
+	if n := filterTo("auth"); n != 2 {
+		t.Errorf("filter 'auth' (file) = %d, want 2", n)
+	}
+	if n := filterTo("large"); n != 1 {
+		t.Errorf("filter 'large' (flag) = %d, want 1", n)
+	}
+	if n := filterTo("objection"); n != 1 {
+		t.Errorf("filter 'objection' (note kind) = %d, want 1", n)
+	}
+}
+
 func TestModelStartsAtFirstUnit(t *testing.T) {
 	m := tui.New(threeUnits(), nil, nil)
 	if m.Cursor() != 0 {

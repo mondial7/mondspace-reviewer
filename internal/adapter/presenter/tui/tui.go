@@ -4,6 +4,7 @@
 package tui
 
 import (
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -22,6 +23,8 @@ type Model struct {
 	read     map[string]bool // unit ID -> reviewed (ok)
 
 	unreadOnly bool
+	filtering  bool
+	query      string
 
 	newID func() string
 	now   func() time.Time
@@ -55,6 +58,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if !ok {
 		return m, nil
 	}
+	if m.filtering {
+		return m.updateFilter(key), nil
+	}
 	switch key.String() {
 	case "j":
 		m.cursor = clamp(m.cursor+1, 0, len(m.visible())-1)
@@ -83,8 +89,31 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case "tab":
 		m.unreadOnly = !m.unreadOnly
 		m.cursor = clamp(m.cursor, 0, len(m.visible())-1)
+	case "/":
+		m.filtering = true
+		m.query = ""
 	}
 	return m, nil
+}
+
+// updateFilter handles keys while the filter prompt is open. Enter commits the
+// query, Esc cancels it, and typing edits it live.
+func (m Model) updateFilter(key tea.KeyMsg) Model {
+	switch key.Type {
+	case tea.KeyEnter:
+		m.filtering = false
+	case tea.KeyEsc:
+		m.filtering = false
+		m.query = ""
+	case tea.KeyBackspace:
+		if m.query != "" {
+			m.query = m.query[:len(m.query)-1]
+		}
+	case tea.KeyRunes, tea.KeySpace:
+		m.query += string(key.Runes)
+	}
+	m.cursor = clamp(m.cursor, 0, len(m.visible())-1)
+	return m
 }
 
 // annotate attaches a note of the given kind to the current unit and persists it.
@@ -146,9 +175,34 @@ func (m Model) visible() []int {
 		if m.unreadOnly && m.read[u.ID] {
 			continue
 		}
+		if m.query != "" && !m.matches(u, m.query) {
+			continue
+		}
 		idx = append(idx, i)
 	}
 	return idx
+}
+
+// matches reports whether a unit satisfies the filter query, testing its files,
+// flags, and the kinds of any notes attached to it.
+func (m Model) matches(u domain.Unit, q string) bool {
+	q = strings.ToLower(q)
+	for _, f := range u.Files {
+		if strings.Contains(strings.ToLower(f), q) {
+			return true
+		}
+	}
+	for _, f := range u.Flags {
+		if strings.Contains(strings.ToLower(string(f)), q) {
+			return true
+		}
+	}
+	for _, n := range m.notes {
+		if n.UnitID == u.ID && strings.Contains(strings.ToLower(string(n.Kind)), q) {
+			return true
+		}
+	}
+	return false
 }
 
 func clamp(v, lo, hi int) int {
