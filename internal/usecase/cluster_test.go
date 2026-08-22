@@ -27,6 +27,33 @@ func TestClusterEmptyLog(t *testing.T) {
 	}
 }
 
+func TestUnitIDsAreSequentialAndDeterministic(t *testing.T) {
+	events := []domain.Event{
+		ev("e1", domain.KindEdit, "a.go"),
+		ev("e2", domain.KindBatchEnd),
+		ev("e3", domain.KindEdit, "b.go"),
+		ev("e4", domain.KindBatchEnd),
+		ev("e5", domain.KindEdit, "c.go"),
+		ev("e6", domain.KindBatchEnd),
+	}
+
+	first := usecase.Cluster("sess-basic", events)
+	second := usecase.Cluster("sess-basic", events)
+
+	wantIDs := []string{"sess-basic-u001", "sess-basic-u002", "sess-basic-u003"}
+	if len(first) != len(wantIDs) {
+		t.Fatalf("got %d units, want %d", len(first), len(wantIDs))
+	}
+	for i, want := range wantIDs {
+		if first[i].ID != want {
+			t.Errorf("unit %d ID = %q, want %q", i, first[i].ID, want)
+		}
+		if second[i].ID != first[i].ID {
+			t.Errorf("nondeterministic ID at %d: %q vs %q", i, first[i].ID, second[i].ID)
+		}
+	}
+}
+
 func TestUnitFilesAreDedupedUnionInFirstSeenOrder(t *testing.T) {
 	events := []domain.Event{
 		ev("e1", domain.KindEdit, "http/mw.go"),
