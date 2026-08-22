@@ -37,6 +37,20 @@ func TestModelStartsAtFirstUnit(t *testing.T) {
 	}
 }
 
+func TestGoToTopAndBottom(t *testing.T) {
+	m := tui.New(threeUnits(), nil, nil)
+
+	m = send(m, 'j') // cursor 1
+	m = send(m, 'G')
+	if m.Cursor() != 2 {
+		t.Errorf("G: cursor = %d, want 2 (bottom)", m.Cursor())
+	}
+	m = send(m, 'g')
+	if m.Cursor() != 0 {
+		t.Errorf("g: cursor = %d, want 0 (top)", m.Cursor())
+	}
+}
+
 func TestCursorMovesAndClamps(t *testing.T) {
 	m := tui.New(threeUnits(), nil, nil)
 

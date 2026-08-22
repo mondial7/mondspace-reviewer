@@ -33,6 +33,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.cursor = clamp(m.cursor+1, 0, len(m.visible())-1)
 	case "k":
 		m.cursor = clamp(m.cursor-1, 0, len(m.visible())-1)
+	case "g":
+		m.cursor = 0
+	case "G":
+		m.cursor = clamp(len(m.visible())-1, 0, len(m.visible())-1)
 	}
 	return m, nil
 }
