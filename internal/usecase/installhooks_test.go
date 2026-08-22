@@ -1,0 +1,42 @@
+package usecase_test
+
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+
+	"github.com/marcomondini/mondspace-reviewer/internal/usecase"
+)
+
+func TestInstallHooksWritesAllFourHooks(t *testing.T) {
+	merged, err := usecase.InstallHooks(nil)
+	if err != nil {
+		t.Fatalf("InstallHooks: %v", err)
+	}
+
+	var settings map[string]any
+	if err := json.Unmarshal(merged, &settings); err != nil {
+		t.Fatalf("result is not valid JSON: %v", err)
+	}
+	hooks, ok := settings["hooks"].(map[string]any)
+	if !ok {
+		t.Fatalf("no hooks object in settings: %s", merged)
+	}
+
+	for _, event := range []string{"UserPromptSubmit", "PostToolUse", "PostToolUseFailure", "PostToolBatch"} {
+		if _, present := hooks[event]; !present {
+			t.Errorf("missing hook for %s", event)
+		}
+	}
+
+	// PostToolUse must match the edit tools.
+	if !strings.Contains(string(merged), "Write|Edit|MultiEdit") {
+		t.Errorf("PostToolUse missing tool matcher:\n%s", merged)
+	}
+	// Every hook shells to msr ingest.
+	for _, kind := range []string{"--kind=prompt", "--kind=edit", "--kind=batch_end"} {
+		if !strings.Contains(string(merged), "msr ingest "+kind) {
+			t.Errorf("missing command 'msr ingest %s':\n%s", kind, merged)
+		}
+	}
+}
