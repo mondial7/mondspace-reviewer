@@ -22,6 +22,18 @@ func askSession() domain.Session {
 	}
 }
 
+func TestBuildAskContextRecordsStatedIntent(t *testing.T) {
+	sess := askSession()
+
+	// s-u001 has a stated why; s-u002 is inferred.
+	if ctx := usecase.BuildAskContext(domain.AskUnit, sess, sess.Units[0], domain.Diff{}); !ctx.HasStated {
+		t.Error("HasStated should be true for a unit with a stated intent")
+	}
+	if ctx := usecase.BuildAskContext(domain.AskUnit, sess, sess.Units[1], domain.Diff{}); ctx.HasStated {
+		t.Error("HasStated should be false for an inferred-only unit")
+	}
+}
+
 func TestBuildAskContextSessionScope(t *testing.T) {
 	sess := askSession()
 
