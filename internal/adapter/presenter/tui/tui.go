@@ -21,6 +21,8 @@ type Model struct {
 	expanded map[string]bool // unit ID -> expanded
 	read     map[string]bool // unit ID -> reviewed (ok)
 
+	unreadOnly bool
+
 	newID func() string
 	now   func() time.Time
 }
@@ -78,6 +80,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m = m.annotate(domain.NoteDebt)
 	case "n":
 		m = m.annotate(domain.NoteNote)
+	case "tab":
+		m.unreadOnly = !m.unreadOnly
+		m.cursor = clamp(m.cursor, 0, len(m.visible())-1)
 	}
 	return m, nil
 }
@@ -130,11 +135,18 @@ func (m Model) current() (domain.Unit, bool) {
 	return m.units[vis[m.cursor]], true
 }
 
-// visible returns the indices of the units currently shown.
+// VisibleCount is the number of units currently shown.
+func (m Model) VisibleCount() int { return len(m.visible()) }
+
+// visible returns the indices of the units currently shown, honouring the
+// unread-only toggle.
 func (m Model) visible() []int {
-	idx := make([]int, len(m.units))
-	for i := range m.units {
-		idx[i] = i
+	var idx []int
+	for i, u := range m.units {
+		if m.unreadOnly && m.read[u.ID] {
+			continue
+		}
+		idx = append(idx, i)
 	}
 	return idx
 }

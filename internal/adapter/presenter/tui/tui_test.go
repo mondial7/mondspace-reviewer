@@ -100,6 +100,27 @@ func TestAnnotateOtherKindsDoNotAdvance(t *testing.T) {
 	}
 }
 
+func TestTabTogglesUnreadOnly(t *testing.T) {
+	m := fixedClock(tui.New(threeUnits(), nil, &recordingStore{}))
+
+	m = send(m, 'o') // mark u1 read, cursor -> u2
+	if m.VisibleCount() != 3 {
+		t.Fatalf("all units visible before toggle, got %d", m.VisibleCount())
+	}
+
+	tabbed, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m = tabbed.(tui.Model)
+	if m.VisibleCount() != 2 {
+		t.Errorf("unread-only should hide the 1 read unit, visible = %d, want 2", m.VisibleCount())
+	}
+
+	tabbed, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m = tabbed.(tui.Model)
+	if m.VisibleCount() != 3 {
+		t.Errorf("toggling off should show all 3, got %d", m.VisibleCount())
+	}
+}
+
 func TestModelStartsAtFirstUnit(t *testing.T) {
 	m := tui.New(threeUnits(), nil, nil)
 	if m.Cursor() != 0 {
