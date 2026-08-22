@@ -70,6 +70,36 @@ func TestAnnotateOKWritesNoteAdvancesAndMarksRead(t *testing.T) {
 	}
 }
 
+func TestAnnotateOtherKindsDoNotAdvance(t *testing.T) {
+	cases := []struct {
+		key  rune
+		kind domain.NoteKind
+	}{
+		{'?', domain.NoteQuestion},
+		{'x', domain.NoteObjection},
+		{'d', domain.NoteDebt},
+		{'n', domain.NoteNote},
+	}
+	for _, tc := range cases {
+		t.Run(string(tc.kind), func(t *testing.T) {
+			store := &recordingStore{}
+			m := fixedClock(tui.New(threeUnits(), nil, store))
+
+			m = send(m, tc.key)
+
+			if len(store.notes) != 1 || store.notes[0].Kind != tc.kind {
+				t.Fatalf("notes = %+v, want one %s", store.notes, tc.kind)
+			}
+			if m.Cursor() != 0 {
+				t.Errorf("%s should not advance the cursor, got %d", tc.kind, m.Cursor())
+			}
+			if m.Read("s-u001") {
+				t.Errorf("%s should not mark the unit read", tc.kind)
+			}
+		})
+	}
+}
+
 func TestModelStartsAtFirstUnit(t *testing.T) {
 	m := tui.New(threeUnits(), nil, nil)
 	if m.Cursor() != 0 {

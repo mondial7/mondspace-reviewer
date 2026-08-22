@@ -70,6 +70,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m = m.annotate(domain.NoteOK)
 		m.read[mustID(m)] = true
 		m.cursor = clamp(m.cursor+1, 0, len(m.visible())-1)
+	case "?":
+		m = m.annotate(domain.NoteQuestion)
+	case "x":
+		m = m.annotate(domain.NoteObjection)
+	case "d":
+		m = m.annotate(domain.NoteDebt)
+	case "n":
+		m = m.annotate(domain.NoteNote)
 	}
 	return m, nil
 }
