@@ -41,6 +41,22 @@ func ExportMarkdown(r domain.Report) string {
 		b.WriteString("\n")
 	}
 
+	if len(r.Superseded) > 0 {
+		b.WriteString("## Superseded\n\n")
+		for _, it := range r.Superseded {
+			fmt.Fprintf(&b, "- %s (%s): %s — superseded by %s\n", it.UnitID, it.Headline.Text, it.NoteText, it.SupersededBy)
+		}
+		b.WriteString("\n")
+	}
+
+	if len(r.Unreviewed) > 0 {
+		b.WriteString("## Unreviewed\n\n")
+		for _, it := range r.Unreviewed {
+			fmt.Fprintf(&b, "- %s — %s\n", it.UnitID, it.Headline.Text)
+		}
+		b.WriteString("\n")
+	}
+
 	return b.String()
 }
 

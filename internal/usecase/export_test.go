@@ -44,6 +44,26 @@ func TestExportMarkdownPreservesWhySource(t *testing.T) {
 	}
 }
 
+func TestExportMarkdownSupersededAndUnreviewed(t *testing.T) {
+	sess := reportSession()
+	sess.Units = append(sess.Units,
+		domain.Unit{ID: "s-u004", Files: []string{"auth/token.go"}},
+		domain.Unit{ID: "s-u009", Headline: domain.Headline{Text: "untouched"}},
+	)
+	sess.Notes = append(sess.Notes,
+		domain.Note{ID: "n7", UnitID: "s-u001", Kind: domain.NoteObjection, Text: "bad choice"},
+	)
+
+	md := usecase.ExportMarkdown(usecase.BuildReport(sess))
+
+	if !strings.Contains(md, "## Superseded") || !strings.Contains(md, "superseded by s-u004") {
+		t.Errorf("superseded section missing or unmarked:\n%s", md)
+	}
+	if !strings.Contains(md, "## Unreviewed") || !strings.Contains(md, "s-u009") {
+		t.Errorf("unreviewed section missing:\n%s", md)
+	}
+}
+
 func TestExportMarkdownDebtTaskList(t *testing.T) {
 	sess := reportSession()
 	sess.Notes = append(sess.Notes,
