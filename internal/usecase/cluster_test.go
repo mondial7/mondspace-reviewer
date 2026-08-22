@@ -27,6 +27,29 @@ func TestClusterEmptyLog(t *testing.T) {
 	}
 }
 
+func TestEndOfLogSealsTrailingUnit(t *testing.T) {
+	events := []domain.Event{
+		ev("e1", domain.KindEdit, "a.go"),
+		ev("e2", domain.KindBatchEnd),
+		ev("e3", domain.KindEdit, "b.go"),
+		ev("e4", domain.KindEdit, "c.go"),
+		// no trailing batch_end
+	}
+
+	units := usecase.Cluster("sess-basic", events)
+
+	if len(units) != 2 {
+		t.Fatalf("got %d units, want 2", len(units))
+	}
+	last := units[1]
+	if !last.Sealed {
+		t.Error("trailing unit must be sealed at end of log")
+	}
+	if got := last.EventIDs; len(got) != 2 || got[0] != "e3" || got[1] != "e4" {
+		t.Errorf("trailing EventIDs = %v, want [e3 e4]", got)
+	}
+}
+
 func TestTwelveActionsSealUnit(t *testing.T) {
 	base := time.Date(2026, 8, 22, 10, 0, 0, 0, time.UTC)
 	var events []domain.Event
