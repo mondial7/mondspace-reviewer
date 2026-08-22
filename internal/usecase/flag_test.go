@@ -111,6 +111,33 @@ func TestFlagSwallowedErr(t *testing.T) {
 	}
 }
 
+func TestFlagPublicAPI(t *testing.T) {
+	changed := []string{
+		"-func Foo() {",
+		"-type Config struct {",
+		"-func (s *Server) Start() error {",
+		"-var DefaultTimeout = 5",
+		"-const MaxSize = 10",
+	}
+	for _, line := range changed {
+		if !hasFlag(usecase.Flags(domain.Unit{}, domain.Diff{Text: line + "\n"}), domain.FlagPublicAPI) {
+			t.Errorf("expected public-api for removed %q", line)
+		}
+	}
+
+	clean := []string{
+		"-func helper() {",           // unexported
+		"+func NewThing() {",         // added, not removed/changed
+		"-\tx := 1",                  // not a declaration
+		"-type internalState struct", // unexported
+	}
+	for _, line := range clean {
+		if hasFlag(usecase.Flags(domain.Unit{}, domain.Diff{Text: line + "\n"}), domain.FlagPublicAPI) {
+			t.Errorf("did not expect public-api for %q", line)
+		}
+	}
+}
+
 func TestFlagNoTest(t *testing.T) {
 	tests := []struct {
 		name  string

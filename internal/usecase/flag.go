@@ -34,7 +34,32 @@ func Flags(u domain.Unit, d domain.Diff) []domain.Flag {
 	if anyAddedLine(d.Text, isSwallowedErr) {
 		flags = append(flags, domain.FlagSwallowedErr)
 	}
+	if anyRemovedLine(d.Text, isExportedDecl) {
+		flags = append(flags, domain.FlagPublicAPI)
+	}
 	return flags
+}
+
+// exportedDecl matches a Go declaration of an exported (capitalised) identifier:
+// func, method, type, var, or const.
+var exportedDecl = regexp.MustCompile(`^(func (\([^)]*\) )?|type |var |const )[A-Z]`)
+
+func isExportedDecl(line string) bool {
+	return exportedDecl.MatchString(strings.TrimSpace(line))
+}
+
+// anyRemovedLine reports whether any removed line (a "-" line that is not the
+// --- header) satisfies pred. The leading "-" is stripped before testing.
+func anyRemovedLine(diff string, pred func(string) bool) bool {
+	for _, line := range strings.Split(diff, "\n") {
+		if !strings.HasPrefix(line, "-") || strings.HasPrefix(line, "---") {
+			continue
+		}
+		if pred(line[1:]) {
+			return true
+		}
+	}
+	return false
 }
 
 // swallowedErr matches assigning a call's result to the blank identifier, e.g.
