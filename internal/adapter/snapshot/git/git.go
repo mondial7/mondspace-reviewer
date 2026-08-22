@@ -42,7 +42,13 @@ func (s *Snapshotter) Snapshot(ctx context.Context, label string) (domain.Snapsh
 	// file is rejected as a malformed index.
 	os.Remove(indexPath)
 	defer os.Remove(indexPath)
-	env := append(os.Environ(), "GIT_INDEX_FILE="+indexPath)
+	// Supply a fixed identity for these throwaway review commits so snapshots
+	// work even where git has no configured user (fresh CI runners, containers).
+	env := append(os.Environ(),
+		"GIT_INDEX_FILE="+indexPath,
+		"GIT_AUTHOR_NAME=mondspace-reviewer", "GIT_AUTHOR_EMAIL=msr@localhost",
+		"GIT_COMMITTER_NAME=mondspace-reviewer", "GIT_COMMITTER_EMAIL=msr@localhost",
+	)
 
 	if _, err := s.run(ctx, env, "add", "-A"); err != nil {
 		return domain.SnapshotRef{}, err

@@ -125,6 +125,30 @@ func TestDiffBetweenTwoSnapshots(t *testing.T) {
 	}
 }
 
+func TestSnapshotWorksWithoutAmbientGitIdentity(t *testing.T) {
+	// Simulate a machine (like a fresh CI runner or container) that refuses to
+	// invent a git identity: useConfigOnly, and a repo with no local user.*.
+	gcfg := filepath.Join(t.TempDir(), "gitconfig")
+	if err := os.WriteFile(gcfg, []byte("[user]\n\tuseConfigOnly = true\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_CONFIG_GLOBAL", gcfg)
+	t.Setenv("GIT_CONFIG_SYSTEM", os.DevNull)
+
+	dir := t.TempDir()
+	gitCmd(t, dir, "init", "-q")
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("v1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCmd(t, dir, "add", "a.txt")
+	gitCmd(t, dir, "commit", "-qm", "init") // identity supplied via env, not config
+
+	// The snapshotter must supply its own identity for its throwaway commits.
+	if _, err := gitsnap.New(dir, "sess-1").Snapshot(context.Background(), "s1"); err != nil {
+		t.Fatalf("Snapshot must work without an ambient git identity: %v", err)
+	}
+}
+
 func TestSnapshotLeavesHeadIndexAndWorktreeUnchanged(t *testing.T) {
 	dir := newRepo(t)
 
