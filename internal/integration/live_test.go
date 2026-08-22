@@ -57,8 +57,14 @@ func TestLiveReviewReconstructsSessionFromLog(t *testing.T) {
 	git(t, repo, "add", "a.go")
 	git(t, repo, "commit", "-qm", "init")
 
-	// A recorded log the hooks source will tail: two units, two batch_ends.
-	events := filepath.Join(repo, "events.jsonl")
+	// The log the hooks source tails lives in the store's own session dir, as
+	// the agent's ingest hooks write it: two units, two batch_ends.
+	storeRoot := t.TempDir()
+	sessDir := filepath.Join(storeRoot, "s")
+	if err := os.MkdirAll(sessDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	events := filepath.Join(sessDir, "events.jsonl")
 	if err := os.WriteFile(events, []byte(strings.Join([]string{
 		`{"id":"e1","session_id":"s","kind":"edit","files":["a.go"]}`,
 		`{"id":"e2","session_id":"s","kind":"batch_end"}`,
@@ -69,7 +75,6 @@ func TestLiveReviewReconstructsSessionFromLog(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	storeRoot := t.TempDir()
 	store := jsonl.New(storeRoot)
 	out := &syncBuffer{}
 

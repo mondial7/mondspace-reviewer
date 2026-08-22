@@ -7,10 +7,13 @@ import (
 	"github.com/marcomondini/mondspace-reviewer/internal/port"
 )
 
-// ReviewLive drives a live session: it drains the event source into the store,
-// seals units incrementally, and snapshots the tree at each seal so every unit
-// records the refs bracketing it. From is the prior snapshot, To the one taken
-// when the unit sealed.
+// ReviewLive drives a live session: it consumes events from the source, seals
+// units incrementally, and snapshots the tree at each seal so every unit records
+// the refs bracketing it. From is the prior snapshot, To the one taken when the
+// unit sealed.
+//
+// It does not persist events: the agent's ingest hooks already own events.jsonl,
+// which the source is tailing. Re-appending would feed the tail its own output.
 func ReviewLive(ctx context.Context, src port.EventSource, snap port.Snapshotter, store port.Store, pres port.Presenter) error {
 	ch, err := src.Events(ctx)
 	if err != nil {
@@ -46,9 +49,6 @@ func ReviewLive(ctx context.Context, src port.EventSource, snap port.Snapshotter
 	}
 
 	for e := range ch {
-		if err := store.AppendEvent(e); err != nil {
-			return err
-		}
 		byID[e.ID] = e
 		if c.sessionID == "" {
 			c.sessionID = e.SessionID
