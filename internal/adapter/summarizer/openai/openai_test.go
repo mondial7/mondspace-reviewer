@@ -22,6 +22,23 @@ func chatResponse(content string) string {
 	return string(b)
 }
 
+func TestHeadlineHonoursContextCancel(t *testing.T) {
+	block := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-block // never respond until the test unblocks it
+	}))
+	defer srv.Close()
+	defer close(block)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // already cancelled
+
+	_, err := openai.New(srv.URL, "m").Headline(ctx, domain.Unit{}, domain.Diff{})
+	if err == nil {
+		t.Error("expected an error when the context is cancelled")
+	}
+}
+
 func TestHeadlineErrorsOnNon2xxAndUnreachable(t *testing.T) {
 	u := domain.Unit{ID: "u1"}
 
