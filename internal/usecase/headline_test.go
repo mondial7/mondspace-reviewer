@@ -7,6 +7,23 @@ import (
 	"github.com/marcomondini/mondspace-reviewer/internal/usecase"
 )
 
+func TestMechanicalHeadlineWhyIsFirstStatedIntent(t *testing.T) {
+	events := []domain.Event{
+		{ID: "e1", Kind: domain.KindEdit, Files: []string{"a.go"}, StatedIntent: ""},
+		{ID: "e2", Kind: domain.KindEdit, Files: []string{"a.go"}, StatedIntent: "swap the JWT lib later"},
+		{ID: "e3", Kind: domain.KindEdit, Files: []string{"a.go"}, StatedIntent: "second intent, ignored"},
+	}
+
+	got := usecase.MechanicalHeadline(events)
+
+	if got.Why != "swap the JWT lib later" {
+		t.Errorf("Why = %q, want first non-empty stated intent", got.Why)
+	}
+	if got.WhySrc != domain.WhyStated {
+		t.Errorf("WhySrc = %q, want %q", got.WhySrc, domain.WhyStated)
+	}
+}
+
 func TestMechanicalHeadlineText(t *testing.T) {
 	tests := []struct {
 		name   string

@@ -35,7 +35,16 @@ func MechanicalHeadline(events []domain.Event) domain.Headline {
 	}
 
 	text := fmt.Sprintf("%s across %d %s", strings.Join(parts, ", "), files, plural("file", files))
-	return domain.Headline{Text: text}
+
+	why, whySrc := "", domain.WhyInferred
+	for _, e := range events {
+		if e.StatedIntent != "" {
+			why, whySrc = e.StatedIntent, domain.WhyStated
+			break
+		}
+	}
+
+	return domain.Headline{Text: text, Why: why, WhySrc: whySrc}
 }
 
 func plural(word string, n int) string {
