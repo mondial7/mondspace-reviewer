@@ -10,6 +10,33 @@ import (
 	"github.com/marcomondini/mondspace-reviewer/internal/domain"
 )
 
+func TestLoadSkipsMalformedLine(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "s")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := `{"id":"e1","session_id":"s","kind":"edit"}
+{ truncated line
+{"id":"e3","session_id":"s","kind":"edit"}
+`
+	if err := os.WriteFile(filepath.Join(dir, "events.jsonl"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	sess, err := jsonl.New(root).Load("s")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if len(sess.Events) != 2 {
+		t.Fatalf("got %d events, want 2 (malformed skipped)", len(sess.Events))
+	}
+	if sess.Events[0].ID != "e1" || sess.Events[1].ID != "e3" {
+		t.Errorf("got IDs %q,%q, want e1,e3", sess.Events[0].ID, sess.Events[1].ID)
+	}
+}
+
 func TestLoadReconstructsSession(t *testing.T) {
 	root := t.TempDir()
 	s := jsonl.New(root)
