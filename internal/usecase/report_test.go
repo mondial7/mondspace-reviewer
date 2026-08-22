@@ -33,6 +33,23 @@ func groupFor(r domain.Report, kind domain.NoteKind) (domain.NoteGroup, bool) {
 	return domain.NoteGroup{}, false
 }
 
+func TestBuildReportCollectsDebt(t *testing.T) {
+	sess := reportSession()
+	sess.Notes = append(sess.Notes,
+		domain.Note{ID: "n4", UnitID: "s-u003", Kind: domain.NoteDebt, Text: "add a test for the retry"},
+		domain.Note{ID: "n5", UnitID: "s-u001", Kind: domain.NoteDebt, Text: "document the interface"},
+	)
+
+	r := usecase.BuildReport(sess)
+
+	if len(r.Debt) != 2 {
+		t.Fatalf("Debt = %d items, want 2", len(r.Debt))
+	}
+	if r.Debt[0].NoteText != "add a test for the retry" || r.Debt[1].NoteText != "document the interface" {
+		t.Errorf("Debt items = %+v, want both debt notes in order", r.Debt)
+	}
+}
+
 func TestBuildReportGroupsByNoteKind(t *testing.T) {
 	r := usecase.BuildReport(reportSession())
 

@@ -30,6 +30,12 @@ func BuildReport(sess domain.Session) domain.Report {
 		}
 	}
 
+	for _, n := range notes {
+		if n.Kind == domain.NoteDebt {
+			r.Debt = append(r.Debt, itemFor(n, headlines[n.UnitID]))
+		}
+	}
+
 	return r
 }
 
