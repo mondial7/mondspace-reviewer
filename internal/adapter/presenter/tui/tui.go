@@ -92,6 +92,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case "/":
 		m.filtering = true
 		m.query = ""
+	case "q":
+		return m, tea.Quit
 	}
 	return m, nil
 }

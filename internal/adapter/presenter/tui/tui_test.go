@@ -147,6 +147,25 @@ func TestSlashFiltersByFileFlagAndKind(t *testing.T) {
 	}
 }
 
+func TestQuitSignalsQuit(t *testing.T) {
+	m := tui.New(threeUnits(), nil, nil)
+
+	_, cmd := m.Update(key('q'))
+	if cmd == nil {
+		t.Fatal("q should return a command")
+	}
+	if _, ok := cmd().(tea.QuitMsg); !ok {
+		t.Errorf("q command should be tea.Quit, got %T", cmd())
+	}
+
+	// While filtering, q types into the query rather than quitting.
+	fm := send(tui.New(threeUnits(), nil, nil), '/')
+	_, cmd = fm.Update(key('q'))
+	if cmd != nil {
+		t.Error("q while filtering should not quit")
+	}
+}
+
 func TestModelStartsAtFirstUnit(t *testing.T) {
 	m := tui.New(threeUnits(), nil, nil)
 	if m.Cursor() != 0 {
