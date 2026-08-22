@@ -26,6 +26,28 @@ func TestClusterEmptyLog(t *testing.T) {
 	}
 }
 
+func TestTimestampGapSealsUnit(t *testing.T) {
+	base := time.Date(2026, 8, 22, 10, 0, 0, 0, time.UTC)
+	events := []domain.Event{
+		evAt("e1", domain.KindEdit, base, "a.go"),
+		evAt("e2", domain.KindEdit, base.Add(2*time.Second), "b.go"),
+		// 5s gap after e2 seals the first unit before e3.
+		evAt("e3", domain.KindEdit, base.Add(7*time.Second), "c.go"),
+	}
+
+	units := usecase.Cluster("sess-basic", events)
+
+	if len(units) != 2 {
+		t.Fatalf("got %d units, want 2", len(units))
+	}
+	if got := units[0].EventIDs; len(got) != 2 || got[0] != "e1" || got[1] != "e2" {
+		t.Errorf("unit 0 EventIDs = %v, want [e1 e2]", got)
+	}
+	if got := units[1].EventIDs; len(got) != 1 || got[0] != "e3" {
+		t.Errorf("unit 1 EventIDs = %v, want [e3]", got)
+	}
+}
+
 func TestBatchEndWithNoActionsEmitsNothing(t *testing.T) {
 	events := []domain.Event{
 		ev("e1", domain.KindBatchEnd),

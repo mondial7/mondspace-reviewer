@@ -2,9 +2,14 @@ package usecase
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/marcomondini/mondspace-reviewer/internal/domain"
 )
+
+// inactivityGap seals an open unit when the agent pauses this long between
+// consecutive events.
+const inactivityGap = 5 * time.Second
 
 // Cluster groups a session's events into reviewable units. It is a pure
 // function over the event log.
@@ -27,6 +32,9 @@ func Cluster(sessionID string, events []domain.Event) []domain.Unit {
 		if e.Kind == domain.KindBatchEnd {
 			seal()
 			continue
+		}
+		if len(open) > 0 && e.TS.Sub(open[len(open)-1].TS) >= inactivityGap {
+			seal()
 		}
 		open = append(open, e)
 	}
