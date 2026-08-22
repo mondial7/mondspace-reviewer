@@ -347,6 +347,19 @@ func TestAskEscCancelsWithoutSubmitting(t *testing.T) {
 	}
 }
 
+func TestViewRendersAskPromptAndAnswer(t *testing.T) {
+	m := send(tui.New(threeUnits(), nil, nil), 'a', 'w', 'h', 'y')
+	if !strings.Contains(m.View(), "why") {
+		t.Errorf("view should show the in-progress question:\n%s", m.View())
+	}
+
+	next, _ := m.Update(tui.AnswerReadyMsg{Text: "s-u001 adds a Validator interface"})
+	m = next.(tui.Model)
+	if !strings.Contains(m.View(), "s-u001 adds a Validator interface") {
+		t.Errorf("view should show the answer:\n%s", m.View())
+	}
+}
+
 func TestAskModeEntryAndTyping(t *testing.T) {
 	m := send(tui.New(threeUnits(), nil, nil), 'a')
 	if !m.Asking() {

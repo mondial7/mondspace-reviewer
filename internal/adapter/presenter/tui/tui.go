@@ -269,6 +269,12 @@ func (m Model) View() string {
 	if m.filtering {
 		b.WriteString("/" + m.query + "\n")
 	}
+	if m.asking {
+		b.WriteString("ask[" + string(m.askScope) + "]> " + m.question + "\n")
+	}
+	if m.answer != "" {
+		b.WriteString("A: " + m.answer + "\n")
+	}
 	for pos, i := range m.visible() {
 		u := m.units[i]
 		marker := "  "
