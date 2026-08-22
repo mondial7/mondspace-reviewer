@@ -28,6 +28,22 @@ func TestExportMarkdownOpenAgenda(t *testing.T) {
 	}
 }
 
+func TestExportMarkdownPreservesWhySource(t *testing.T) {
+	md := usecase.ExportMarkdown(usecase.BuildReport(reportSession()))
+
+	// s-u001 stated its intent; s-u002 did not.
+	if !strings.Contains(md, "stated: swap lib") {
+		t.Errorf("stated rationale not preserved:\n%s", md)
+	}
+	// The inferred unit must never be shown as stated.
+	lines := strings.Split(md, "\n")
+	for _, l := range lines {
+		if strings.Contains(l, "s-u002") && strings.Contains(l, "stated:") {
+			t.Errorf("inferred unit shown as stated: %q", l)
+		}
+	}
+}
+
 func TestExportMarkdownDebtTaskList(t *testing.T) {
 	sess := reportSession()
 	sess.Notes = append(sess.Notes,
