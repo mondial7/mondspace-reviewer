@@ -9,6 +9,30 @@ import (
 	"github.com/marcomondini/mondspace-reviewer/internal/usecase"
 )
 
+func TestBuildEventFromPostToolUseFailure(t *testing.T) {
+	payload := []byte(`{
+		"session_id": "abc-123",
+		"hook_event_name": "PostToolUseFailure",
+		"tool_name": "Edit",
+		"tool_input": {"file_path": "auth/token.go"}
+	}`)
+
+	got, err := usecase.BuildEvent(domain.KindEdit, payload, "id1", time.Unix(0, 0).UTC())
+	if err != nil {
+		t.Fatalf("BuildEvent: %v", err)
+	}
+
+	if got.Kind != domain.KindEdit {
+		t.Errorf("Kind = %q, want edit", got.Kind)
+	}
+	if !got.Failed {
+		t.Error("Failed = false, want true for a PostToolUseFailure payload")
+	}
+	if len(got.Files) != 1 || got.Files[0] != "auth/token.go" {
+		t.Errorf("Files = %v, want [auth/token.go]", got.Files)
+	}
+}
+
 func TestBuildEventFromPostToolBatch(t *testing.T) {
 	payload := []byte(`{"session_id": "abc-123", "hook_event_name": "PostToolBatch"}`)
 

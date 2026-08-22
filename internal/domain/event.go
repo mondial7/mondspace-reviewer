@@ -24,5 +24,6 @@ type Event struct {
 	Tool         string          `json:"tool"`
 	Files        []string        `json:"files"`
 	StatedIntent string          `json:"stated_intent"`
+	Failed       bool            `json:"failed,omitempty"`
 	Raw          json.RawMessage `json:"raw"`
 }

@@ -44,5 +44,8 @@ func BuildEvent(kind domain.Kind, payload []byte, id string, ts time.Time) (doma
 	if kind == domain.KindPrompt {
 		e.StatedIntent = p.Prompt
 	}
+	if p.HookName == "PostToolUseFailure" {
+		e.Failed = true
+	}
 	return e, nil
 }
