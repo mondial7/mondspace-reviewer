@@ -17,6 +17,7 @@ import (
 type Summarizer struct {
 	baseURL string
 	model   string
+	apiKey  string
 	client  *http.Client
 }
 
@@ -26,6 +27,13 @@ func New(baseURL, model string) *Summarizer {
 		model:   model,
 		client:  http.DefaultClient,
 	}
+}
+
+// WithAPIKey sets a bearer token for endpoints that require authentication
+// (e.g. an LM Studio server with auth enabled). An empty key sends no header.
+func (s *Summarizer) WithAPIKey(key string) *Summarizer {
+	s.apiKey = key
+	return s
 }
 
 type chatRequest struct {
@@ -87,6 +95,9 @@ func (s *Summarizer) chat(ctx context.Context, system, user string) (string, err
 		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if s.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+s.apiKey)
+	}
 
 	resp, err := s.client.Do(req)
 	if err != nil {

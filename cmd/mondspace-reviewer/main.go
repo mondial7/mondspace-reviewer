@@ -219,14 +219,23 @@ func buildTUIModel(store port.Store, sessionID string) (tui.Model, error) {
 }
 
 // chooseSummarizer probes the configured endpoint; if it is unreachable the
-// reviewer degrades to the null (mechanical-only) summarizer.
+// reviewer degrades to the null (mechanical-only) summarizer. An API key from
+// MSR_API_KEY (bearer token) is used for authenticated endpoints.
 func chooseSummarizer(baseURL, model string) port.Summarizer {
+	apiKey := os.Getenv("MSR_API_KEY")
 	client := &http.Client{Timeout: 1500 * time.Millisecond}
-	resp, err := client.Get(strings.TrimRight(baseURL, "/") + "/models")
+	req, err := http.NewRequest(http.MethodGet, strings.TrimRight(baseURL, "/")+"/models", nil)
+	if err != nil {
+		return null.New()
+	}
+	if apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
+	resp, err := client.Do(req)
 	if err == nil {
 		resp.Body.Close()
 		if resp.StatusCode < 500 {
-			return openai.New(baseURL, model)
+			return openai.New(baseURL, model).WithAPIKey(apiKey)
 		}
 	}
 	return null.New()

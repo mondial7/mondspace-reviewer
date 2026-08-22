@@ -88,6 +88,32 @@ func TestAnswerPostsQuestionWithContextAndParsesReply(t *testing.T) {
 	}
 }
 
+func TestSendsBearerTokenWhenKeySet(t *testing.T) {
+	var gotAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		io.WriteString(w, chatResponse("WHAT: x\nWHY: unknown"))
+	}))
+	defer srv.Close()
+
+	// With a key set, every request carries the bearer token.
+	if _, err := openai.New(srv.URL, "m").WithAPIKey("sk-secret").Headline(context.Background(), domain.Unit{}, domain.Diff{}); err != nil {
+		t.Fatal(err)
+	}
+	if gotAuth != "Bearer sk-secret" {
+		t.Errorf("Authorization = %q, want %q", gotAuth, "Bearer sk-secret")
+	}
+
+	// Without a key, no Authorization header is sent (tokenless endpoints).
+	gotAuth = "unset"
+	if _, err := openai.New(srv.URL, "m").Headline(context.Background(), domain.Unit{}, domain.Diff{}); err != nil {
+		t.Fatal(err)
+	}
+	if gotAuth != "" {
+		t.Errorf("Authorization = %q, want empty when no key set", gotAuth)
+	}
+}
+
 func TestHeadlineErrorsOnNon2xxAndUnreachable(t *testing.T) {
 	u := domain.Unit{ID: "u1"}
 

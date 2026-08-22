@@ -182,8 +182,15 @@ Headlines and interrogation use any OpenAI-compatible chat endpoint:
 
 ```sh
 msr review --tui --session=<id> \
-  --summarizer-url=http://192.168.101.99:1234/v1 \
+  --summarizer-url=http://localhost:1234/v1 \
   --model=qwen/qwen3.5-9b
+```
+
+For an endpoint that requires authentication (e.g. an LM Studio server with a
+token), set a bearer token via the environment — it is never written to disk:
+
+```sh
+export MSR_API_KEY=sk-…
 ```
 
 If the endpoint is unreachable, `msr` silently falls back to mechanical headlines
@@ -202,7 +209,8 @@ go vet ./...
 One contract test talks to a real LM Studio server and is gated behind a tag:
 
 ```sh
-MSR_SUMMARIZER_URL=http://192.168.101.99:1234/v1 MSR_MODEL=qwen/qwen3.5-9b \
+MSR_SUMMARIZER_URL=http://localhost:1234/v1 MSR_MODEL=qwen/qwen3.5-9b \
+  MSR_API_KEY=sk-… \
   go test -tags=integration ./internal/adapter/summarizer/openai/...
 ```
 
