@@ -139,13 +139,39 @@ func chooseSummarizer(baseURL, model string) port.Summarizer {
 }
 
 func runTUIReview(store port.Store, snap port.Snapshotter, sum port.Summarizer, sessionID string, stdout io.Writer) error {
-	model, err := buildTUIModel(store, sessionID)
+	sess, err := store.Load(sessionID)
 	if err != nil {
 		return err
 	}
-	model = model.WithSummarize(summarizeFunc(snap, sum))
+	notes := usecase.MarkSuperseded(sess.Units, sess.Notes)
+	model := tui.New(sess.Units, notes, store).
+		WithSummarize(summarizeFunc(snap, sum)).
+		WithAsk(askFunc(sess, snap, sum))
 	_, err = tea.NewProgram(model, tea.WithInput(os.Stdin), tea.WithOutput(stdout)).Run()
 	return err
+}
+
+// askFunc builds the interrogation closure: assemble the bounded context (unit
+// scope fetches the diff), ask the summarizer, and hand the answer back. Any
+// error becomes a readable notice rather than a crash.
+func askFunc(sess domain.Session, snap port.Snapshotter, sum port.Summarizer) func(domain.AskScope, domain.Unit, string) tea.Msg {
+	return func(scope domain.AskScope, unit domain.Unit, question string) tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		var diff domain.Diff
+		if scope == domain.AskUnit {
+			if d, err := snap.Diff(ctx, unit.From, unit.To, unit.Files); err == nil {
+				diff = d
+			}
+		}
+		askCtx := usecase.BuildAskContext(scope, sess, unit, diff)
+		answer, err := sum.Answer(ctx, question, askCtx)
+		if err != nil {
+			answer = "(" + err.Error() + ")"
+		}
+		return tui.AnswerReadyMsg{Text: answer}
+	}
 }
 
 // summarizeFunc builds the async fill-in closure: fetch a unit's diff, ask the

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -12,9 +13,51 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/marcomondini/mondspace-reviewer/internal/adapter/presenter/tui"
 	"github.com/marcomondini/mondspace-reviewer/internal/adapter/store/jsonl"
 	"github.com/marcomondini/mondspace-reviewer/internal/domain"
 )
+
+// fakeSnap returns a fixed diff.
+type fakeSnap struct{ diff domain.Diff }
+
+func (f fakeSnap) Snapshot(context.Context, string) (domain.SnapshotRef, error) {
+	return domain.SnapshotRef{}, nil
+}
+func (f fakeSnap) Diff(context.Context, domain.SnapshotRef, domain.SnapshotRef, []string) (domain.Diff, error) {
+	return f.diff, nil
+}
+
+// fakeSum returns a canned answer or error.
+type fakeSum struct {
+	answer string
+	err    error
+}
+
+func (f fakeSum) Headline(context.Context, domain.Unit, domain.Diff) (domain.Headline, error) {
+	return domain.Headline{}, nil
+}
+func (f fakeSum) Answer(context.Context, string, domain.AskContext) (string, error) {
+	return f.answer, f.err
+}
+
+func TestAskFuncBuildsContextAndAnswers(t *testing.T) {
+	sess := domain.Session{ID: "s", Prompt: "add x", Units: []domain.Unit{{ID: "s-u001", Files: []string{"a.go"}}}}
+
+	fn := askFunc(sess, fakeSnap{diff: domain.Diff{Text: "+x\n"}}, fakeSum{answer: "s-u001 does the thing"})
+	msg := fn(domain.AskUnit, sess.Units[0], "what?")
+	if ans, ok := msg.(tui.AnswerReadyMsg); !ok || ans.Text != "s-u001 does the thing" {
+		t.Errorf("answer = %+v, want the summarizer's reply", msg)
+	}
+
+	// Offline / error degrades to a readable notice, never a crash.
+	off := askFunc(sess, fakeSnap{}, fakeSum{err: errors.New("summarizer offline")})
+	msg = off(domain.AskSession, domain.Unit{}, "anything?")
+	ans := msg.(tui.AnswerReadyMsg)
+	if !strings.Contains(ans.Text, "offline") {
+		t.Errorf("error answer = %q, want it to surface the offline error", ans.Text)
+	}
+}
 
 func TestChooseSummarizerProbesAndFallsBack(t *testing.T) {
 	u := domain.Unit{ID: "u1", Headline: domain.Headline{Text: "mechanical", WhySrc: domain.WhyInferred}}
