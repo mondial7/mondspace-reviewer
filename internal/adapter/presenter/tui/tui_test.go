@@ -321,6 +321,32 @@ func TestAskSubmitFiresCommandYieldingAnswer(t *testing.T) {
 	}
 }
 
+func TestAskEscCancelsWithoutSubmitting(t *testing.T) {
+	submitted := false
+	askFn := func(domain.AskScope, domain.Unit, string) tea.Msg {
+		submitted = true
+		return tui.AnswerReadyMsg{Text: "x"}
+	}
+	m := tui.New(threeUnits(), nil, nil).WithAsk(askFn)
+
+	m = send(m, 'a', 'h', 'i')
+	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = next.(tui.Model)
+
+	if m.Asking() {
+		t.Error("esc should close the ask prompt")
+	}
+	if m.Question() != "" {
+		t.Errorf("esc should clear the question, got %q", m.Question())
+	}
+	if cmd != nil {
+		cmd()
+	}
+	if submitted {
+		t.Error("esc must not submit the question")
+	}
+}
+
 func TestAskModeEntryAndTyping(t *testing.T) {
 	m := send(tui.New(threeUnits(), nil, nil), 'a')
 	if !m.Asking() {
