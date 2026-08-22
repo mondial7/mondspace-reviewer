@@ -42,6 +42,16 @@ func BuildReport(sess domain.Session) domain.Report {
 		}
 	}
 
+	annotated := map[string]bool{}
+	for _, n := range notes {
+		annotated[n.UnitID] = true
+	}
+	for _, u := range sess.Units {
+		if !annotated[u.ID] {
+			r.Unreviewed = append(r.Unreviewed, domain.ReportItem{UnitID: u.ID, Headline: u.Headline})
+		}
+	}
+
 	return r
 }
 

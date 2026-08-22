@@ -57,6 +57,22 @@ func TestBuildReportOpenAgenda(t *testing.T) {
 	}
 }
 
+func TestBuildReportUnreviewedAndEmpty(t *testing.T) {
+	sess := reportSession()
+	sess.Units = append(sess.Units, domain.Unit{ID: "s-u009", Headline: domain.Headline{Text: "untouched by review"}})
+
+	r := usecase.BuildReport(sess)
+	if len(r.Unreviewed) != 1 || r.Unreviewed[0].UnitID != "s-u009" {
+		t.Errorf("Unreviewed = %+v, want the un-annotated s-u009", r.Unreviewed)
+	}
+
+	empty := usecase.BuildReport(domain.Session{ID: "s"})
+	if len(empty.Groups) != 0 || len(empty.Debt) != 0 || len(empty.Agenda) != 0 ||
+		len(empty.Superseded) != 0 || len(empty.Unreviewed) != 0 {
+		t.Errorf("empty session should yield empty sections, got %+v", empty)
+	}
+}
+
 func TestBuildReportSupersededSection(t *testing.T) {
 	sess := reportSession()
 	// A later unit rewrites auth/token.go, superseding the objection on s-u001.
