@@ -227,6 +227,23 @@ func TestHeadlineReadyReplacesUnitHeadline(t *testing.T) {
 	}
 }
 
+func TestFilledInInferredHeadlineRendersDistinctly(t *testing.T) {
+	units := []domain.Unit{{ID: "s-u001", Headline: domain.Headline{Text: "mechanical"}}}
+	m := enter(tui.New(units, nil, nil))
+
+	inferred := domain.Headline{Text: "added a cache layer", Why: "cut repeated DB reads", WhySrc: domain.WhyInferred}
+	next, _ := m.Update(tui.HeadlineReadyMsg{UnitID: "s-u001", Headline: inferred})
+	m = next.(tui.Model)
+
+	view := m.View()
+	if !strings.Contains(view, "inferred: cut repeated DB reads") {
+		t.Errorf("inferred rationale must stay labelled after fill-in:\n%s", view)
+	}
+	if strings.Contains(view, "stated:") {
+		t.Errorf("a model rationale must never be shown as stated:\n%s", view)
+	}
+}
+
 func TestHeadlineReadyForUnknownUnitIgnored(t *testing.T) {
 	units := []domain.Unit{
 		{ID: "s-u001", Headline: domain.Headline{Text: "original"}},
