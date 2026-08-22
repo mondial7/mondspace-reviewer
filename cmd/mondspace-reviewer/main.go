@@ -323,8 +323,20 @@ func newULID() string {
 func runInstallHooks(args []string) error {
 	fs := flag.NewFlagSet("install-hooks", flag.ContinueOnError)
 	dir := fs.String("dir", ".", "project directory containing .claude/")
+	command := fs.String("command", "", "command each hook runs (default: absolute path to this binary)")
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
+	}
+
+	// Hooks run under /bin/sh, which has no shell aliases and a bare PATH, so
+	// default to this binary's absolute path rather than a bare name.
+	hookCommand := *command
+	if hookCommand == "" {
+		exe, err := os.Executable()
+		if err != nil {
+			return fmt.Errorf("resolving binary path for hooks: %w", err)
+		}
+		hookCommand = exe
 	}
 
 	claudeDir := filepath.Join(*dir, ".claude")
@@ -337,7 +349,7 @@ func runInstallHooks(args []string) error {
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	merged, err := usecase.InstallHooks(existing)
+	merged, err := usecase.InstallHooks(existing, hookCommand)
 	if err != nil {
 		return err
 	}

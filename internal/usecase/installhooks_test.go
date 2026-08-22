@@ -15,7 +15,7 @@ func TestInstallHooksMergesWithoutClobbering(t *testing.T) {
 		"hooks": {"PreToolUse": [{"hooks": [{"type": "command", "command": "echo hi"}]}]}
 	}`)
 
-	merged, err := usecase.InstallHooks(existing)
+	merged, err := usecase.InstallHooks(existing, "msr")
 	if err != nil {
 		t.Fatalf("InstallHooks: %v", err)
 	}
@@ -40,7 +40,10 @@ func TestInstallHooksMergesWithoutClobbering(t *testing.T) {
 }
 
 func TestInstallHooksWritesAllFourHooks(t *testing.T) {
-	merged, err := usecase.InstallHooks(nil)
+	// Hooks run under /bin/sh, which has no aliases and a bare PATH — so the
+	// command must be resolvable there, e.g. an absolute path to the binary.
+	command := "/Users/me/go/bin/mondspace-reviewer"
+	merged, err := usecase.InstallHooks(nil, command)
 	if err != nil {
 		t.Fatalf("InstallHooks: %v", err)
 	}
@@ -64,10 +67,10 @@ func TestInstallHooksWritesAllFourHooks(t *testing.T) {
 	if !strings.Contains(string(merged), "Write|Edit|MultiEdit") {
 		t.Errorf("PostToolUse missing tool matcher:\n%s", merged)
 	}
-	// Every hook shells to msr ingest.
+	// Every hook invokes the given command, not a bare (alias-only) name.
 	for _, kind := range []string{"--kind=prompt", "--kind=edit", "--kind=batch_end"} {
-		if !strings.Contains(string(merged), "msr ingest "+kind) {
-			t.Errorf("missing command 'msr ingest %s':\n%s", kind, merged)
+		if !strings.Contains(string(merged), command+" ingest "+kind) {
+			t.Errorf("missing command %q:\n%s", command+" ingest "+kind, merged)
 		}
 	}
 }

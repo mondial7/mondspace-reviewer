@@ -93,9 +93,12 @@ msr review --source=replay --file=testdata/sessions/basic.jsonl --plain
    msr install-hooks --dir=.
    ```
 
-   Each hook shells to `msr ingest`, which does an atomic append of one JSON line
-   and exits 0 immediately — **the agent runs fine whether or not the reviewer is
-   attached**, and attaching later replays the whole log.
+   Hooks run under `/bin/sh` (no shell aliases, bare PATH), so `install-hooks`
+   embeds the **absolute path** to the binary — no PATH or alias setup needed.
+   Each hook does an atomic append of one JSON line and exits 0 immediately —
+   **the agent runs fine whether or not the reviewer is attached**, and attaching
+   later replays the whole log. Override the invoked command with
+   `--command` if you keep the binary elsewhere.
 
 2. Review the session in the interactive queue:
 
