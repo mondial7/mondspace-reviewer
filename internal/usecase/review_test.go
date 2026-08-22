@@ -43,6 +43,34 @@ type fakePresenter struct{ units []domain.Unit }
 
 func (p *fakePresenter) Present(u domain.Unit) error { p.units = append(p.units, u); return nil }
 
+func TestReviewPresentsUnitsInSealOrderWithHeadlines(t *testing.T) {
+	events := []domain.Event{
+		{ID: "e1", SessionID: "s", Kind: domain.KindEdit, Files: []string{"a.go"}, StatedIntent: "first intent"},
+		{ID: "e2", SessionID: "s", Kind: domain.KindBatchEnd},
+		{ID: "e3", SessionID: "s", Kind: domain.KindEdit, Files: []string{"b.go"}},
+		{ID: "e4", SessionID: "s", Kind: domain.KindEdit, Files: []string{"c.go"}},
+		{ID: "e5", SessionID: "s", Kind: domain.KindBatchEnd},
+	}
+	pres := &fakePresenter{}
+
+	if err := usecase.Review(context.Background(), &fakeSource{events: events}, &fakeStore{}, pres); err != nil {
+		t.Fatalf("Review: %v", err)
+	}
+
+	if len(pres.units) != 2 {
+		t.Fatalf("presenter got %d units, want 2", len(pres.units))
+	}
+	if pres.units[0].ID != "s-u001" || pres.units[1].ID != "s-u002" {
+		t.Errorf("units out of seal order: %q, %q", pres.units[0].ID, pres.units[1].ID)
+	}
+	if got := pres.units[0].Headline; got.Why != "first intent" || got.WhySrc != domain.WhyStated {
+		t.Errorf("unit 0 headline = %+v, want stated 'first intent'", got)
+	}
+	if got := pres.units[1].Headline.Text; got != "2 edits across 2 files" {
+		t.Errorf("unit 1 headline text = %q, want %q", got, "2 edits across 2 files")
+	}
+}
+
 func TestReviewStoresEveryEventAndUnit(t *testing.T) {
 	events := []domain.Event{
 		ev("e1", domain.KindEdit, "a.go"),
