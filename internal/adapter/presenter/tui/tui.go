@@ -29,6 +29,9 @@ type Model struct {
 
 	newID func() string
 	now   func() time.Time
+
+	// summarize, when set, turns a unit into a HeadlineReadyMsg asynchronously.
+	summarize func(domain.Unit) tea.Msg
 }
 
 func New(units []domain.Unit, notes []domain.Note, store port.Store) Model {
@@ -49,10 +52,27 @@ func (m Model) WithClock(newID func() string, now func() time.Time) Model {
 	return m
 }
 
+// WithSummarize wires an async headline generator; each unit is summarized on
+// Init, filling in over the mechanical headlines as results arrive.
+func (m Model) WithSummarize(fn func(domain.Unit) tea.Msg) Model {
+	m.summarize = fn
+	return m
+}
+
 // Read reports whether a unit has been reviewed and accepted (an ok note).
 func (m Model) Read(unitID string) bool { return m.read[unitID] }
 
-func (m Model) Init() tea.Cmd { return nil }
+func (m Model) Init() tea.Cmd {
+	if m.summarize == nil {
+		return nil
+	}
+	cmds := make([]tea.Cmd, 0, len(m.units))
+	for _, u := range m.units {
+		u := u
+		cmds = append(cmds, func() tea.Msg { return m.summarize(u) })
+	}
+	return tea.Batch(cmds...)
+}
 
 // HeadlineReadyMsg carries a model-generated headline back into the queue once
 // the summarizer returns. The queue never blocks waiting for it.

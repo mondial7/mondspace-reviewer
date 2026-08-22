@@ -245,6 +245,40 @@ func TestHeadlineReadyForUnknownUnitIgnored(t *testing.T) {
 	}
 }
 
+func TestInitFiresSummarizeCommandsPerUnit(t *testing.T) {
+	fn := func(u domain.Unit) tea.Msg {
+		return tui.HeadlineReadyMsg{UnitID: u.ID, Headline: domain.Headline{Text: "model " + u.ID}}
+	}
+	m := tui.New(threeUnits(), nil, nil).WithSummarize(fn)
+
+	cmd := m.Init()
+	if cmd == nil {
+		t.Fatal("Init should fire summarize commands when a summarizer is wired")
+	}
+
+	// The batch fans out one command per unit.
+	batch, ok := cmd().(tea.BatchMsg)
+	if !ok {
+		t.Fatalf("Init cmd = %T, want tea.BatchMsg", cmd())
+	}
+	got := map[string]bool{}
+	for _, c := range batch {
+		if ready, ok := c().(tui.HeadlineReadyMsg); ok {
+			got[ready.UnitID] = true
+		}
+	}
+	for _, id := range []string{"s-u001", "s-u002", "s-u003"} {
+		if !got[id] {
+			t.Errorf("no summarize command fired for %s", id)
+		}
+	}
+
+	// With no summarizer wired, Init does nothing (offline / null).
+	if tui.New(threeUnits(), nil, nil).Init() != nil {
+		t.Error("Init should be nil when no summarizer is wired")
+	}
+}
+
 func TestModelStartsAtFirstUnit(t *testing.T) {
 	m := tui.New(threeUnits(), nil, nil)
 	if m.Cursor() != 0 {
