@@ -52,47 +52,77 @@ WHAT: <one concise line describing what changed>
 WHY: <one concise line inferring why, or "unknown">`
 
 func (s *Summarizer) Headline(ctx context.Context, u domain.Unit, d domain.Diff) (domain.Headline, error) {
+	content, err := s.chat(ctx, systemPrompt, userPrompt(u, d))
+	if err != nil {
+		return domain.Headline{}, err
+	}
+	return parseHeadline(content), nil
+}
+
+const answerSystemPrompt = `You answer a reviewer's question about an agent's code changes.
+Use ONLY the provided context: the task prompt, unit headlines, diffs, and notes.
+Cite unit IDs (like s-u001) in your answer. Do NOT invent a stated intent — if the
+context does not contain the agent's own words, say the log does not record it.`
+
+func (s *Summarizer) Answer(ctx context.Context, question string, c domain.AskContext) (string, error) {
+	return s.chat(ctx, answerSystemPrompt, askPrompt(question, c))
+}
+
+// chat runs one chat completion and returns the assistant's message content.
+func (s *Summarizer) chat(ctx context.Context, system, user string) (string, error) {
 	reqBody, err := json.Marshal(chatRequest{
 		Model:       s.model,
 		Temperature: 0,
 		Messages: []chatMessage{
-			{Role: "system", Content: systemPrompt},
-			{Role: "user", Content: userPrompt(u, d)},
+			{Role: "system", Content: system},
+			{Role: "user", Content: user},
 		},
 	})
 	if err != nil {
-		return domain.Headline{}, err
+		return "", err
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.baseURL+"/chat/completions", bytes.NewReader(reqBody))
 	if err != nil {
-		return domain.Headline{}, err
+		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return domain.Headline{}, err
+		return "", err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode/100 != 2 {
-		return domain.Headline{}, fmt.Errorf("summarizer returned status %d", resp.StatusCode)
+		return "", fmt.Errorf("summarizer returned status %d", resp.StatusCode)
 	}
 
 	var reply chatReply
 	if err := json.NewDecoder(resp.Body).Decode(&reply); err != nil {
-		return domain.Headline{}, err
+		return "", err
 	}
 	if len(reply.Choices) == 0 {
-		return domain.Headline{}, fmt.Errorf("summarizer returned no choices")
+		return "", fmt.Errorf("summarizer returned no choices")
 	}
-
-	return parseHeadline(reply.Choices[0].Message.Content), nil
+	return reply.Choices[0].Message.Content, nil
 }
 
-// Answer is implemented in the next behaviour.
-func (s *Summarizer) Answer(ctx context.Context, question string, c domain.AskContext) (string, error) {
-	return "", fmt.Errorf("not implemented")
+// askPrompt renders the bounded context and the question into a user message.
+func askPrompt(question string, c domain.AskContext) string {
+	var b strings.Builder
+	b.WriteString("Scope: " + string(c.Scope) + "\n")
+	b.WriteString("Task prompt: " + c.Prompt + "\n")
+	for _, u := range c.Units {
+		b.WriteString("Unit " + u.ID + " [" + strings.Join(u.Files, ", ") + "]: " + u.Headline.Text + "\n")
+	}
+	if c.Diff.Text != "" {
+		b.WriteString("Diff:\n" + c.Diff.Text + "\n")
+	}
+	for _, n := range c.Notes {
+		b.WriteString("Note on " + n.UnitID + " (" + string(n.Kind) + "): " + n.Text + "\n")
+	}
+	b.WriteString("\nQuestion: " + question)
+	return b.String()
 }
 
 func userPrompt(u domain.Unit, d domain.Diff) string {

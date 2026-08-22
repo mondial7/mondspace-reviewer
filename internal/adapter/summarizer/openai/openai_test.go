@@ -39,6 +39,42 @@ func TestHeadlineHonoursContextCancel(t *testing.T) {
 	}
 }
 
+func TestAnswerPostsQuestionWithContextAndParsesReply(t *testing.T) {
+	var gotPath, gotBody string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		body, _ := io.ReadAll(r.Body)
+		gotBody = string(body)
+		io.WriteString(w, chatResponse("The change in s-u001 adds a Validator interface."))
+	}))
+	defer srv.Close()
+
+	ctx := domain.AskContext{
+		Scope:  domain.AskUnit,
+		Prompt: "add token validation",
+		Units:  []domain.Unit{{ID: "s-u001", Files: []string{"auth/token.go"}}},
+		Diff:   domain.Diff{Text: "+type Validator interface{}\n"},
+	}
+
+	got, err := openai.New(srv.URL, "m").Answer(context.Background(), "what does u001 do?", ctx)
+	if err != nil {
+		t.Fatalf("Answer: %v", err)
+	}
+
+	if gotPath != "/chat/completions" {
+		t.Errorf("path = %q, want /chat/completions", gotPath)
+	}
+	if !strings.Contains(gotBody, "what does u001 do?") {
+		t.Errorf("body missing the question: %s", gotBody)
+	}
+	if !strings.Contains(gotBody, "s-u001") || !strings.Contains(gotBody, "add token validation") {
+		t.Errorf("body missing bounded context (unit id / prompt): %s", gotBody)
+	}
+	if got != "The change in s-u001 adds a Validator interface." {
+		t.Errorf("answer = %q, want the parsed reply", got)
+	}
+}
+
 func TestHeadlineErrorsOnNon2xxAndUnreachable(t *testing.T) {
 	u := domain.Unit{ID: "u1"}
 
