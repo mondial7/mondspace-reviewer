@@ -24,6 +24,22 @@ func TestMechanicalHeadlineWhyIsFirstStatedIntent(t *testing.T) {
 	}
 }
 
+func TestMechanicalHeadlineWhyInferredWhenNoIntent(t *testing.T) {
+	events := []domain.Event{
+		{ID: "e1", Kind: domain.KindEdit, Files: []string{"a.go"}},
+		{ID: "e2", Kind: domain.KindEdit, Files: []string{"a.go"}},
+	}
+
+	got := usecase.MechanicalHeadline(events)
+
+	if got.Why != "" {
+		t.Errorf("Why = %q, want empty", got.Why)
+	}
+	if got.WhySrc != domain.WhyInferred {
+		t.Errorf("WhySrc = %q, want %q", got.WhySrc, domain.WhyInferred)
+	}
+}
+
 func TestMechanicalHeadlineText(t *testing.T) {
 	tests := []struct {
 		name   string
