@@ -18,7 +18,7 @@ func TestReviewCommandPrintsClusteredUnits(t *testing.T) {
 		"--out=" + t.TempDir(),
 	}
 
-	if err := run(args, &out); err != nil {
+	if err := run(args, nil, &out); err != nil {
 		t.Fatalf("run: %v", err)
 	}
 
