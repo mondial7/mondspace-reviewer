@@ -27,6 +27,7 @@ func ReviewLive(ctx context.Context, src port.EventSource, snap port.Snapshotter
 
 	c := NewClusterer("")
 	byID := map[string]domain.Event{}
+	seenFiles := map[string]bool{} // every file touched so far this session
 
 	finalize := func(u domain.Unit) error {
 		to, err := snap.Snapshot(ctx, u.ID)
@@ -41,6 +42,11 @@ func ReviewLive(ctx context.Context, src port.EventSource, snap port.Snapshotter
 			return err
 		}
 		u.Flags = Flags(u, diff)
+		// TDD writes the test first, in an earlier unit; don't flag the
+		// follow-up implementation as untested when its test already streamed by.
+		if hasFlagValue(u.Flags, domain.FlagNoTest) && sourceHasTests(u.Files, seenFiles) {
+			u.Flags = withoutFlag(u.Flags, domain.FlagNoTest)
+		}
 
 		members := make([]domain.Event, 0, len(u.EventIDs))
 		for _, id := range u.EventIDs {
@@ -56,6 +62,9 @@ func ReviewLive(ctx context.Context, src port.EventSource, snap port.Snapshotter
 
 	for e := range ch {
 		byID[e.ID] = e
+		for _, f := range e.Files {
+			seenFiles[f] = true
+		}
 		if c.sessionID == "" {
 			c.sessionID = e.SessionID
 		}

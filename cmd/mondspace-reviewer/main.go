@@ -219,6 +219,7 @@ func buildTUIModel(store port.Store, sessionID string) (tui.Model, error) {
 	if err != nil {
 		return tui.Model{}, err
 	}
+	sess.Units = usecase.SuppressCoveredNoTest(sess.Units)
 	notes := usecase.MarkSuperseded(sess.Units, sess.Notes)
 	return tui.New(sess.Units, notes, store), nil
 }
@@ -251,6 +252,7 @@ func runTUIReview(store port.Store, snap port.Snapshotter, sum port.Summarizer, 
 	if err != nil {
 		return err
 	}
+	sess.Units = usecase.SuppressCoveredNoTest(sess.Units)
 	notes := usecase.MarkSuperseded(sess.Units, sess.Notes)
 	model := tui.New(sess.Units, notes, store).
 		RelativeTo(repo).
