@@ -41,6 +41,36 @@ func newRepo(t *testing.T) string {
 	return dir
 }
 
+func TestDiffStableAfterWorkingFileDeleted(t *testing.T) {
+	dir := newRepo(t)
+	s := gitsnap.New(dir, "sess-1")
+
+	from, err := s.Snapshot(context.Background(), "before")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("v1\nchanged\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	to, err := s.Snapshot(context.Background(), "after")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The working-tree file vanishes before we ask for the diff.
+	if err := os.Remove(filepath.Join(dir, "a.txt")); err != nil {
+		t.Fatal(err)
+	}
+
+	diff, err := s.Diff(context.Background(), from, to, []string{"a.txt"})
+	if err != nil {
+		t.Fatalf("Diff must resolve from snapshots even after deletion: %v", err)
+	}
+	if !strings.Contains(diff.Text, "+changed") {
+		t.Errorf("diff lost the historical change:\n%s", diff.Text)
+	}
+}
+
 func TestDiffBetweenTwoSnapshots(t *testing.T) {
 	dir := newRepo(t)
 	s := gitsnap.New(dir, "sess-1")
