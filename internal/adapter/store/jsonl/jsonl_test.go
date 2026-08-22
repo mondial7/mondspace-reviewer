@@ -73,6 +73,26 @@ func TestLoadReconstructsSession(t *testing.T) {
 	}
 }
 
+func TestLoadReconstructsNotes(t *testing.T) {
+	root := t.TempDir()
+	s := jsonl.New(root)
+
+	if err := s.AppendNote(domain.Note{ID: "n1", SessionID: "s", UnitID: "s-u001", Kind: domain.NoteDebt, Text: "fix later"}); err != nil {
+		t.Fatal(err)
+	}
+
+	sess, err := jsonl.New(root).Load("s")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(sess.Notes) != 1 {
+		t.Fatalf("got %d notes, want 1", len(sess.Notes))
+	}
+	if sess.Notes[0].Kind != domain.NoteDebt || sess.Notes[0].UnitID != "s-u001" {
+		t.Errorf("note = %+v, want debt on s-u001", sess.Notes[0])
+	}
+}
+
 func TestAppendsAreAdditiveAcrossInstances(t *testing.T) {
 	root := t.TempDir()
 

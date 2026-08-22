@@ -57,6 +57,12 @@ func (s *Store) Load(sessionID string) (domain.Session, error) {
 	}
 	sess.Units = units
 
+	notes, err := readLines[domain.Note](filepath.Join(s.root, sessionID, "notes.jsonl"))
+	if err != nil {
+		return domain.Session{}, err
+	}
+	sess.Notes = notes
+
 	return sess, nil
 }
 
