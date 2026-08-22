@@ -1,6 +1,7 @@
 package usecase_test
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -23,6 +24,27 @@ func TestClusterEmptyLog(t *testing.T) {
 
 	if len(units) != 0 {
 		t.Errorf("Cluster(empty) = %d units, want 0", len(units))
+	}
+}
+
+func TestTwelveActionsSealUnit(t *testing.T) {
+	base := time.Date(2026, 8, 22, 10, 0, 0, 0, time.UTC)
+	var events []domain.Event
+	for i := 0; i < 14; i++ {
+		id := fmt.Sprintf("e%02d", i)
+		events = append(events, evAt(id, domain.KindEdit, base.Add(time.Duration(i)*time.Second), "a.go"))
+	}
+
+	units := usecase.Cluster("sess-basic", events)
+
+	if len(units) != 2 {
+		t.Fatalf("got %d units, want 2 (12-event cap)", len(units))
+	}
+	if got := len(units[0].EventIDs); got != 12 {
+		t.Errorf("unit 0 has %d events, want 12", got)
+	}
+	if got := len(units[1].EventIDs); got != 2 {
+		t.Errorf("unit 1 has %d events, want 2", got)
 	}
 }
 

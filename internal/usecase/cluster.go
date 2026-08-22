@@ -11,6 +11,9 @@ import (
 // consecutive events.
 const inactivityGap = 5 * time.Second
 
+// maxUnitEvents caps a unit's size so a long uninterrupted run still segments.
+const maxUnitEvents = 12
+
 // Cluster groups a session's events into reviewable units. It is a pure
 // function over the event log.
 //
@@ -37,6 +40,9 @@ func Cluster(sessionID string, events []domain.Event) []domain.Unit {
 			seal()
 		}
 		open = append(open, e)
+		if len(open) == maxUnitEvents {
+			seal()
+		}
 	}
 	seal()
 
