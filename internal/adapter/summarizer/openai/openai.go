@@ -90,6 +90,11 @@ func (s *Summarizer) Headline(ctx context.Context, u domain.Unit, d domain.Diff)
 	return parseHeadline(reply.Choices[0].Message.Content), nil
 }
 
+// Answer is implemented in the next behaviour.
+func (s *Summarizer) Answer(ctx context.Context, question string, c domain.AskContext) (string, error) {
+	return "", fmt.Errorf("not implemented")
+}
+
 func userPrompt(u domain.Unit, d domain.Diff) string {
 	var b strings.Builder
 	b.WriteString("Files: " + strings.Join(u.Files, ", ") + "\n")

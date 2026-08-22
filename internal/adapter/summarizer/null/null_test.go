@@ -21,3 +21,10 @@ func TestNullReturnsMechanicalHeadlineUnchanged(t *testing.T) {
 		t.Errorf("null Headline = %+v, want the mechanical headline %+v", got, mechanical)
 	}
 }
+
+func TestNullAnswerReturnsError(t *testing.T) {
+	_, err := null.New().Answer(context.Background(), "why?", domain.AskContext{})
+	if err == nil {
+		t.Error("null Answer should return an error so the caller shows an offline notice")
+	}
+}

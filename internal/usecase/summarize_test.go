@@ -11,12 +11,18 @@ import (
 
 // fakeSummarizer returns a canned headline, or an error.
 type fakeSummarizer struct {
-	head domain.Headline
-	err  error
+	head      domain.Headline
+	err       error
+	answer    string
+	answerErr error
 }
 
 func (s fakeSummarizer) Headline(context.Context, domain.Unit, domain.Diff) (domain.Headline, error) {
 	return s.head, s.err
+}
+
+func (s fakeSummarizer) Answer(context.Context, string, domain.AskContext) (string, error) {
+	return s.answer, s.answerErr
 }
 
 func TestSummarizeNeverLetsModelFabricateStated(t *testing.T) {
