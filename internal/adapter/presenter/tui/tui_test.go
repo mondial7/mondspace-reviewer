@@ -227,6 +227,24 @@ func TestHeadlineReadyReplacesUnitHeadline(t *testing.T) {
 	}
 }
 
+func TestHeadlineReadyForUnknownUnitIgnored(t *testing.T) {
+	units := []domain.Unit{
+		{ID: "s-u001", Headline: domain.Headline{Text: "original"}},
+	}
+	m := enter(tui.New(units, nil, nil))
+
+	next, _ := m.Update(tui.HeadlineReadyMsg{UnitID: "does-not-exist", Headline: domain.Headline{Text: "ghost"}})
+	m = next.(tui.Model)
+
+	view := m.View()
+	if strings.Contains(view, "ghost") {
+		t.Errorf("headline for an unknown unit must be ignored:\n%s", view)
+	}
+	if !strings.Contains(view, "original") {
+		t.Errorf("existing headline should be untouched:\n%s", view)
+	}
+}
+
 func TestModelStartsAtFirstUnit(t *testing.T) {
 	m := tui.New(threeUnits(), nil, nil)
 	if m.Cursor() != 0 {
