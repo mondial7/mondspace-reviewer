@@ -1,12 +1,39 @@
 package usecase_test
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
 	"github.com/marcomondini/mondspace-reviewer/internal/domain"
 	"github.com/marcomondini/mondspace-reviewer/internal/usecase"
 )
+
+func TestExportJSONMarshalsReport(t *testing.T) {
+	sess := reportSession()
+	sess.Notes = append(sess.Notes,
+		domain.Note{ID: "n4", UnitID: "s-u003", Kind: domain.NoteDebt, Text: "add a test"},
+	)
+
+	data, err := usecase.ExportJSON(usecase.BuildReport(sess))
+	if err != nil {
+		t.Fatalf("ExportJSON: %v", err)
+	}
+
+	var got domain.Report
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("result is not valid JSON: %v", err)
+	}
+	if got.SessionID != "s" || got.Prompt != "add token validation" {
+		t.Errorf("session/prompt not marshalled: %+v", got)
+	}
+	if len(got.Groups) == 0 || len(got.Debt) != 1 {
+		t.Errorf("groups/debt not marshalled: %+v", got)
+	}
+	if got.Debt[0].NoteText != "add a test" {
+		t.Errorf("debt note text lost: %+v", got.Debt)
+	}
+}
 
 func TestExportMarkdownOpenAgenda(t *testing.T) {
 	sess := reportSession()
