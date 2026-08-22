@@ -75,6 +75,32 @@ func TestHooksFollowsAppendedLines(t *testing.T) {
 	}
 }
 
+func TestHooksStopsOnContextCancel(t *testing.T) {
+	path := t.TempDir() + "/events.jsonl"
+	writeFile(t, path, `{"id":"e1","session_id":"s","kind":"edit"}`+"\n")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	ch, err := hooks.New(path).Events(ctx)
+	if err != nil {
+		t.Fatalf("Events: %v", err)
+	}
+	collectN(t, ch, 1) // e1, now following
+
+	cancel()
+
+	select {
+	case _, ok := <-ch:
+		if ok {
+			// A late buffered event is fine, but the channel must then close.
+			if _, ok := <-ch; ok {
+				t.Error("channel still open after cancel")
+			}
+		}
+	case <-time.After(2 * time.Second):
+		t.Error("channel not closed within 2s of cancel")
+	}
+}
+
 func TestHooksSkipsMalformedAppendedLine(t *testing.T) {
 	path := t.TempDir() + "/events.jsonl"
 	writeFile(t, path, `{"id":"e1","session_id":"s","kind":"edit"}`+"\n")
