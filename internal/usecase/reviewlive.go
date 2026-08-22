@@ -36,6 +36,12 @@ func ReviewLive(ctx context.Context, src port.EventSource, snap port.Snapshotter
 		u.From, u.To = prev, to
 		prev = to
 
+		diff, err := snap.Diff(ctx, u.From, u.To, u.Files)
+		if err != nil {
+			return err
+		}
+		u.Flags = Flags(u, diff)
+
 		members := make([]domain.Event, 0, len(u.EventIDs))
 		for _, id := range u.EventIDs {
 			members = append(members, byID[id])

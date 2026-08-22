@@ -7,6 +7,7 @@ type Unit struct {
 	Files     []string    `json:"files"`
 	From      SnapshotRef `json:"from"`
 	To        SnapshotRef `json:"to"`
+	Flags     []Flag      `json:"flags"`
 	Headline  Headline    `json:"headline"`
 	Sealed    bool        `json:"sealed"`
 }
