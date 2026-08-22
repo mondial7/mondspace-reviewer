@@ -70,6 +70,14 @@ func TestMechanicalHeadlineText(t *testing.T) {
 			},
 			want: "1 bash across 0 files",
 		},
+		{
+			name: "multiple bashes pluralize with es",
+			events: []domain.Event{
+				ev("e1", domain.KindBash),
+				ev("e2", domain.KindBash),
+			},
+			want: "2 bashes across 0 files",
+		},
 	}
 
 	for _, tt := range tests {

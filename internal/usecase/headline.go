@@ -51,5 +51,9 @@ func plural(word string, n int) string {
 	if n == 1 {
 		return word
 	}
+	if strings.HasSuffix(word, "sh") || strings.HasSuffix(word, "ch") ||
+		strings.HasSuffix(word, "s") || strings.HasSuffix(word, "x") {
+		return word + "es"
+	}
 	return word + "s"
 }
