@@ -13,14 +13,17 @@ import (
 	"path/filepath"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/oklog/ulid/v2"
 
 	"github.com/marcomondini/mondspace-reviewer/internal/adapter/presenter/plain"
+	"github.com/marcomondini/mondspace-reviewer/internal/adapter/presenter/tui"
 	gitsnap "github.com/marcomondini/mondspace-reviewer/internal/adapter/snapshot/git"
 	"github.com/marcomondini/mondspace-reviewer/internal/adapter/source/hooks"
 	"github.com/marcomondini/mondspace-reviewer/internal/adapter/source/replay"
 	"github.com/marcomondini/mondspace-reviewer/internal/adapter/store/jsonl"
 	"github.com/marcomondini/mondspace-reviewer/internal/domain"
+	"github.com/marcomondini/mondspace-reviewer/internal/port"
 	"github.com/marcomondini/mondspace-reviewer/internal/usecase"
 )
 
@@ -54,14 +57,22 @@ func runReview(ctx context.Context, args []string, stdout io.Writer) error {
 	source := fs.String("source", "replay", "event source (replay|hooks)")
 	file := fs.String("file", "", "recorded log to replay; for hooks, the events.jsonl to tail")
 	usePlain := fs.Bool("plain", false, "use the plain presenter")
+	useTUI := fs.Bool("tui", false, "review a stored session in the interactive TUI")
 	out := fs.String("out", ".mondspace-reviewer", "store root directory")
 	repo := fs.String("repo", ".", "repository to snapshot (hooks source)")
-	session := fs.String("session", "", "session id (hooks source)")
+	session := fs.String("session", "", "session id (hooks/tui)")
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
 	}
+
+	if *useTUI {
+		if *session == "" {
+			return fmt.Errorf("--session is required for --tui")
+		}
+		return runTUIReview(jsonl.New(*out), *session, stdout)
+	}
 	if !*usePlain {
-		return fmt.Errorf("--plain is required (M1 has no TUI)")
+		return fmt.Errorf("--plain or --tui is required")
 	}
 
 	store := jsonl.New(*out)
@@ -86,6 +97,26 @@ func runReview(ctx context.Context, args []string, stdout io.Writer) error {
 	default:
 		return fmt.Errorf("unknown source %q (M1 supports replay|hooks)", *source)
 	}
+}
+
+// buildTUIModel loads a stored session, marks superseded notes, and hands the
+// units and notes to the interactive model.
+func buildTUIModel(store port.Store, sessionID string) (tui.Model, error) {
+	sess, err := store.Load(sessionID)
+	if err != nil {
+		return tui.Model{}, err
+	}
+	notes := usecase.MarkSuperseded(sess.Units, sess.Notes)
+	return tui.New(sess.Units, notes, store), nil
+}
+
+func runTUIReview(store port.Store, sessionID string, stdout io.Writer) error {
+	model, err := buildTUIModel(store, sessionID)
+	if err != nil {
+		return err
+	}
+	_, err = tea.NewProgram(model, tea.WithInput(os.Stdin), tea.WithOutput(stdout)).Run()
+	return err
 }
 
 // runIngest reads one hook payload from stdin and appends an Event. It always
