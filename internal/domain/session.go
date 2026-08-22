@@ -8,4 +8,5 @@ type Session struct {
 	Prompt string
 	Events []Event
 	Units  []Unit
+	Notes  []Note
 }

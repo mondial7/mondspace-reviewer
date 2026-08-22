@@ -30,10 +30,12 @@ func (f *fakeSource) Events(ctx context.Context) (<-chan domain.Event, error) {
 type fakeStore struct {
 	events []domain.Event
 	units  []domain.Unit
+	notes  []domain.Note
 }
 
 func (s *fakeStore) AppendEvent(e domain.Event) error { s.events = append(s.events, e); return nil }
 func (s *fakeStore) AppendUnit(u domain.Unit) error   { s.units = append(s.units, u); return nil }
+func (s *fakeStore) AppendNote(n domain.Note) error   { s.notes = append(s.notes, n); return nil }
 func (s *fakeStore) Load(string) (domain.Session, error) {
 	return domain.Session{}, nil
 }

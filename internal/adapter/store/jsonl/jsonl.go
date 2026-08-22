@@ -30,6 +30,10 @@ func (s *Store) AppendUnit(u domain.Unit) error {
 	return s.appendLine(u.SessionID, "units.jsonl", u)
 }
 
+func (s *Store) AppendNote(n domain.Note) error {
+	return s.appendLine(n.SessionID, "notes.jsonl", n)
+}
+
 // Load reconstructs a Session from its append-only files. The task prompt is
 // the first prompt event's stated intent.
 func (s *Store) Load(sessionID string) (domain.Session, error) {

@@ -100,6 +100,24 @@ func TestAppendsAreAdditiveAcrossInstances(t *testing.T) {
 	}
 }
 
+func TestAppendNoteWritesToNotesFile(t *testing.T) {
+	root := t.TempDir()
+	s := jsonl.New(root)
+
+	n := domain.Note{ID: "n1", SessionID: "s", UnitID: "s-u001", Kind: domain.NoteObjection, Text: "wrong choice"}
+	if err := s.AppendNote(n); err != nil {
+		t.Fatalf("AppendNote: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(root, "s", "notes.jsonl"))
+	if err != nil {
+		t.Fatalf("reading notes.jsonl: %v", err)
+	}
+	if !strings.Contains(string(data), `"id":"n1"`) || !strings.Contains(string(data), `"kind":"objection"`) {
+		t.Errorf("notes.jsonl missing note: %s", data)
+	}
+}
+
 func TestAppendUnitWritesToUnitsFile(t *testing.T) {
 	root := t.TempDir()
 	s := jsonl.New(root)

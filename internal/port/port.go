@@ -25,6 +25,7 @@ type Snapshotter interface {
 type Store interface {
 	AppendEvent(domain.Event) error
 	AppendUnit(domain.Unit) error
+	AppendNote(domain.Note) error
 	Load(sessionID string) (domain.Session, error)
 }
 
