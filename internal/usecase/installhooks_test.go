@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/marcomondini/mondspace-reviewer/internal/usecase"
+	"github.com/mondial7/mondspace-reviewer/internal/usecase"
 )
 
 func TestInstallHooksMergesWithoutClobbering(t *testing.T) {

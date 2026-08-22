@@ -10,11 +10,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/marcomondini/mondspace-reviewer/internal/adapter/presenter/plain"
-	"github.com/marcomondini/mondspace-reviewer/internal/adapter/source/hooks"
-	"github.com/marcomondini/mondspace-reviewer/internal/adapter/store/jsonl"
-	"github.com/marcomondini/mondspace-reviewer/internal/domain"
-	"github.com/marcomondini/mondspace-reviewer/internal/usecase"
+	"github.com/mondial7/mondspace-reviewer/internal/adapter/presenter/plain"
+	"github.com/mondial7/mondspace-reviewer/internal/adapter/source/hooks"
+	"github.com/mondial7/mondspace-reviewer/internal/adapter/store/jsonl"
+	"github.com/mondial7/mondspace-reviewer/internal/domain"
+	"github.com/mondial7/mondspace-reviewer/internal/usecase"
 )
 
 // countingSnapshotter needs no repo; it just hands out sequential refs.

@@ -6,8 +6,8 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/marcomondini/mondspace-reviewer/internal/adapter/store/jsonl"
-	"github.com/marcomondini/mondspace-reviewer/internal/domain"
+	"github.com/mondial7/mondspace-reviewer/internal/adapter/store/jsonl"
+	"github.com/mondial7/mondspace-reviewer/internal/domain"
 )
 
 func seedReviewedSession(t *testing.T, root string) {

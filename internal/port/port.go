@@ -5,7 +5,7 @@ package port
 import (
 	"context"
 
-	"github.com/marcomondini/mondspace-reviewer/internal/domain"
+	"github.com/mondial7/mondspace-reviewer/internal/domain"
 )
 
 // EventSource emits observed agent events until ctx is cancelled. It must never

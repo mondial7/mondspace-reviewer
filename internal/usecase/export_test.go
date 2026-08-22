@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/marcomondini/mondspace-reviewer/internal/domain"
-	"github.com/marcomondini/mondspace-reviewer/internal/usecase"
+	"github.com/mondial7/mondspace-reviewer/internal/domain"
+	"github.com/mondial7/mondspace-reviewer/internal/usecase"
 )
 
 func TestExportJSONMarshalsReport(t *testing.T) {

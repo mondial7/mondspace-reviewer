@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/marcomondini/mondspace-reviewer/internal/domain"
+	"github.com/mondial7/mondspace-reviewer/internal/domain"
 )
 
 // hookPayload is the subset of an agent hook's JSON that ingestion reads. The

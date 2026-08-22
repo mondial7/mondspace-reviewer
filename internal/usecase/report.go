@@ -1,6 +1,6 @@
 package usecase
 
-import "github.com/marcomondini/mondspace-reviewer/internal/domain"
+import "github.com/mondial7/mondspace-reviewer/internal/domain"
 
 // groupOrder fixes the order note kinds appear in the review report.
 var groupOrder = []domain.NoteKind{

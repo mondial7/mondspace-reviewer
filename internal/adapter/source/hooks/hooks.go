@@ -14,7 +14,7 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 
-	"github.com/marcomondini/mondspace-reviewer/internal/domain"
+	"github.com/mondial7/mondspace-reviewer/internal/domain"
 )
 
 // pollInterval bounds how long a follow can wait when fsnotify misses a write.

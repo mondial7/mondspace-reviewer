@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/marcomondini/mondspace-reviewer/internal/domain"
+	"github.com/mondial7/mondspace-reviewer/internal/domain"
 )
 
 func TestEventDecodesRecordedLine(t *testing.T) {

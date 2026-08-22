@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	gitsnap "github.com/marcomondini/mondspace-reviewer/internal/adapter/snapshot/git"
+	gitsnap "github.com/mondial7/mondspace-reviewer/internal/adapter/snapshot/git"
 )
 
 func gitCmd(t *testing.T, dir string, args ...string) string {

@@ -3,8 +3,8 @@ package usecase
 import (
 	"context"
 
-	"github.com/marcomondini/mondspace-reviewer/internal/domain"
-	"github.com/marcomondini/mondspace-reviewer/internal/port"
+	"github.com/mondial7/mondspace-reviewer/internal/domain"
+	"github.com/mondial7/mondspace-reviewer/internal/port"
 )
 
 // Review drains the event source into the store, clusters the log into units,

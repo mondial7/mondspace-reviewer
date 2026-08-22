@@ -11,8 +11,8 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/oklog/ulid/v2"
 
-	"github.com/marcomondini/mondspace-reviewer/internal/domain"
-	"github.com/marcomondini/mondspace-reviewer/internal/port"
+	"github.com/mondial7/mondspace-reviewer/internal/domain"
+	"github.com/mondial7/mondspace-reviewer/internal/port"
 )
 
 type Model struct {

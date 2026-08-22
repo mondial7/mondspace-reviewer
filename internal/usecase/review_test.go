@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/marcomondini/mondspace-reviewer/internal/domain"
-	"github.com/marcomondini/mondspace-reviewer/internal/usecase"
+	"github.com/mondial7/mondspace-reviewer/internal/domain"
+	"github.com/mondial7/mondspace-reviewer/internal/usecase"
 )
 
 // fakeSource replays a fixed slice of events, honouring context cancellation.

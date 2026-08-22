@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/marcomondini/mondspace-reviewer/internal/domain"
+	"github.com/mondial7/mondspace-reviewer/internal/domain"
 )
 
 // inactivityGap seals an open unit when the agent pauses this long between

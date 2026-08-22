@@ -18,17 +18,17 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/oklog/ulid/v2"
 
-	"github.com/marcomondini/mondspace-reviewer/internal/adapter/presenter/plain"
-	"github.com/marcomondini/mondspace-reviewer/internal/adapter/presenter/tui"
-	gitsnap "github.com/marcomondini/mondspace-reviewer/internal/adapter/snapshot/git"
-	"github.com/marcomondini/mondspace-reviewer/internal/adapter/summarizer/null"
-	"github.com/marcomondini/mondspace-reviewer/internal/adapter/summarizer/openai"
-	"github.com/marcomondini/mondspace-reviewer/internal/adapter/source/hooks"
-	"github.com/marcomondini/mondspace-reviewer/internal/adapter/source/replay"
-	"github.com/marcomondini/mondspace-reviewer/internal/adapter/store/jsonl"
-	"github.com/marcomondini/mondspace-reviewer/internal/domain"
-	"github.com/marcomondini/mondspace-reviewer/internal/port"
-	"github.com/marcomondini/mondspace-reviewer/internal/usecase"
+	"github.com/mondial7/mondspace-reviewer/internal/adapter/presenter/plain"
+	"github.com/mondial7/mondspace-reviewer/internal/adapter/presenter/tui"
+	gitsnap "github.com/mondial7/mondspace-reviewer/internal/adapter/snapshot/git"
+	"github.com/mondial7/mondspace-reviewer/internal/adapter/summarizer/null"
+	"github.com/mondial7/mondspace-reviewer/internal/adapter/summarizer/openai"
+	"github.com/mondial7/mondspace-reviewer/internal/adapter/source/hooks"
+	"github.com/mondial7/mondspace-reviewer/internal/adapter/source/replay"
+	"github.com/mondial7/mondspace-reviewer/internal/adapter/store/jsonl"
+	"github.com/mondial7/mondspace-reviewer/internal/domain"
+	"github.com/mondial7/mondspace-reviewer/internal/port"
+	"github.com/mondial7/mondspace-reviewer/internal/usecase"
 )
 
 func main() {

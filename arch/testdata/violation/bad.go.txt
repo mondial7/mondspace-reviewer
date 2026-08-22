@@ -3,7 +3,7 @@ package violation
 import (
 	"fmt"
 
-	"github.com/marcomondini/mondspace-reviewer/internal/adapter/store/jsonl"
+	"github.com/mondial7/mondspace-reviewer/internal/adapter/store/jsonl"
 )
 
 func Bad() { fmt.Println(jsonl.Name) }

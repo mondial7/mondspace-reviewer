@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/marcomondini/mondspace-reviewer/internal/adapter/presenter/plain"
-	"github.com/marcomondini/mondspace-reviewer/internal/domain"
+	"github.com/mondial7/mondspace-reviewer/internal/adapter/presenter/plain"
+	"github.com/mondial7/mondspace-reviewer/internal/domain"
 )
 
 func TestPresentRendersFlags(t *testing.T) {

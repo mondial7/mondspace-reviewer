@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/marcomondini/mondspace-reviewer/internal/domain"
+	"github.com/mondial7/mondspace-reviewer/internal/domain"
 )
 
 // sourceExts are the code extensions whose changes ought to carry tests.

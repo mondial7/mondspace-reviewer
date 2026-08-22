@@ -11,7 +11,7 @@ import (
 	"testing"
 )
 
-const forbiddenPrefix = "github.com/marcomondini/mondspace-reviewer/internal/adapter/"
+const forbiddenPrefix = "github.com/mondial7/mondspace-reviewer/internal/adapter/"
 
 // innerPackages depend only inward; an adapter import from any of them
 // inverts the dependency direction the whole design rests on.

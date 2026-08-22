@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/marcomondini/mondspace-reviewer/internal/adapter/source/replay"
-	"github.com/marcomondini/mondspace-reviewer/internal/domain"
+	"github.com/mondial7/mondspace-reviewer/internal/adapter/source/replay"
+	"github.com/mondial7/mondspace-reviewer/internal/domain"
 )
 
 func collect(t *testing.T, ch <-chan domain.Event) []domain.Event {

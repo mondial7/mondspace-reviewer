@@ -1,6 +1,6 @@
 package usecase
 
-import "github.com/marcomondini/mondspace-reviewer/internal/domain"
+import "github.com/mondial7/mondspace-reviewer/internal/domain"
 
 // BuildAskContext assembles the bounded context for a question. Unit scope is
 // narrow — the current unit, its diff, and its notes. Session scope is broad but

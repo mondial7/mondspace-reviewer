@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/marcomondini/mondspace-reviewer/internal/adapter/summarizer/openai"
-	"github.com/marcomondini/mondspace-reviewer/internal/domain"
+	"github.com/mondial7/mondspace-reviewer/internal/adapter/summarizer/openai"
+	"github.com/mondial7/mondspace-reviewer/internal/domain"
 )
 
 func chatResponse(content string) string {

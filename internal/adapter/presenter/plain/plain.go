@@ -7,7 +7,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/marcomondini/mondspace-reviewer/internal/domain"
+	"github.com/mondial7/mondspace-reviewer/internal/domain"
 )
 
 type Presenter struct {

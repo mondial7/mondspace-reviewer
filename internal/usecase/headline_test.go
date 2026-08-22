@@ -3,8 +3,8 @@ package usecase_test
 import (
 	"testing"
 
-	"github.com/marcomondini/mondspace-reviewer/internal/domain"
-	"github.com/marcomondini/mondspace-reviewer/internal/usecase"
+	"github.com/mondial7/mondspace-reviewer/internal/domain"
+	"github.com/mondial7/mondspace-reviewer/internal/usecase"
 )
 
 func TestMechanicalHeadlineWhyIsFirstStatedIntent(t *testing.T) {

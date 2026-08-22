@@ -7,8 +7,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/marcomondini/mondspace-reviewer/internal/adapter/presenter/tui"
-	"github.com/marcomondini/mondspace-reviewer/internal/domain"
+	"github.com/mondial7/mondspace-reviewer/internal/adapter/presenter/tui"
+	"github.com/mondial7/mondspace-reviewer/internal/domain"
 )
 
 func key(r rune) tea.KeyMsg {

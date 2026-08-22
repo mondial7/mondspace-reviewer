@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/marcomondini/mondspace-reviewer/internal/adapter/summarizer/null"
-	"github.com/marcomondini/mondspace-reviewer/internal/domain"
+	"github.com/mondial7/mondspace-reviewer/internal/adapter/summarizer/null"
+	"github.com/mondial7/mondspace-reviewer/internal/domain"
 )
 
 func TestNullReturnsMechanicalHeadlineUnchanged(t *testing.T) {

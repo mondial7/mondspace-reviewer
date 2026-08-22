@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/marcomondini/mondspace-reviewer/internal/adapter/source/hooks"
-	"github.com/marcomondini/mondspace-reviewer/internal/domain"
+	"github.com/mondial7/mondspace-reviewer/internal/adapter/source/hooks"
+	"github.com/mondial7/mondspace-reviewer/internal/domain"
 )
 
 // collectN reads n events or fails on timeout, so a following source that never

@@ -1,4 +1,4 @@
-module github.com/marcomondini/mondspace-reviewer
+module github.com/mondial7/mondspace-reviewer
 
 go 1.26.3
 

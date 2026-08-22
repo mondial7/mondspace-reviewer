@@ -1,6 +1,6 @@
 package usecase
 
-import "github.com/marcomondini/mondspace-reviewer/internal/domain"
+import "github.com/mondial7/mondspace-reviewer/internal/domain"
 
 // MarkSuperseded flags a note as superseded when a later unit touches the same
 // file as the annotated unit. It is a pure function: it never deletes a note and

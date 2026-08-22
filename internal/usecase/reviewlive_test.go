@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/marcomondini/mondspace-reviewer/internal/domain"
-	"github.com/marcomondini/mondspace-reviewer/internal/usecase"
+	"github.com/mondial7/mondspace-reviewer/internal/domain"
+	"github.com/mondial7/mondspace-reviewer/internal/usecase"
 )
 
 // fakeSnapshotter hands out sequential commit refs so bracketing is checkable,

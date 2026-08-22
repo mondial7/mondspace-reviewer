@@ -7,7 +7,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/marcomondini/mondspace-reviewer/internal/domain"
+	"github.com/mondial7/mondspace-reviewer/internal/domain"
 )
 
 // ErrOffline is returned by the null summarizer when asked a question: there is

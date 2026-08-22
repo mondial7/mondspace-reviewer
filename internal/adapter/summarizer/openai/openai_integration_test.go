@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/marcomondini/mondspace-reviewer/internal/adapter/summarizer/openai"
-	"github.com/marcomondini/mondspace-reviewer/internal/domain"
+	"github.com/mondial7/mondspace-reviewer/internal/adapter/summarizer/openai"
+	"github.com/mondial7/mondspace-reviewer/internal/domain"
 )
 
 // TestContractAgainstRealServer talks to a live OpenAI-compatible endpoint.

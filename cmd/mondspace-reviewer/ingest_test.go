@@ -14,7 +14,7 @@ import (
 
 	"github.com/oklog/ulid/v2"
 
-	"github.com/marcomondini/mondspace-reviewer/internal/domain"
+	"github.com/mondial7/mondspace-reviewer/internal/domain"
 )
 
 func TestIngestAssignsULIDAndTimestamp(t *testing.T) {
