@@ -9,6 +9,32 @@ import (
 	"github.com/marcomondini/mondspace-reviewer/internal/domain"
 )
 
+func TestPresentDistinguishesStatedFromInferred(t *testing.T) {
+	render := func(h domain.Headline) string {
+		var buf bytes.Buffer
+		if err := plain.New(&buf).Present(domain.Unit{ID: "u", Headline: h}); err != nil {
+			t.Fatal(err)
+		}
+		return buf.String()
+	}
+
+	stated := render(domain.Headline{Text: "t", Why: "swap the lib", WhySrc: domain.WhyStated})
+	if !strings.Contains(stated, "WHY   stated: swap the lib") {
+		t.Errorf("stated rendering wrong:\n%s", stated)
+	}
+
+	inferred := render(domain.Headline{Text: "t", Why: "", WhySrc: domain.WhyInferred})
+	if !strings.Contains(inferred, "WHY   inferred: (none stated)") {
+		t.Errorf("inferred rendering wrong:\n%s", inferred)
+	}
+
+	// The label word itself must differ, not just the text — a confabulated
+	// rationale presented as stated fact destroys trust.
+	if strings.Contains(inferred, "stated:") {
+		t.Errorf("inferred output must not use the word 'stated':\n%s", inferred)
+	}
+}
+
 func TestPresentRendersFourSlots(t *testing.T) {
 	var buf bytes.Buffer
 	p := plain.New(&buf)
