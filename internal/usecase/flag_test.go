@@ -63,6 +63,31 @@ func TestFlagTodo(t *testing.T) {
 	}
 }
 
+func TestFlagNewDep(t *testing.T) {
+	deps := []string{
+		`+import "database/sql"`,
+		`+require github.com/x/y v1.2.3`,
+		"+\t\"github.com/oklog/ulid/v2\"",
+		"+\tgithub.com/foo/bar v1.0.0",
+	}
+	for _, line := range deps {
+		if !hasFlag(usecase.Flags(domain.Unit{}, domain.Diff{Text: line + "\n"}), domain.FlagNewDep) {
+			t.Errorf("expected new-dep for added line %q", line)
+		}
+	}
+
+	nonDeps := []string{
+		"+\tx := 1",
+		`-import "removed/pkg"`,
+		"+\t// just a comment",
+	}
+	for _, line := range nonDeps {
+		if hasFlag(usecase.Flags(domain.Unit{}, domain.Diff{Text: line + "\n"}), domain.FlagNewDep) {
+			t.Errorf("did not expect new-dep for line %q", line)
+		}
+	}
+}
+
 func TestFlagNoTest(t *testing.T) {
 	tests := []struct {
 		name  string

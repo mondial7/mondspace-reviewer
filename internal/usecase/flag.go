@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/marcomondini/mondspace-reviewer/internal/domain"
@@ -27,7 +28,32 @@ func Flags(u domain.Unit, d domain.Diff) []domain.Flag {
 	if anyAddedLine(d.Text, hasTodo) {
 		flags = append(flags, domain.FlagTodo)
 	}
+	if anyAddedLine(d.Text, isNewDep) {
+		flags = append(flags, domain.FlagNewDep)
+	}
 	return flags
+}
+
+// goModRequire matches a go.mod dependency line, e.g. "github.com/x/y v1.2.3".
+var goModRequire = regexp.MustCompile(`^[\w.\-/]+ v\d`)
+
+// importPath matches a quoted external import path, e.g. "github.com/x/y".
+var importPath = regexp.MustCompile(`^"[\w.\-/]*[./][\w.\-/]*"$`)
+
+func isNewDep(line string) bool {
+	t := strings.TrimSpace(line)
+	switch {
+	case strings.HasPrefix(t, "import "):
+		return true
+	case strings.HasPrefix(t, "require "):
+		return true
+	case importPath.MatchString(t):
+		return true
+	case goModRequire.MatchString(t):
+		return true
+	default:
+		return false
+	}
 }
 
 var todoMarkers = []string{"TODO", "FIXME", "XXX"}
