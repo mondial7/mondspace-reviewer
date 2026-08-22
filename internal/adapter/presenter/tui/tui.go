@@ -54,7 +54,17 @@ func (m Model) Read(unitID string) bool { return m.read[unitID] }
 
 func (m Model) Init() tea.Cmd { return nil }
 
+// HeadlineReadyMsg carries a model-generated headline back into the queue once
+// the summarizer returns. The queue never blocks waiting for it.
+type HeadlineReadyMsg struct {
+	UnitID   string
+	Headline domain.Headline
+}
+
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if ready, ok := msg.(HeadlineReadyMsg); ok {
+		return m.fillHeadline(ready), nil
+	}
 	key, ok := msg.(tea.KeyMsg)
 	if !ok {
 		return m, nil
@@ -116,6 +126,21 @@ func (m Model) updateFilter(key tea.KeyMsg) Model {
 		m.query += string(key.Runes)
 	}
 	m.cursor = clamp(m.cursor, 0, len(m.visible())-1)
+	return m
+}
+
+// fillHeadline swaps in a model headline for the matching unit. A message for
+// an unknown unit is ignored.
+func (m Model) fillHeadline(ready HeadlineReadyMsg) Model {
+	units := make([]domain.Unit, len(m.units))
+	copy(units, m.units)
+	for i := range units {
+		if units[i].ID == ready.UnitID {
+			units[i].Headline = ready.Headline
+			break
+		}
+	}
+	m.units = units
 	return m
 }
 

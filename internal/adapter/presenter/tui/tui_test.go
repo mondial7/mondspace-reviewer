@@ -202,6 +202,31 @@ func TestViewShowsSupersededMarker(t *testing.T) {
 	}
 }
 
+func TestHeadlineReadyReplacesUnitHeadline(t *testing.T) {
+	units := []domain.Unit{
+		{ID: "s-u001", SessionID: "s", Files: []string{"a.go"},
+			Headline: domain.Headline{Text: "2 edits across 1 file", WhySrc: domain.WhyInferred}},
+	}
+	m := enter(tui.New(units, nil, nil)) // expand so the WHAT text shows
+
+	// Before fill-in, the queue shows the mechanical headline (it never waits).
+	if !strings.Contains(m.View(), "2 edits across 1 file") {
+		t.Fatalf("mechanical headline not shown initially:\n%s", m.View())
+	}
+
+	model := domain.Headline{Text: "added a retry loop", Why: "flaky network", WhySrc: domain.WhyInferred}
+	next, _ := m.Update(tui.HeadlineReadyMsg{UnitID: "s-u001", Headline: model})
+	m = next.(tui.Model)
+
+	view := m.View()
+	if !strings.Contains(view, "added a retry loop") {
+		t.Errorf("model headline not filled in:\n%s", view)
+	}
+	if strings.Contains(view, "2 edits across 1 file") {
+		t.Errorf("mechanical headline should have been replaced:\n%s", view)
+	}
+}
+
 func TestModelStartsAtFirstUnit(t *testing.T) {
 	m := tui.New(threeUnits(), nil, nil)
 	if m.Cursor() != 0 {
