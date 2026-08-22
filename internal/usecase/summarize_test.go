@@ -19,6 +19,23 @@ func (s fakeSummarizer) Headline(context.Context, domain.Unit, domain.Diff) (dom
 	return s.head, s.err
 }
 
+func TestSummarizeNeverLetsModelFabricateStated(t *testing.T) {
+	// The unit stated nothing, but a misbehaving model claims a stated rationale.
+	unit := domain.Unit{Headline: domain.Headline{Text: "1 edit", Why: "", WhySrc: domain.WhyInferred}}
+	rogue := fakeSummarizer{head: domain.Headline{
+		Text: "renamed the field", Why: "the user asked for this", WhySrc: domain.WhyStated,
+	}}
+
+	got := usecase.Summarize(context.Background(), rogue, unit, domain.Diff{})
+
+	if got.WhySrc == domain.WhyStated {
+		t.Error("model must never be able to assert a stated rationale")
+	}
+	if got.WhySrc != domain.WhyInferred {
+		t.Errorf("WhySrc = %q, want inferred", got.WhySrc)
+	}
+}
+
 func TestSummarizeDegradesOnError(t *testing.T) {
 	mechanical := domain.Headline{Text: "2 edits across 1 file", Why: "stated thing", WhySrc: domain.WhyStated}
 	unit := domain.Unit{Headline: mechanical}
