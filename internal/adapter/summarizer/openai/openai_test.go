@@ -1,0 +1,58 @@
+package openai_test
+
+import (
+	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"github.com/marcomondini/mondspace-reviewer/internal/adapter/summarizer/openai"
+	"github.com/marcomondini/mondspace-reviewer/internal/domain"
+)
+
+func chatResponse(content string) string {
+	b, _ := json.Marshal(map[string]any{
+		"choices": []map[string]any{
+			{"message": map[string]any{"role": "assistant", "content": content}},
+		},
+	})
+	return string(b)
+}
+
+func TestHeadlinePostsChatCompletionAndParsesReply(t *testing.T) {
+	var gotPath, gotBody string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		body, _ := io.ReadAll(r.Body)
+		gotBody = string(body)
+		io.WriteString(w, chatResponse("WHAT: extracted validation behind a TokenValidator\nWHY: to swap the JWT lib"))
+	}))
+	defer srv.Close()
+
+	u := domain.Unit{ID: "u1", Files: []string{"auth/token.go"}, Headline: domain.Headline{Text: "2 edits across 1 file"}}
+	d := domain.Diff{Text: "+type TokenValidator interface{}\n"}
+
+	got, err := openai.New(srv.URL, "qwen/qwen3.5-9b").Headline(context.Background(), u, d)
+	if err != nil {
+		t.Fatalf("Headline: %v", err)
+	}
+
+	if gotPath != "/chat/completions" {
+		t.Errorf("request path = %q, want /chat/completions", gotPath)
+	}
+	if !strings.Contains(gotBody, "qwen/qwen3.5-9b") {
+		t.Errorf("request body missing model: %s", gotBody)
+	}
+	if !strings.Contains(gotBody, "auth/token.go") || !strings.Contains(gotBody, "TokenValidator") {
+		t.Errorf("request body missing unit files/diff: %s", gotBody)
+	}
+	if got.Text != "extracted validation behind a TokenValidator" {
+		t.Errorf("Text = %q, want the parsed WHAT line", got.Text)
+	}
+	if got.Why != "to swap the JWT lib" {
+		t.Errorf("Why = %q, want the parsed WHY line", got.Why)
+	}
+}
