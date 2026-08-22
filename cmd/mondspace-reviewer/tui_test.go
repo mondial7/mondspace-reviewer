@@ -1,6 +1,10 @@
 package main
 
 import (
+	"context"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +15,37 @@ import (
 	"github.com/marcomondini/mondspace-reviewer/internal/adapter/store/jsonl"
 	"github.com/marcomondini/mondspace-reviewer/internal/domain"
 )
+
+func TestChooseSummarizerProbesAndFallsBack(t *testing.T) {
+	u := domain.Unit{ID: "u1", Headline: domain.Headline{Text: "mechanical", WhySrc: domain.WhyInferred}}
+
+	// Unreachable endpoint → null summarizer, which passes the mechanical
+	// headline through unchanged (offline degradation, no crash).
+	off := chooseSummarizer("http://127.0.0.1:1", "m")
+	got, err := off.Headline(context.Background(), u, domain.Diff{})
+	if err != nil || got.Text != "mechanical" {
+		t.Errorf("offline: headline = %+v err = %v, want the mechanical headline", got, err)
+	}
+
+	// Reachable endpoint → openai summarizer, returning the model's WHAT.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/models" {
+			io.WriteString(w, `{"data":[]}`)
+			return
+		}
+		io.WriteString(w, `{"choices":[{"message":{"content":"WHAT: real model summary\nWHY: unknown"}}]}`)
+	}))
+	defer srv.Close()
+
+	on := chooseSummarizer(srv.URL, "m")
+	got, err = on.Headline(context.Background(), u, domain.Diff{})
+	if err != nil {
+		t.Fatalf("online Headline: %v", err)
+	}
+	if got.Text != "real model summary" {
+		t.Errorf("online: Text = %q, want the model's summary", got.Text)
+	}
+}
 
 func TestBuildTUIModelLoadsAndPersistsAnnotations(t *testing.T) {
 	root := t.TempDir()

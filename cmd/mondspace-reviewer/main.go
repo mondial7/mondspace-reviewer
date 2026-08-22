@@ -8,9 +8,11 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -19,6 +21,8 @@ import (
 	"github.com/marcomondini/mondspace-reviewer/internal/adapter/presenter/plain"
 	"github.com/marcomondini/mondspace-reviewer/internal/adapter/presenter/tui"
 	gitsnap "github.com/marcomondini/mondspace-reviewer/internal/adapter/snapshot/git"
+	"github.com/marcomondini/mondspace-reviewer/internal/adapter/summarizer/null"
+	"github.com/marcomondini/mondspace-reviewer/internal/adapter/summarizer/openai"
 	"github.com/marcomondini/mondspace-reviewer/internal/adapter/source/hooks"
 	"github.com/marcomondini/mondspace-reviewer/internal/adapter/source/replay"
 	"github.com/marcomondini/mondspace-reviewer/internal/adapter/store/jsonl"
@@ -59,8 +63,10 @@ func runReview(ctx context.Context, args []string, stdout io.Writer) error {
 	usePlain := fs.Bool("plain", false, "use the plain presenter")
 	useTUI := fs.Bool("tui", false, "review a stored session in the interactive TUI")
 	out := fs.String("out", ".mondspace-reviewer", "store root directory")
-	repo := fs.String("repo", ".", "repository to snapshot (hooks source)")
+	repo := fs.String("repo", ".", "repository to snapshot (hooks source / tui)")
 	session := fs.String("session", "", "session id (hooks/tui)")
+	summarizerURL := fs.String("summarizer-url", defaultSummarizerURL, "OpenAI-compatible summarizer endpoint")
+	model := fs.String("model", defaultModel, "summarizer model")
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
 	}
@@ -69,7 +75,9 @@ func runReview(ctx context.Context, args []string, stdout io.Writer) error {
 		if *session == "" {
 			return fmt.Errorf("--session is required for --tui")
 		}
-		return runTUIReview(jsonl.New(*out), *session, stdout)
+		snap := gitsnap.New(*repo, *session)
+		sum := chooseSummarizer(*summarizerURL, *model)
+		return runTUIReview(jsonl.New(*out), snap, sum, *session, stdout)
 	}
 	if !*usePlain {
 		return fmt.Errorf("--plain or --tui is required")
@@ -99,6 +107,12 @@ func runReview(ctx context.Context, args []string, stdout io.Writer) error {
 	}
 }
 
+// Default summarizer endpoint (SPEC §3): a local LM Studio server.
+const (
+	defaultSummarizerURL = "http://192.168.101.99:1234/v1"
+	defaultModel         = "qwen/qwen3.5-9b"
+)
+
 // buildTUIModel loads a stored session, marks superseded notes, and hands the
 // units and notes to the interactive model.
 func buildTUIModel(store port.Store, sessionID string) (tui.Model, error) {
@@ -110,13 +124,42 @@ func buildTUIModel(store port.Store, sessionID string) (tui.Model, error) {
 	return tui.New(sess.Units, notes, store), nil
 }
 
-func runTUIReview(store port.Store, sessionID string, stdout io.Writer) error {
+// chooseSummarizer probes the configured endpoint; if it is unreachable the
+// reviewer degrades to the null (mechanical-only) summarizer.
+func chooseSummarizer(baseURL, model string) port.Summarizer {
+	client := &http.Client{Timeout: 1500 * time.Millisecond}
+	resp, err := client.Get(strings.TrimRight(baseURL, "/") + "/models")
+	if err == nil {
+		resp.Body.Close()
+		if resp.StatusCode < 500 {
+			return openai.New(baseURL, model)
+		}
+	}
+	return null.New()
+}
+
+func runTUIReview(store port.Store, snap port.Snapshotter, sum port.Summarizer, sessionID string, stdout io.Writer) error {
 	model, err := buildTUIModel(store, sessionID)
 	if err != nil {
 		return err
 	}
+	model = model.WithSummarize(summarizeFunc(snap, sum))
 	_, err = tea.NewProgram(model, tea.WithInput(os.Stdin), tea.WithOutput(stdout)).Run()
 	return err
+}
+
+// summarizeFunc builds the async fill-in closure: fetch a unit's diff, ask the
+// summarizer (with WhySrc discipline), and hand the headline back to the queue.
+func summarizeFunc(snap port.Snapshotter, sum port.Summarizer) func(domain.Unit) tea.Msg {
+	return func(u domain.Unit) tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		diff, err := snap.Diff(ctx, u.From, u.To, u.Files)
+		if err != nil {
+			diff = domain.Diff{}
+		}
+		return tui.HeadlineReadyMsg{UnitID: u.ID, Headline: usecase.Summarize(ctx, sum, u, diff)}
+	}
 }
 
 // runIngest reads one hook payload from stdin and appends an Event. It always
