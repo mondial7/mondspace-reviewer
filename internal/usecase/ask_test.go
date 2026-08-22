@@ -22,6 +22,28 @@ func askSession() domain.Session {
 	}
 }
 
+func TestBuildAskContextSessionScope(t *testing.T) {
+	sess := askSession()
+
+	ctx := usecase.BuildAskContext(domain.AskSession, sess, sess.Units[0], domain.Diff{Text: "ignored"})
+
+	if ctx.Scope != domain.AskSession {
+		t.Errorf("Scope = %q, want session", ctx.Scope)
+	}
+	if len(ctx.Units) != 2 {
+		t.Errorf("Units = %d, want all 2", len(ctx.Units))
+	}
+	if len(ctx.Notes) != 2 {
+		t.Errorf("Notes = %d, want all 2", len(ctx.Notes))
+	}
+	if ctx.Diff.Text != "" {
+		t.Errorf("session scope must carry no diff, got %q", ctx.Diff.Text)
+	}
+	if ctx.Prompt != "add token validation" {
+		t.Errorf("Prompt = %q", ctx.Prompt)
+	}
+}
+
 func TestBuildAskContextUnitScope(t *testing.T) {
 	sess := askSession()
 	diff := domain.Diff{Text: "+type Validator interface{}\n"}
