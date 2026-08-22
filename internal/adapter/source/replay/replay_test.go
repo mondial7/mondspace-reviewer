@@ -19,6 +19,29 @@ func collect(t *testing.T, ch <-chan domain.Event) []domain.Event {
 	return got
 }
 
+func TestReplayStopsOnContextCancel(t *testing.T) {
+	file := filepath.Join("..", "..", "..", "..", "testdata", "sessions", "basic.jsonl")
+	ctx, cancel := context.WithCancel(context.Background())
+
+	ch, err := replay.New(file).Events(ctx)
+	if err != nil {
+		t.Fatalf("Events: %v", err)
+	}
+
+	// Take one event, then cancel and drain. The producer must stop rather
+	// than emit all 32.
+	<-ch
+	cancel()
+
+	remaining := 0
+	for range ch {
+		remaining++
+	}
+	if remaining >= 31 {
+		t.Errorf("drained %d events after cancel; producer did not stop", remaining)
+	}
+}
+
 func TestReplaySkipsMalformedLine(t *testing.T) {
 	content := `{"id":"e1","kind":"edit","files":["a.go"]}
 { this is not valid json
