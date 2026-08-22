@@ -31,7 +31,18 @@ func Flags(u domain.Unit, d domain.Diff) []domain.Flag {
 	if anyAddedLine(d.Text, isNewDep) {
 		flags = append(flags, domain.FlagNewDep)
 	}
+	if anyAddedLine(d.Text, isSwallowedErr) {
+		flags = append(flags, domain.FlagSwallowedErr)
+	}
 	return flags
+}
+
+// swallowedErr matches assigning a call's result to the blank identifier, e.g.
+// "_ = f.Close()" — the idiomatic way to drop a returned error on the floor.
+var swallowedErr = regexp.MustCompile(`^_\s*=\s*\S.*\(`)
+
+func isSwallowedErr(line string) bool {
+	return swallowedErr.MatchString(strings.TrimSpace(line))
 }
 
 // goModRequire matches a go.mod dependency line, e.g. "github.com/x/y v1.2.3".

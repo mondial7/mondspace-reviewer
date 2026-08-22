@@ -88,6 +88,29 @@ func TestFlagNewDep(t *testing.T) {
 	}
 }
 
+func TestFlagSwallowedErr(t *testing.T) {
+	swallows := []string{
+		"+\t_ = doThing()",
+		"+\t_ = f.Close()",
+	}
+	for _, line := range swallows {
+		if !hasFlag(usecase.Flags(domain.Unit{}, domain.Diff{Text: line + "\n"}), domain.FlagSwallowedErr) {
+			t.Errorf("expected swallowed-err for %q", line)
+		}
+	}
+
+	clean := []string{
+		"+\t_, err := f.Read(b)",
+		"+\tx = compute()",
+		"+\t_ = someVar",
+	}
+	for _, line := range clean {
+		if hasFlag(usecase.Flags(domain.Unit{}, domain.Diff{Text: line + "\n"}), domain.FlagSwallowedErr) {
+			t.Errorf("did not expect swallowed-err for %q", line)
+		}
+	}
+}
+
 func TestFlagNoTest(t *testing.T) {
 	tests := []struct {
 		name  string
