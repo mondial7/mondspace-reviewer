@@ -23,6 +23,10 @@ func (s *Store) AppendEvent(e domain.Event) error {
 	return s.appendLine(e.SessionID, "events.jsonl", e)
 }
 
+func (s *Store) AppendUnit(u domain.Unit) error {
+	return s.appendLine(u.SessionID, "units.jsonl", u)
+}
+
 func (s *Store) appendLine(sessionID, file string, v any) error {
 	dir := filepath.Join(s.root, sessionID)
 	if err := os.MkdirAll(dir, 0o755); err != nil {

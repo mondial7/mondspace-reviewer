@@ -10,6 +10,24 @@ import (
 	"github.com/marcomondini/mondspace-reviewer/internal/domain"
 )
 
+func TestAppendUnitWritesToUnitsFile(t *testing.T) {
+	root := t.TempDir()
+	s := jsonl.New(root)
+
+	u := domain.Unit{ID: "sess-basic-u001", SessionID: "sess-basic", EventIDs: []string{"e1"}, Sealed: true}
+	if err := s.AppendUnit(u); err != nil {
+		t.Fatalf("AppendUnit: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(root, "sess-basic", "units.jsonl"))
+	if err != nil {
+		t.Fatalf("reading units.jsonl: %v", err)
+	}
+	if !strings.Contains(string(data), `"id":"sess-basic-u001"`) {
+		t.Errorf("units.jsonl missing unit id: %s", data)
+	}
+}
+
 func TestAppendEventWritesOneLineCreatingDir(t *testing.T) {
 	root := t.TempDir()
 	s := jsonl.New(root)
