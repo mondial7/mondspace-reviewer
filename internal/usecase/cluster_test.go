@@ -1,13 +1,40 @@
 package usecase_test
 
 import (
+	"bufio"
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/marcomondini/mondspace-reviewer/internal/domain"
 	"github.com/marcomondini/mondspace-reviewer/internal/usecase"
 )
+
+func loadFixture(t *testing.T, name string) []domain.Event {
+	t.Helper()
+	f, err := os.Open(filepath.Join("..", "..", "testdata", "sessions", name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	var events []domain.Event
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for sc.Scan() {
+		var e domain.Event
+		if err := json.Unmarshal(sc.Bytes(), &e); err != nil {
+			t.Fatalf("decoding fixture line: %v", err)
+		}
+		events = append(events, e)
+	}
+	if err := sc.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return events
+}
 
 func ev(id string, kind domain.Kind, files ...string) domain.Event {
 	return domain.Event{ID: id, SessionID: "sess-basic", Kind: kind, Files: files}
@@ -25,6 +52,55 @@ func TestClusterEmptyLog(t *testing.T) {
 	if len(units) != 0 {
 		t.Errorf("Cluster(empty) = %d units, want 0", len(units))
 	}
+}
+
+func TestClusterBasicFixture(t *testing.T) {
+	events := loadFixture(t, "basic.jsonl")
+
+	units := usecase.Cluster("sess-basic", events)
+
+	if len(units) != 8 {
+		t.Fatalf("got %d units, want 8", len(units))
+	}
+	wantCounts := []int{2, 2, 3, 3, 2, 12, 1, 1}
+	wantFiles := [][]string{
+		{"auth/token.go", "auth/port.go"},
+		{"auth/token_test.go"},
+		{"http/middleware.go", "http/routes.go"},
+		{"go.mod", "go.sum"},
+		{"auth/token.go", "auth/token_test.go"},
+		{"store/jsonl/store.go", "store/jsonl/store_test.go", "domain/session.go"},
+		{"cmd/msr/main.go"},
+		{"README.md"},
+	}
+	for i, u := range units {
+		if len(u.EventIDs) != wantCounts[i] {
+			t.Errorf("unit %d has %d events, want %d", i+1, len(u.EventIDs), wantCounts[i])
+		}
+		if !equalStrings(u.Files, wantFiles[i]) {
+			t.Errorf("unit %d files = %v, want %v", i+1, u.Files, wantFiles[i])
+		}
+	}
+	// The prompt event must not appear in any unit.
+	for _, u := range units {
+		for _, id := range u.EventIDs {
+			if id == "01K39ZQK8T0000000000000001" {
+				t.Errorf("prompt event leaked into unit %s", u.ID)
+			}
+		}
+	}
+}
+
+func equalStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func TestUnitIDsAreSequentialAndDeterministic(t *testing.T) {
