@@ -360,6 +360,24 @@ func TestViewRendersAskPromptAndAnswer(t *testing.T) {
 	}
 }
 
+func TestAskModeCapturesCommandKeysAsText(t *testing.T) {
+	store := &recordingStore{}
+	m := fixedClock(tui.New(threeUnits(), nil, store))
+
+	m = send(m, 'a')            // enter ask mode
+	m = send(m, 'j', 'x', 'k')  // these are navigation/annotation keys normally
+
+	if m.Question() != "jxk" {
+		t.Errorf("command keys should be captured as text, question = %q", m.Question())
+	}
+	if m.Cursor() != 0 {
+		t.Errorf("cursor must not move while asking, got %d", m.Cursor())
+	}
+	if len(store.notes) != 0 {
+		t.Errorf("'x' must not annotate while asking, got %d notes", len(store.notes))
+	}
+}
+
 func TestAskModeEntryAndTyping(t *testing.T) {
 	m := send(tui.New(threeUnits(), nil, nil), 'a')
 	if !m.Asking() {
