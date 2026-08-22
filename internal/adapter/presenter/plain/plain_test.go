@@ -4,10 +4,48 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/presenter/plain"
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
 )
+
+func TestPresentShowsUnitTimeFromEvents(t *testing.T) {
+	ts := time.Date(2026, 8, 22, 14, 5, 9, 0, time.UTC)
+	events := []domain.Event{
+		{ID: "e1", Kind: domain.KindEdit, TS: ts.Add(-2 * time.Second)},
+		{ID: "e2", Kind: domain.KindWrite, TS: ts}, // sealing event
+	}
+
+	var buf bytes.Buffer
+	if err := plain.New(&buf).Present(domain.Unit{ID: "u1"}, events); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), "14:05:09") {
+		t.Errorf("expected the unit's seal time in the header:\n%s", buf.String())
+	}
+}
+
+func TestPresentShowsRepoRelativePaths(t *testing.T) {
+	base := "/Users/me/project"
+	u := domain.Unit{
+		ID:    "u1",
+		Files: []string{base + "/internal/adapter/tui.go", "/etc/outside.go"},
+	}
+
+	var buf bytes.Buffer
+	if err := plain.New(&buf).RelativeTo(base).Present(u, nil); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "internal/adapter/tui.go") || strings.Contains(out, base+"/internal") {
+		t.Errorf("path under base should be shown relative:\n%s", out)
+	}
+	// A path outside the base is left absolute rather than mangled with ../.
+	if !strings.Contains(out, "/etc/outside.go") {
+		t.Errorf("path outside base should stay absolute:\n%s", out)
+	}
+}
 
 func TestVerbosePresentListsMemberEventsAndSnapshots(t *testing.T) {
 	u := domain.Unit{

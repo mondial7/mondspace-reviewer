@@ -90,7 +90,7 @@ func runReview(ctx context.Context, args []string, stdout io.Writer) error {
 	}
 
 	store := jsonl.New(*out)
-	pres := plain.New(stdout)
+	pres := plain.New(stdout).RelativeTo(*repo)
 	if *verbose {
 		pres.Verbose()
 	}
