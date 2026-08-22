@@ -1,0 +1,40 @@
+[sess-basic-u001] auth/token.go, auth/port.go
+WHAT  1 edit, 1 write across 2 files
+WHY   stated: extract validation behind a TokenValidator interface so we can swap the JWT lib later
+FLAG  —
+
+[sess-basic-u002] auth/token_test.go
+WHAT  1 write, 1 bash across 1 file
+WHY   stated: add table-driven tests for TokenValidator
+FLAG  —
+
+[sess-basic-u003] http/middleware.go, http/routes.go
+WHAT  3 edits across 2 files
+WHY   inferred: (none stated)
+FLAG  —
+
+[sess-basic-u004] go.mod, go.sum
+WHAT  2 edits, 1 bash across 2 files
+WHY   stated: add golang-jwt for token parsing
+FLAG  —
+
+[sess-basic-u005] auth/token.go, auth/token_test.go
+WHAT  2 edits across 2 files
+WHY   stated: handle expired tokens explicitly instead of returning a generic error
+FLAG  —
+
+[sess-basic-u006] store/jsonl/store.go, store/jsonl/store_test.go, domain/session.go
+WHAT  8 edits, 2 writes, 2 bashs across 3 files
+WHY   stated: append-only JSONL store for events and units
+FLAG  —
+
+[sess-basic-u007] cmd/msr/main.go
+WHAT  1 edit across 1 file
+WHY   stated: wire the plain presenter behind the review command
+FLAG  —
+
+[sess-basic-u008] README.md
+WHAT  1 edit across 1 file
+WHY   inferred: (none stated)
+FLAG  —
+
