@@ -4,6 +4,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -108,6 +109,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	key, ok := msg.(tea.KeyMsg)
 	if !ok {
 		return m, nil
+	}
+	// Ctrl+C must always quit, in any mode — in raw mode it is a key, not a
+	// signal, so nothing else will exit the program.
+	if key.Type == tea.KeyCtrlC {
+		return m, tea.Quit
 	}
 	if m.asking {
 		return m.updateAsk(key)
@@ -260,12 +266,23 @@ var (
 	statedStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("2")) // green
 	inferredStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("3")) // yellow
 	flagStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("1")) // red
+	headerStyle   = lipgloss.NewStyle().Bold(true)
+	helpStyle     = lipgloss.NewStyle().Faint(true)
 )
+
+const helpLine = "j/k move · enter expand · o ok · ? x d n annotate · / filter · tab unread · a/A ask · q/ctrl+c quit"
 
 // View renders the queue: one scannable line per unit, expanding to slots on
 // demand. Stated and inferred rationale differ in both colour and label word.
+// It is never blank — a header and footer always frame the queue so it is
+// clearly interactive.
 func (m Model) View() string {
 	var b strings.Builder
+
+	visible := m.visible()
+	b.WriteString(headerStyle.Render(fmt.Sprintf("mondspace-reviewer — %d unit(s), %d shown", len(m.units), len(visible))))
+	b.WriteString("\n\n")
+
 	if m.filtering {
 		b.WriteString("/" + m.query + "\n")
 	}
@@ -275,7 +292,16 @@ func (m Model) View() string {
 	if m.answer != "" {
 		b.WriteString("A: " + m.answer + "\n")
 	}
-	for pos, i := range m.visible() {
+
+	if len(visible) == 0 {
+		if len(m.units) == 0 {
+			b.WriteString("  No units to review yet.\n")
+		} else {
+			b.WriteString("  No units match the current filter.\n")
+		}
+	}
+
+	for pos, i := range visible {
 		u := m.units[i]
 		marker := "  "
 		if pos == m.cursor {
@@ -290,6 +316,8 @@ func (m Model) View() string {
 			b.WriteString(m.details(u))
 		}
 	}
+
+	b.WriteString("\n" + helpStyle.Render(helpLine) + "\n")
 	return b.String()
 }
 

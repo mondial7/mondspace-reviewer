@@ -32,6 +32,44 @@ func send(m tui.Model, runes ...rune) tui.Model {
 	return m
 }
 
+func quitsOnCtrlC(t *testing.T, m tui.Model, when string) {
+	t.Helper()
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	if cmd == nil {
+		t.Fatalf("ctrl+c %s: no command returned", when)
+	}
+	if _, ok := cmd().(tea.QuitMsg); !ok {
+		t.Errorf("ctrl+c %s: got %T, want tea.Quit", when, cmd())
+	}
+}
+
+func TestCtrlCAlwaysQuits(t *testing.T) {
+	quitsOnCtrlC(t, tui.New(threeUnits(), nil, nil), "in normal mode")
+	quitsOnCtrlC(t, send(tui.New(threeUnits(), nil, nil), '/'), "while filtering")
+	quitsOnCtrlC(t, send(tui.New(threeUnits(), nil, nil), 'a'), "while asking")
+	quitsOnCtrlC(t, tui.New(nil, nil, nil), "with an empty session")
+}
+
+func TestViewNeverBlankAndShowsHelp(t *testing.T) {
+	// Empty session: still a header, an empty-state message, and a quit hint.
+	empty := tui.New(nil, nil, nil).View()
+	if strings.TrimSpace(empty) == "" {
+		t.Fatal("View is blank for an empty session")
+	}
+	if !strings.Contains(empty, "No units") {
+		t.Errorf("empty session should explain itself:\n%s", empty)
+	}
+	if !strings.Contains(empty, "quit") {
+		t.Errorf("View should show a quit hint:\n%s", empty)
+	}
+
+	// Populated session: the footer help is always present.
+	full := tui.New(threeUnits(), nil, nil).View()
+	if !strings.Contains(full, "quit") {
+		t.Errorf("populated View should show the key hints:\n%s", full)
+	}
+}
+
 // recordingStore captures notes the TUI persists.
 type recordingStore struct{ notes []domain.Note }
 
