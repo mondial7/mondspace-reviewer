@@ -33,7 +33,28 @@ func ExportMarkdown(r domain.Report) string {
 		b.WriteString("\n")
 	}
 
+	if len(r.Agenda) > 0 {
+		b.WriteString("## Open Agenda\n\n")
+		for _, it := range r.Agenda {
+			fmt.Fprintf(&b, "- [ ] %s\n", directive(it))
+		}
+		b.WriteString("\n")
+	}
+
 	return b.String()
+}
+
+// directive phrases an open concern as an instruction for the next agent run.
+func directive(it domain.ReportItem) string {
+	verb := "Address the objection on"
+	if it.NoteKind == domain.NoteQuestion {
+		verb = "Answer the question on"
+	}
+	line := fmt.Sprintf("%s %s (%s)", verb, it.UnitID, it.Headline.Text)
+	if it.NoteText != "" {
+		line += ": " + it.NoteText
+	}
+	return line
 }
 
 func writeItem(b *strings.Builder, it domain.ReportItem) {

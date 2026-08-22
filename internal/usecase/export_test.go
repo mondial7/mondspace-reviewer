@@ -8,6 +8,26 @@ import (
 	"github.com/marcomondini/mondspace-reviewer/internal/usecase"
 )
 
+func TestExportMarkdownOpenAgenda(t *testing.T) {
+	sess := reportSession()
+	sess.Notes = append(sess.Notes,
+		domain.Note{ID: "n6", UnitID: "s-u001", Kind: domain.NoteQuestion, Text: "why an interface?"},
+	)
+
+	md := usecase.ExportMarkdown(usecase.BuildReport(sess))
+
+	if !strings.Contains(md, "## Open Agenda") {
+		t.Errorf("missing Open Agenda heading:\n%s", md)
+	}
+	// Objection on s-u002 and question on s-u001, phrased as directives.
+	if !strings.Contains(md, "Address") || !strings.Contains(md, "wrong layer") {
+		t.Errorf("objection not phrased as a directive:\n%s", md)
+	}
+	if !strings.Contains(md, "Answer") || !strings.Contains(md, "why an interface?") {
+		t.Errorf("question not phrased as a directive:\n%s", md)
+	}
+}
+
 func TestExportMarkdownDebtTaskList(t *testing.T) {
 	sess := reportSession()
 	sess.Notes = append(sess.Notes,
