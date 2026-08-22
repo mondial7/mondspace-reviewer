@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -21,7 +22,7 @@ func TestIngestAssignsULIDAndTimestamp(t *testing.T) {
 	stdin := strings.NewReader(`{"session_id":"s","hook_event_name":"PostToolUse","tool_name":"Edit","tool_input":{"file_path":"a.go"}}`)
 
 	before := time.Now().Add(-time.Second)
-	if err := run([]string{"ingest", "--kind=edit", "--out=" + root}, stdin, &bytes.Buffer{}); err != nil {
+	if err := run(context.Background(), []string{"ingest", "--kind=edit", "--out=" + root}, stdin, &bytes.Buffer{}); err != nil {
 		t.Fatalf("ingest: %v", err)
 	}
 
@@ -52,7 +53,7 @@ func TestConcurrentIngestsAllLandIntact(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			payload := fmt.Sprintf(`{"session_id":"s","hook_event_name":"PostToolUse","tool_name":"Edit","tool_input":{"file_path":"f%d.go"}}`, i)
-			_ = run([]string{"ingest", "--kind=edit", "--out=" + root}, strings.NewReader(payload), &bytes.Buffer{})
+			_ = run(context.Background(), []string{"ingest", "--kind=edit", "--out=" + root}, strings.NewReader(payload), &bytes.Buffer{})
 		}(i)
 	}
 	wg.Wait()
@@ -77,7 +78,7 @@ func TestIngestAppendsExactlyOneLineAtSessionPath(t *testing.T) {
 	root := t.TempDir()
 	stdin := strings.NewReader(`{"session_id":"sess-xyz","hook_event_name":"PostToolBatch"}`)
 
-	if err := run([]string{"ingest", "--kind=batch_end", "--out=" + root}, stdin, &bytes.Buffer{}); err != nil {
+	if err := run(context.Background(), []string{"ingest", "--kind=batch_end", "--out=" + root}, stdin, &bytes.Buffer{}); err != nil {
 		t.Fatalf("ingest: %v", err)
 	}
 
@@ -96,7 +97,7 @@ func TestIngestMalformedJSONExitsZeroAndAppendsNothing(t *testing.T) {
 	root := t.TempDir()
 	stdin := strings.NewReader("{ this is not valid json")
 
-	err := run([]string{"ingest", "--kind=edit", "--out=" + root}, stdin, &bytes.Buffer{})
+	err := run(context.Background(), []string{"ingest", "--kind=edit", "--out=" + root}, stdin, &bytes.Buffer{})
 	if err != nil {
 		t.Fatalf("ingest must exit 0 even on malformed input, got err: %v", err)
 	}

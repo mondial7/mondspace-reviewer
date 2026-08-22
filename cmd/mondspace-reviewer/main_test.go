@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,7 +19,7 @@ func TestReviewCommandPrintsClusteredUnits(t *testing.T) {
 		"--out=" + t.TempDir(),
 	}
 
-	if err := run(args, nil, &out); err != nil {
+	if err := run(context.Background(), args, nil, &out); err != nil {
 		t.Fatalf("run: %v", err)
 	}
 

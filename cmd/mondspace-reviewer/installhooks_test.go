@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -11,7 +12,7 @@ import (
 func TestInstallHooksCommandWritesSettingsFile(t *testing.T) {
 	dir := t.TempDir()
 
-	if err := run([]string{"install-hooks", "--dir=" + dir}, nil, &bytes.Buffer{}); err != nil {
+	if err := run(context.Background(), []string{"install-hooks", "--dir=" + dir}, nil, &bytes.Buffer{}); err != nil {
 		t.Fatalf("install-hooks: %v", err)
 	}
 
@@ -41,7 +42,7 @@ func TestInstallHooksCommandIsIdempotentAndPreservesExisting(t *testing.T) {
 	}
 
 	for i := 0; i < 2; i++ {
-		if err := run([]string{"install-hooks", "--dir=" + dir}, nil, &bytes.Buffer{}); err != nil {
+		if err := run(context.Background(), []string{"install-hooks", "--dir=" + dir}, nil, &bytes.Buffer{}); err != nil {
 			t.Fatalf("install-hooks run %d: %v", i, err)
 		}
 	}

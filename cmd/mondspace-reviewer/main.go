@@ -9,12 +9,15 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"time"
 
 	"github.com/oklog/ulid/v2"
 
 	"github.com/marcomondini/mondspace-reviewer/internal/adapter/presenter/plain"
+	gitsnap "github.com/marcomondini/mondspace-reviewer/internal/adapter/snapshot/git"
+	"github.com/marcomondini/mondspace-reviewer/internal/adapter/source/hooks"
 	"github.com/marcomondini/mondspace-reviewer/internal/adapter/source/replay"
 	"github.com/marcomondini/mondspace-reviewer/internal/adapter/store/jsonl"
 	"github.com/marcomondini/mondspace-reviewer/internal/domain"
@@ -22,19 +25,21 @@ import (
 )
 
 func main() {
-	if err := run(os.Args[1:], os.Stdin, os.Stdout); err != nil {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	if err := run(ctx, os.Args[1:], os.Stdin, os.Stdout); err != nil {
 		fmt.Fprintln(os.Stderr, "msr:", err)
 		os.Exit(1)
 	}
 }
 
-func run(args []string, stdin io.Reader, stdout io.Writer) error {
+func run(ctx context.Context, args []string, stdin io.Reader, stdout io.Writer) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: msr <review|ingest> ...")
+		return fmt.Errorf("usage: msr <review|ingest|install-hooks> ...")
 	}
 	switch args[0] {
 	case "review":
-		return runReview(args, stdout)
+		return runReview(ctx, args, stdout)
 	case "ingest":
 		return runIngest(args, stdin)
 	case "install-hooks":
@@ -44,31 +49,43 @@ func run(args []string, stdin io.Reader, stdout io.Writer) error {
 	}
 }
 
-func runReview(args []string, stdout io.Writer) error {
+func runReview(ctx context.Context, args []string, stdout io.Writer) error {
 	fs := flag.NewFlagSet("review", flag.ContinueOnError)
-	source := fs.String("source", "replay", "event source (replay)")
-	file := fs.String("file", "", "recorded log to replay")
+	source := fs.String("source", "replay", "event source (replay|hooks)")
+	file := fs.String("file", "", "recorded log to replay; for hooks, the events.jsonl to tail")
 	usePlain := fs.Bool("plain", false, "use the plain presenter")
 	out := fs.String("out", ".mondspace-reviewer", "store root directory")
+	repo := fs.String("repo", ".", "repository to snapshot (hooks source)")
+	session := fs.String("session", "", "session id (hooks source)")
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
 	}
-
-	if *source != "replay" {
-		return fmt.Errorf("unknown source %q (M0 supports replay)", *source)
-	}
-	if *file == "" {
-		return fmt.Errorf("--file is required")
-	}
 	if !*usePlain {
-		return fmt.Errorf("--plain is required (M0 has no TUI)")
+		return fmt.Errorf("--plain is required (M1 has no TUI)")
 	}
 
-	src := replay.New(*file)
 	store := jsonl.New(*out)
 	pres := plain.New(stdout)
 
-	return usecase.Review(context.Background(), src, store, pres)
+	switch *source {
+	case "replay":
+		if *file == "" {
+			return fmt.Errorf("--file is required for the replay source")
+		}
+		return usecase.Review(ctx, replay.New(*file), store, pres)
+	case "hooks":
+		if *session == "" {
+			return fmt.Errorf("--session is required for the hooks source")
+		}
+		events := *file
+		if events == "" {
+			events = filepath.Join(*out, *session, "events.jsonl")
+		}
+		snap := gitsnap.New(*repo, *session)
+		return usecase.ReviewLive(ctx, hooks.New(events), snap, store, pres)
+	default:
+		return fmt.Errorf("unknown source %q (M1 supports replay|hooks)", *source)
+	}
 }
 
 // runIngest reads one hook payload from stdin and appends an Event. It always
