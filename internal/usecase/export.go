@@ -25,6 +25,14 @@ func ExportMarkdown(r domain.Report) string {
 		b.WriteString("\n")
 	}
 
+	if len(r.Debt) > 0 {
+		b.WriteString("## Debt\n\n")
+		for _, it := range r.Debt {
+			fmt.Fprintf(&b, "- [ ] %s (%s): %s\n", it.UnitID, it.Headline.Text, it.NoteText)
+		}
+		b.WriteString("\n")
+	}
+
 	return b.String()
 }
 
