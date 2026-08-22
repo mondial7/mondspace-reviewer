@@ -47,3 +47,36 @@ func TestEventDecodesRecordedLine(t *testing.T) {
 		t.Errorf("Raw = %s, want %s", got.Raw, want.Raw)
 	}
 }
+
+func TestEventRoundTripsPreservingRaw(t *testing.T) {
+	first := domain.Event{
+		ID:           "01K39ZQK8T0000000000000002",
+		SessionID:    "sess-basic",
+		TS:           time.Date(2026, 8, 22, 10, 0, 4, 0, time.UTC),
+		Source:       "replay",
+		Kind:         domain.KindEdit,
+		Tool:         "Edit",
+		Files:        []string{"auth/token.go", "auth/port.go"},
+		StatedIntent: "extract validation",
+		Raw:          json.RawMessage(`{"lines_added":34,"nested":{"a":1}}`),
+	}
+
+	encoded, err := json.Marshal(first)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var second domain.Event
+	if err := json.Unmarshal(encoded, &second); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if string(second.Raw) != string(first.Raw) {
+		t.Errorf("Raw not preserved: got %s, want %s", second.Raw, first.Raw)
+	}
+	if second.ID != first.ID || !second.TS.Equal(first.TS) || second.Kind != first.Kind {
+		t.Errorf("round-trip changed fields: got %+v, want %+v", second, first)
+	}
+	if len(second.Files) != len(first.Files) {
+		t.Errorf("Files length changed: got %v, want %v", second.Files, first.Files)
+	}
+}
