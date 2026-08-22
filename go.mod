@@ -1,6 +1,6 @@
 module github.com/mondial7/mondspace-reviewer
 
-go 1.26.3
+go 1.24.0
 
 require (
 	github.com/charmbracelet/bubbletea v1.3.10

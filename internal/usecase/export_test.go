@@ -113,7 +113,7 @@ func TestExportMarkdownReviewReport(t *testing.T) {
 	md := usecase.ExportMarkdown(r)
 
 	for _, want := range []string{
-		"# Review",           // title
+		"# Review",             // title
 		"add token validation", // task prompt
 		"## Review Report",
 		"### ok",

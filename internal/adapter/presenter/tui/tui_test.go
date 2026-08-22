@@ -169,11 +169,11 @@ func TestQuitSignalsQuit(t *testing.T) {
 
 func TestViewRendersHeaderFlagsAndWhy(t *testing.T) {
 	units := []domain.Unit{{
-		ID:       "s-u001",
+		ID:        "s-u001",
 		SessionID: "s",
-		Files:    []string{"auth/token.go"},
-		Flags:    []domain.Flag{domain.FlagNoTest},
-		Headline: domain.Headline{Text: "1 edit across 1 file", Why: "swap the lib", WhySrc: domain.WhyStated},
+		Files:     []string{"auth/token.go"},
+		Flags:     []domain.Flag{domain.FlagNoTest},
+		Headline:  domain.Headline{Text: "1 edit across 1 file", Why: "swap the lib", WhySrc: domain.WhyStated},
 	}}
 	m := enter(tui.New(units, nil, nil)) // expand the current unit
 
@@ -364,8 +364,8 @@ func TestAskModeCapturesCommandKeysAsText(t *testing.T) {
 	store := &recordingStore{}
 	m := fixedClock(tui.New(threeUnits(), nil, store))
 
-	m = send(m, 'a')            // enter ask mode
-	m = send(m, 'j', 'x', 'k')  // these are navigation/annotation keys normally
+	m = send(m, 'a')           // enter ask mode
+	m = send(m, 'j', 'x', 'k') // these are navigation/annotation keys normally
 
 	if m.Question() != "jxk" {
 		t.Errorf("command keys should be captured as text, question = %q", m.Question())
@@ -425,8 +425,8 @@ func TestEnterTogglesExpand(t *testing.T) {
 	}
 
 	// Expansion is per-unit: moving to another unit shows its own state.
-	m = enter(m)      // expand u1
-	m = send(m, 'j')  // move to u2
+	m = enter(m)     // expand u1
+	m = send(m, 'j') // move to u2
 	if m.IsExpanded() {
 		t.Error("u2 should be collapsed independently of u1")
 	}
