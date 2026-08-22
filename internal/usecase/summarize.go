@@ -20,9 +20,15 @@ func Summarize(ctx context.Context, sum port.Summarizer, u domain.Unit, d domain
 
 	out := domain.Headline{Text: model.Text}
 
-	// The stated intent is load-bearing: keep it verbatim, and let the model
-	// only sharpen the WHAT text.
-	out.Why = u.Headline.Why
-	out.WhySrc = u.Headline.WhySrc
+	if u.Headline.WhySrc == domain.WhyStated {
+		// The stated intent is load-bearing: keep it verbatim; the model only
+		// sharpens the WHAT text.
+		out.Why = u.Headline.Why
+		out.WhySrc = domain.WhyStated
+	} else {
+		// Nothing was stated, so the model's rationale is a guess — mark it so.
+		out.Why = model.Why
+		out.WhySrc = domain.WhyInferred
+	}
 	return out
 }

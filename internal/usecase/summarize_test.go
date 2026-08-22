@@ -18,6 +18,25 @@ func (s fakeSummarizer) Headline(context.Context, domain.Unit, domain.Diff) (dom
 	return s.head, s.err
 }
 
+func TestSummarizeInfersWhyWhenNoneStated(t *testing.T) {
+	unit := domain.Unit{Headline: domain.Headline{
+		Text: "3 edits across 2 files", Why: "", WhySrc: domain.WhyInferred,
+	}}
+	model := fakeSummarizer{head: domain.Headline{
+		Text: "added retry with backoff to the HTTP client",
+		Why:  "to survive transient network failures", WhySrc: domain.WhyInferred,
+	}}
+
+	got := usecase.Summarize(context.Background(), model, unit, domain.Diff{})
+
+	if got.Text != "added retry with backoff to the HTTP client" {
+		t.Errorf("Text = %q, want the model's WHAT", got.Text)
+	}
+	if got.Why != "to survive transient network failures" || got.WhySrc != domain.WhyInferred {
+		t.Errorf("Why/WhySrc = %q/%q, want the model's inferred rationale", got.Why, got.WhySrc)
+	}
+}
+
 func TestSummarizePreservesStatedWhy(t *testing.T) {
 	unit := domain.Unit{Headline: domain.Headline{
 		Text: "2 edits across 1 file", Why: "swap the JWT lib later", WhySrc: domain.WhyStated,
