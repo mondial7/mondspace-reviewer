@@ -83,7 +83,7 @@ func runReview(ctx context.Context, args []string, stdout io.Writer) error {
 		}
 		snap := gitsnap.New(*repo, *session)
 		sum := chooseSummarizer(*summarizerURL, *model)
-		return runTUIReview(jsonl.New(*out), snap, sum, *session, stdout)
+		return runTUIReview(jsonl.New(*out), snap, sum, *session, *repo, stdout)
 	}
 	if !*usePlain {
 		return fmt.Errorf("--plain or --tui is required")
@@ -246,13 +246,14 @@ func chooseSummarizer(baseURL, model string) port.Summarizer {
 	return null.New()
 }
 
-func runTUIReview(store port.Store, snap port.Snapshotter, sum port.Summarizer, sessionID string, stdout io.Writer) error {
+func runTUIReview(store port.Store, snap port.Snapshotter, sum port.Summarizer, sessionID, repo string, stdout io.Writer) error {
 	sess, err := store.Load(sessionID)
 	if err != nil {
 		return err
 	}
 	notes := usecase.MarkSuperseded(sess.Units, sess.Notes)
 	model := tui.New(sess.Units, notes, store).
+		RelativeTo(repo).
 		WithSummarize(summarizeFunc(snap, sum)).
 		WithAsk(askFunc(sess, snap, sum))
 	_, err = tea.NewProgram(model, tea.WithInput(os.Stdin), tea.WithOutput(stdout)).Run()

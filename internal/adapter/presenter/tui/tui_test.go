@@ -50,6 +50,39 @@ func TestCtrlCAlwaysQuits(t *testing.T) {
 	quitsOnCtrlC(t, tui.New(nil, nil, nil), "with an empty session")
 }
 
+func TestArrowKeysMoveCursor(t *testing.T) {
+	m := tui.New(threeUnits(), nil, nil)
+
+	down, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m = down.(tui.Model)
+	if m.Cursor() != 1 {
+		t.Errorf("down arrow: cursor = %d, want 1", m.Cursor())
+	}
+	up, _ := m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	m = up.(tui.Model)
+	if m.Cursor() != 0 {
+		t.Errorf("up arrow: cursor = %d, want 0", m.Cursor())
+	}
+}
+
+func TestViewUsesShortHandlesAndRelativePaths(t *testing.T) {
+	base := "/home/me/proj"
+	units := []domain.Unit{
+		{ID: "abc-123-def-u007", SessionID: "abc-123-def", Files: []string{base + "/internal/tui.go"}},
+	}
+	view := tui.New(units, nil, nil).RelativeTo(base).View()
+
+	if !strings.Contains(view, "u007") {
+		t.Errorf("view should show the short unit handle:\n%s", view)
+	}
+	if strings.Contains(view, "abc-123-def-u007") {
+		t.Errorf("collapsed view should not show the full unit id:\n%s", view)
+	}
+	if !strings.Contains(view, "internal/tui.go") || strings.Contains(view, base+"/internal") {
+		t.Errorf("view should show repo-relative paths:\n%s", view)
+	}
+}
+
 func TestViewNeverBlankAndShowsHelp(t *testing.T) {
 	// Empty session: still a header, an empty-state message, and a quit hint.
 	empty := tui.New(nil, nil, nil).View()

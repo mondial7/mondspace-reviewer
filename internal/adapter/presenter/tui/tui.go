@@ -5,6 +5,7 @@ package tui
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -33,6 +34,9 @@ type Model struct {
 	question string
 	answer   string
 
+	base  string // relativise absolute file paths against this dir
+	width int    // terminal width, for rules and wrapping
+
 	newID func() string
 	now   func() time.Time
 
@@ -60,6 +64,16 @@ func New(units []domain.Unit, notes []domain.Note, store port.Store) Model {
 // WithClock overrides ID and time generation for deterministic tests.
 func (m Model) WithClock(newID func() string, now func() time.Time) Model {
 	m.newID, m.now = newID, now
+	return m
+}
+
+// RelativeTo displays absolute file paths relative to base (e.g. the repo root).
+func (m Model) RelativeTo(base string) Model {
+	if abs, err := filepath.Abs(base); err == nil {
+		m.base = abs
+	} else {
+		m.base = base
+	}
 	return m
 }
 
@@ -106,6 +120,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.answer = ans.Text
 		return m, nil
 	}
+	if ws, ok := msg.(tea.WindowSizeMsg); ok {
+		m.width = ws.Width
+		return m, nil
+	}
 	key, ok := msg.(tea.KeyMsg)
 	if !ok {
 		return m, nil
@@ -122,9 +140,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateFilter(key), nil
 	}
 	switch key.String() {
-	case "j":
+	case "j", "down":
 		m.cursor = clamp(m.cursor+1, 0, len(m.visible())-1)
-	case "k":
+	case "k", "up":
 		m.cursor = clamp(m.cursor-1, 0, len(m.visible())-1)
 	case "g":
 		m.cursor = 0
@@ -262,89 +280,123 @@ func mustID(m Model) string {
 }
 
 var (
-	cursorStyle   = lipgloss.NewStyle().Bold(true)
-	statedStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("2")) // green
-	inferredStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("3")) // yellow
-	flagStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("1")) // red
-	headerStyle   = lipgloss.NewStyle().Bold(true)
-	helpStyle     = lipgloss.NewStyle().Faint(true)
+	titleStyle    = lipgloss.NewStyle().Bold(true)
+	dimStyle      = lipgloss.NewStyle().Faint(true)
+	ruleStyle     = lipgloss.NewStyle().Faint(true)
+	labelStyle    = lipgloss.NewStyle().Faint(true)
+	cursorStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("5")) // magenta
+	handleStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("6")) // cyan
+	statedStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("2"))            // green
+	inferredStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))            // yellow
+	flagStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))            // red
+	okStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
 )
 
-const helpLine = "j/k move · enter expand · o ok · ? x d n annotate · / filter · tab unread · a/A ask · q/ctrl+c quit"
+const helpLine = "j/k move · enter expand · o/?/x/d/n note · / filter · tab unread · a/A ask · q quit"
 
-// View renders the queue: one scannable line per unit, expanding to slots on
-// demand. Stated and inferred rationale differ in both colour and label word.
-// It is never blank — a header and footer always frame the queue so it is
-// clearly interactive.
+// View frames the queue: a header, one calm scannable line per unit (expanding
+// to indented detail on demand), and a footer of keys. It is never blank.
 func (m Model) View() string {
+	rule := m.rule()
 	var b strings.Builder
 
-	visible := m.visible()
-	b.WriteString(headerStyle.Render(fmt.Sprintf("mondspace-reviewer — %d unit(s), %d shown", len(m.units), len(visible))))
-	b.WriteString("\n\n")
+	b.WriteString("  " + titleStyle.Render("mondspace-reviewer") + "   " +
+		dimStyle.Render(fmt.Sprintf("%d units · %d unread", len(m.units), m.unreadCount())) + "\n")
+	b.WriteString(rule + "\n")
 
 	if m.filtering {
-		b.WriteString("/" + m.query + "\n")
+		b.WriteString("  " + labelStyle.Render("filter ›") + " " + m.query + "\n")
 	}
 	if m.asking {
-		b.WriteString("ask[" + string(m.askScope) + "]> " + m.question + "\n")
+		b.WriteString("  " + labelStyle.Render("ask ["+string(m.askScope)+"] ›") + " " + m.question + "\n")
 	}
 	if m.answer != "" {
-		b.WriteString("A: " + m.answer + "\n")
+		b.WriteString("  " + labelStyle.Render("answer ›") + " " + m.answer + "\n")
 	}
 
+	visible := m.visible()
 	if len(visible) == 0 {
-		if len(m.units) == 0 {
-			b.WriteString("  No units to review yet.\n")
-		} else {
-			b.WriteString("  No units match the current filter.\n")
+		msg := "No units to review yet."
+		if len(m.units) > 0 {
+			msg = "No units match the current filter."
 		}
+		b.WriteString("\n  " + dimStyle.Render(msg) + "\n")
 	}
 
 	for pos, i := range visible {
 		u := m.units[i]
-		marker := "  "
-		if pos == m.cursor {
-			marker = cursorStyle.Render("▶ ")
-		}
-		read := " "
-		if m.read[u.ID] {
-			read = "✓"
-		}
-		b.WriteString(marker + read + " [" + u.ID + "] " + strings.Join(u.Files, ", ") + "  " + renderFlags(u.Flags) + "\n")
+		b.WriteString(m.unitLine(u, pos == m.cursor))
 		if m.expanded[u.ID] {
-			b.WriteString(m.details(u))
+			b.WriteString("\n" + m.details(u) + "\n")
 		}
 	}
 
-	b.WriteString("\n" + helpStyle.Render(helpLine) + "\n")
+	b.WriteString(rule + "\n")
+	b.WriteString("  " + dimStyle.Render(helpLine) + "\n")
 	return b.String()
 }
 
+// unitLine is the one-line collapsed form: cursor, read mark, short handle,
+// files, and flags.
+func (m Model) unitLine(u domain.Unit, selected bool) string {
+	cursor := "  "
+	if selected {
+		cursor = cursorStyle.Render("▸ ")
+	}
+	mark := "  "
+	if m.read[u.ID] {
+		mark = okStyle.Render("✓ ")
+	}
+	line := cursor + mark + handleStyle.Render(shortHandle(u.ID)) + "  " + m.relFiles(u.Files)
+	if len(u.Flags) > 0 {
+		line += "  " + renderFlags(u.Flags)
+	}
+	return line + "\n"
+}
+
 func (m Model) details(u domain.Unit) string {
+	const ind = "      "
 	var b strings.Builder
-	b.WriteString("    WHAT  " + u.Headline.Text + "\n")
-	b.WriteString("    WHY   " + renderWhy(u.Headline) + "\n")
+	b.WriteString(ind + labelStyle.Render("what") + "  " + u.Headline.Text + "\n")
+	b.WriteString(ind + labelStyle.Render("why ") + "  " + renderWhy(u.Headline) + "\n")
 	for _, n := range m.notes {
 		if n.UnitID != u.ID {
 			continue
 		}
-		line := "    NOTE  " + string(n.Kind)
-		if n.Text != "" {
-			line += ": " + n.Text
-		}
-		if n.SupersededBy != "" {
-			line += " (superseded by " + n.SupersededBy + ")"
-		}
-		b.WriteString(line + "\n")
+		b.WriteString(ind + labelStyle.Render("note") + "  " + renderNote(n) + "\n")
 	}
+	b.WriteString(ind + dimStyle.Render("id    "+u.ID) + "\n")
 	return b.String()
 }
 
-func renderFlags(flags []domain.Flag) string {
-	if len(flags) == 0 {
-		return "—"
+func renderNote(n domain.Note) string {
+	sym, style := noteGlyph(n.Kind)
+	s := style.Render(sym + " " + string(n.Kind))
+	if n.Text != "" {
+		s += " — " + n.Text
 	}
+	if n.SupersededBy != "" {
+		s += dimStyle.Render(" (superseded by " + n.SupersededBy + ")")
+	}
+	return s
+}
+
+func noteGlyph(kind domain.NoteKind) (string, lipgloss.Style) {
+	switch kind {
+	case domain.NoteOK:
+		return "✓", okStyle
+	case domain.NoteObjection:
+		return "✗", flagStyle
+	case domain.NoteQuestion:
+		return "?", inferredStyle
+	case domain.NoteDebt:
+		return "⚑", inferredStyle
+	default:
+		return "·", dimStyle
+	}
+}
+
+func renderFlags(flags []domain.Flag) string {
 	names := make([]string, len(flags))
 	for i, f := range flags {
 		names[i] = string(f)
@@ -362,6 +414,54 @@ func renderWhy(h domain.Headline) string {
 		return inferredStyle.Render("inferred: (none stated)")
 	}
 	return inferredStyle.Render("inferred: " + h.Why)
+}
+
+// shortHandle trims the session prefix, leaving the readable unit suffix (u013).
+func shortHandle(id string) string {
+	if i := strings.LastIndex(id, "-"); i >= 0 && i+1 < len(id) {
+		return id[i+1:]
+	}
+	return id
+}
+
+func (m Model) unreadCount() int {
+	n := 0
+	for _, u := range m.units {
+		if !m.read[u.ID] {
+			n++
+		}
+	}
+	return n
+}
+
+func (m Model) rule() string {
+	w := m.width
+	if w <= 0 {
+		w = 64
+	}
+	if w > 100 {
+		w = 100
+	}
+	return "  " + ruleStyle.Render(strings.Repeat("─", w-4))
+}
+
+func (m Model) relFiles(files []string) string {
+	out := make([]string, len(files))
+	for i, f := range files {
+		out[i] = m.rel(f)
+	}
+	return strings.Join(out, ", ")
+}
+
+func (m Model) rel(f string) string {
+	if m.base == "" || !filepath.IsAbs(f) {
+		return f
+	}
+	r, err := filepath.Rel(m.base, f)
+	if err != nil || r == ".." || strings.HasPrefix(r, ".."+string(filepath.Separator)) {
+		return f
+	}
+	return r
 }
 
 // Cursor is the position within the visible units.
