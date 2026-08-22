@@ -9,6 +9,29 @@ import (
 	"github.com/marcomondini/mondspace-reviewer/internal/domain"
 )
 
+func TestPresentRendersFlags(t *testing.T) {
+	var buf bytes.Buffer
+	u := domain.Unit{
+		ID:    "u",
+		Flags: []domain.Flag{domain.FlagNoTest, domain.FlagLarge},
+	}
+	if err := plain.New(&buf).Present(u); err != nil {
+		t.Fatal(err)
+	}
+	if got := buf.String(); !strings.Contains(got, "FLAG  no-test · large") {
+		t.Errorf("flags not rendered:\n%s", got)
+	}
+
+	// No flags still shows the placeholder.
+	buf.Reset()
+	if err := plain.New(&buf).Present(domain.Unit{ID: "u"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := buf.String(); !strings.Contains(got, "FLAG  —") {
+		t.Errorf("empty flags should render placeholder:\n%s", got)
+	}
+}
+
 func TestPresentDistinguishesStatedFromInferred(t *testing.T) {
 	render := func(h domain.Headline) string {
 		var buf bytes.Buffer

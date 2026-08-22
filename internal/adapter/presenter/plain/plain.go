@@ -25,9 +25,21 @@ func (p *Presenter) Present(u domain.Unit) error {
 		strings.Join(u.Files, ", "),
 		u.Headline.Text,
 		renderWhy(u.Headline),
-		"—",
+		renderFlags(u.Flags),
 	)
 	return err
+}
+
+// renderFlags joins the flags with a middot, or an em dash when there are none.
+func renderFlags(flags []domain.Flag) string {
+	if len(flags) == 0 {
+		return "—"
+	}
+	names := make([]string, len(flags))
+	for i, f := range flags {
+		names[i] = string(f)
+	}
+	return strings.Join(names, " · ")
 }
 
 // renderWhy keeps stated and inferred rationale visually distinct: a different
