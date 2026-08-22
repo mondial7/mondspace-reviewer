@@ -2,11 +2,43 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/oklog/ulid/v2"
+
+	"github.com/marcomondini/mondspace-reviewer/internal/domain"
 )
+
+func TestIngestAssignsULIDAndTimestamp(t *testing.T) {
+	root := t.TempDir()
+	stdin := strings.NewReader(`{"session_id":"s","hook_event_name":"PostToolUse","tool_name":"Edit","tool_input":{"file_path":"a.go"}}`)
+
+	before := time.Now().Add(-time.Second)
+	if err := run([]string{"ingest", "--kind=edit", "--out=" + root}, stdin, &bytes.Buffer{}); err != nil {
+		t.Fatalf("ingest: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(root, "s", "events.jsonl"))
+	if err != nil {
+		t.Fatalf("reading events.jsonl: %v", err)
+	}
+	var e domain.Event
+	if err := json.Unmarshal(bytes.TrimSpace(data), &e); err != nil {
+		t.Fatalf("decoding appended event: %v", err)
+	}
+
+	if _, err := ulid.Parse(e.ID); err != nil {
+		t.Errorf("ID %q is not a valid ULID: %v", e.ID, err)
+	}
+	if e.TS.Before(before) || e.TS.After(time.Now().Add(time.Second)) {
+		t.Errorf("TS %v not within the ingest window", e.TS)
+	}
+}
 
 func TestIngestMalformedJSONExitsZeroAndAppendsNothing(t *testing.T) {
 	root := t.TempDir()
