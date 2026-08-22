@@ -39,6 +39,19 @@ func TestHeadlineHonoursContextCancel(t *testing.T) {
 	}
 }
 
+func TestAnswerErrorsOnNon2xxAndUnreachable(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "boom", http.StatusBadGateway)
+	}))
+	defer srv.Close()
+	if _, err := openai.New(srv.URL, "m").Answer(context.Background(), "q", domain.AskContext{}); err == nil {
+		t.Error("expected an error on HTTP 502")
+	}
+	if _, err := openai.New("http://127.0.0.1:1", "m").Answer(context.Background(), "q", domain.AskContext{}); err == nil {
+		t.Error("expected an error when unreachable")
+	}
+}
+
 func TestAnswerPostsQuestionWithContextAndParsesReply(t *testing.T) {
 	var gotPath, gotBody string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
