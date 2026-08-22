@@ -31,12 +31,23 @@ func BuildReport(sess domain.Session) domain.Report {
 	}
 
 	for _, n := range notes {
-		if n.Kind == domain.NoteDebt {
-			r.Debt = append(r.Debt, itemFor(n, headlines[n.UnitID]))
+		item := itemFor(n, headlines[n.UnitID])
+		switch {
+		case n.Kind == domain.NoteDebt:
+			r.Debt = append(r.Debt, item)
+		case isOpen(n.Kind) && n.SupersededBy == "":
+			r.Agenda = append(r.Agenda, item)
+		case isOpen(n.Kind):
+			r.Superseded = append(r.Superseded, item)
 		}
 	}
 
 	return r
+}
+
+// isOpen reports whether a note kind represents an unresolved concern.
+func isOpen(kind domain.NoteKind) bool {
+	return kind == domain.NoteQuestion || kind == domain.NoteObjection
 }
 
 func itemFor(n domain.Note, h domain.Headline) domain.ReportItem {

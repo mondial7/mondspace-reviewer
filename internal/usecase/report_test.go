@@ -33,6 +33,30 @@ func groupFor(r domain.Report, kind domain.NoteKind) (domain.NoteGroup, bool) {
 	return domain.NoteGroup{}, false
 }
 
+func TestBuildReportOpenAgenda(t *testing.T) {
+	sess := reportSession()
+	sess.Notes = append(sess.Notes,
+		domain.Note{ID: "n6", UnitID: "s-u001", Kind: domain.NoteQuestion, Text: "why an interface?"},
+	)
+
+	r := usecase.BuildReport(sess)
+
+	// n2 (objection on u2) and n6 (question on u1) are both live and unresolved.
+	if len(r.Agenda) != 2 {
+		t.Fatalf("Agenda = %d, want 2 (the objection and the question)", len(r.Agenda))
+	}
+	kinds := map[domain.NoteKind]bool{}
+	for _, it := range r.Agenda {
+		kinds[it.NoteKind] = true
+	}
+	if !kinds[domain.NoteObjection] || !kinds[domain.NoteQuestion] {
+		t.Errorf("Agenda kinds = %v, want objection and question", kinds)
+	}
+	if len(r.Superseded) != 0 {
+		t.Errorf("Superseded = %d, want 0 (nothing superseded here)", len(r.Superseded))
+	}
+}
+
 func TestBuildReportCollectsDebt(t *testing.T) {
 	sess := reportSession()
 	sess.Notes = append(sess.Notes,
