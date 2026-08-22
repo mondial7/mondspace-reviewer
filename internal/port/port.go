@@ -14,6 +14,13 @@ type EventSource interface {
 	Events(ctx context.Context) (<-chan domain.Event, error)
 }
 
+// Snapshotter records tree states and diffs them without touching the user's
+// HEAD, index, or working tree.
+type Snapshotter interface {
+	Snapshot(ctx context.Context, label string) (domain.SnapshotRef, error)
+	Diff(ctx context.Context, from, to domain.SnapshotRef, paths []string) (domain.Diff, error)
+}
+
 // Store persists the append-only session log.
 type Store interface {
 	AppendEvent(domain.Event) error
