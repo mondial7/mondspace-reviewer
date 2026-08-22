@@ -14,40 +14,69 @@ const inactivityGap = 5 * time.Second
 // maxUnitEvents caps a unit's size so a long uninterrupted run still segments.
 const maxUnitEvents = 12
 
+// Clusterer seals events into units incrementally, so a live review can act on
+// each unit the moment it is sealed. It is pure: no I/O, no clock — sealing
+// decisions come from the events' own timestamps.
+type Clusterer struct {
+	sessionID string
+	open      []domain.Event
+	sealed    int
+}
+
+func NewClusterer(sessionID string) *Clusterer {
+	return &Clusterer{sessionID: sessionID}
+}
+
+// Push feeds one event. It returns a sealed unit when this event triggers a
+// boundary (batch_end/prompt), a 5s inactivity gap, or the 12-event cap.
+func (c *Clusterer) Push(e domain.Event) (domain.Unit, bool) {
+	// batch_end is a boundary; prompt is a task statement, not a change. Both
+	// seal the open unit without joining one.
+	if e.Kind == domain.KindBatchEnd || e.Kind == domain.KindPrompt {
+		return c.seal()
+	}
+
+	if len(c.open) > 0 && e.TS.Sub(c.open[len(c.open)-1].TS) >= inactivityGap {
+		u, ok := c.seal()
+		c.open = append(c.open, e)
+		return u, ok
+	}
+
+	c.open = append(c.open, e)
+	if len(c.open) == maxUnitEvents {
+		return c.seal()
+	}
+	return domain.Unit{}, false
+}
+
+// Flush seals any trailing open unit at end of log.
+func (c *Clusterer) Flush() (domain.Unit, bool) {
+	return c.seal()
+}
+
+func (c *Clusterer) seal() (domain.Unit, bool) {
+	if len(c.open) == 0 {
+		return domain.Unit{}, false
+	}
+	c.sealed++
+	u := newUnit(c.sessionID, c.sealed, c.open)
+	c.open = nil
+	return u, true
+}
+
 // Cluster groups a session's events into reviewable units. It is a pure
-// function over the event log.
-//
-// A unit is sealed at a batch_end boundary. Boundary events are not members
-// of any unit.
+// function over the event log, built on the incremental Clusterer.
 func Cluster(sessionID string, events []domain.Event) []domain.Unit {
+	c := NewClusterer(sessionID)
 	var units []domain.Unit
-	var open []domain.Event
-
-	seal := func() {
-		if len(open) == 0 {
-			return
-		}
-		units = append(units, newUnit(sessionID, len(units)+1, open))
-		open = nil
-	}
-
 	for _, e := range events {
-		// batch_end is a boundary; prompt is a task statement, not a change.
-		// Both seal the open unit without joining one.
-		if e.Kind == domain.KindBatchEnd || e.Kind == domain.KindPrompt {
-			seal()
-			continue
-		}
-		if len(open) > 0 && e.TS.Sub(open[len(open)-1].TS) >= inactivityGap {
-			seal()
-		}
-		open = append(open, e)
-		if len(open) == maxUnitEvents {
-			seal()
+		if u, ok := c.Push(e); ok {
+			units = append(units, u)
 		}
 	}
-	seal()
-
+	if u, ok := c.Flush(); ok {
+		units = append(units, u)
+	}
 	return units
 }
 
