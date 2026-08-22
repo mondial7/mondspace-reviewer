@@ -9,6 +9,29 @@ import (
 	"github.com/marcomondini/mondspace-reviewer/internal/usecase"
 )
 
+func TestBuildEventFromUserPromptSubmit(t *testing.T) {
+	payload := []byte(`{
+		"session_id": "abc-123",
+		"hook_event_name": "UserPromptSubmit",
+		"prompt": "Add token validation to the auth package."
+	}`)
+
+	got, err := usecase.BuildEvent(domain.KindPrompt, payload, "id1", time.Unix(0, 0).UTC())
+	if err != nil {
+		t.Fatalf("BuildEvent: %v", err)
+	}
+
+	if got.Kind != domain.KindPrompt {
+		t.Errorf("Kind = %q, want prompt", got.Kind)
+	}
+	if got.StatedIntent != "Add token validation to the auth package." {
+		t.Errorf("StatedIntent = %q, want the prompt text", got.StatedIntent)
+	}
+	if len(got.Files) != 0 {
+		t.Errorf("Files = %v, want none", got.Files)
+	}
+}
+
 func TestBuildEventFromPostToolUseEdit(t *testing.T) {
 	payload := []byte(`{
 		"session_id": "abc-123",

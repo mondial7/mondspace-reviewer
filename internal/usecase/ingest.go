@@ -15,6 +15,7 @@ type hookPayload struct {
 	ToolInput struct {
 		FilePath string `json:"file_path"`
 	} `json:"tool_input"`
+	Prompt string `json:"prompt"`
 }
 
 // BuildEvent maps one hook payload to a domain.Event for the given kind. The id
@@ -35,6 +36,9 @@ func BuildEvent(kind domain.Kind, payload []byte, id string, ts time.Time) (doma
 	}
 	if p.ToolInput.FilePath != "" {
 		e.Files = []string{p.ToolInput.FilePath}
+	}
+	if kind == domain.KindPrompt {
+		e.StatedIntent = p.Prompt
 	}
 	return e, nil
 }
