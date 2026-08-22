@@ -41,6 +41,30 @@ func newRepo(t *testing.T) string {
 	return dir
 }
 
+func TestSnapshotHonoursGitignore(t *testing.T) {
+	dir := newRepo(t)
+	if err := os.WriteFile(filepath.Join(dir, ".gitignore"), []byte("secret.txt\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "secret.txt"), []byte("password\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	ref, err := gitsnap.New(dir, "sess-1").Snapshot(context.Background(), "s1")
+	if err != nil {
+		t.Fatalf("Snapshot: %v", err)
+	}
+
+	// The ignored file must not appear in the snapshot tree.
+	tree := gitCmd(t, dir, "ls-tree", "-r", "--name-only", ref.Commit)
+	if strings.Contains(tree, "secret.txt") {
+		t.Errorf("ignored file captured in snapshot:\n%s", tree)
+	}
+	if !strings.Contains(tree, "a.txt") {
+		t.Errorf("tracked file missing from snapshot:\n%s", tree)
+	}
+}
+
 func TestDiffStableAfterWorkingFileDeleted(t *testing.T) {
 	dir := newRepo(t)
 	s := gitsnap.New(dir, "sess-1")
