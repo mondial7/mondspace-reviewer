@@ -11,14 +11,15 @@ import (
 )
 
 type Model struct {
-	units  []domain.Unit
-	notes  []domain.Note
-	store  port.Store
-	cursor int // index into the visible units
+	units    []domain.Unit
+	notes    []domain.Note
+	store    port.Store
+	cursor   int             // index into the visible units
+	expanded map[string]bool // unit ID -> expanded
 }
 
 func New(units []domain.Unit, notes []domain.Note, store port.Store) Model {
-	return Model{units: units, notes: notes, store: store}
+	return Model{units: units, notes: notes, store: store, expanded: map[string]bool{}}
 }
 
 func (m Model) Init() tea.Cmd { return nil }
@@ -37,6 +38,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.cursor = 0
 	case "G":
 		m.cursor = clamp(len(m.visible())-1, 0, len(m.visible())-1)
+	case "enter":
+		if u, ok := m.current(); ok {
+			m.expanded[u.ID] = !m.expanded[u.ID]
+		}
 	}
 	return m, nil
 }
@@ -45,6 +50,21 @@ func (m Model) View() string { return "" }
 
 // Cursor is the position within the visible units.
 func (m Model) Cursor() int { return m.cursor }
+
+// IsExpanded reports whether the unit under the cursor is expanded.
+func (m Model) IsExpanded() bool {
+	u, ok := m.current()
+	return ok && m.expanded[u.ID]
+}
+
+// current returns the unit under the cursor.
+func (m Model) current() (domain.Unit, bool) {
+	vis := m.visible()
+	if m.cursor < 0 || m.cursor >= len(vis) {
+		return domain.Unit{}, false
+	}
+	return m.units[vis[m.cursor]], true
+}
 
 // visible returns the indices of the units currently shown.
 func (m Model) visible() []int {

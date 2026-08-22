@@ -37,6 +37,33 @@ func TestModelStartsAtFirstUnit(t *testing.T) {
 	}
 }
 
+func enter(m tui.Model) tui.Model {
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	return next.(tui.Model)
+}
+
+func TestEnterTogglesExpand(t *testing.T) {
+	m := tui.New(threeUnits(), nil, nil)
+	if m.IsExpanded() {
+		t.Fatal("unit should start collapsed")
+	}
+	m = enter(m)
+	if !m.IsExpanded() {
+		t.Error("enter should expand the current unit")
+	}
+	m = enter(m)
+	if m.IsExpanded() {
+		t.Error("enter again should collapse")
+	}
+
+	// Expansion is per-unit: moving to another unit shows its own state.
+	m = enter(m)      // expand u1
+	m = send(m, 'j')  // move to u2
+	if m.IsExpanded() {
+		t.Error("u2 should be collapsed independently of u1")
+	}
+}
+
 func TestGoToTopAndBottom(t *testing.T) {
 	m := tui.New(threeUnits(), nil, nil)
 
