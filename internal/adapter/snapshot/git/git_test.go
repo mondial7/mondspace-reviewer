@@ -41,6 +41,36 @@ func newRepo(t *testing.T) string {
 	return dir
 }
 
+func TestDiffBetweenTwoSnapshots(t *testing.T) {
+	dir := newRepo(t)
+	s := gitsnap.New(dir, "sess-1")
+
+	from, err := s.Snapshot(context.Background(), "before")
+	if err != nil {
+		t.Fatalf("Snapshot before: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("v1\nv2\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	to, err := s.Snapshot(context.Background(), "after")
+	if err != nil {
+		t.Fatalf("Snapshot after: %v", err)
+	}
+
+	diff, err := s.Diff(context.Background(), from, to, []string{"a.txt"})
+	if err != nil {
+		t.Fatalf("Diff: %v", err)
+	}
+
+	if !strings.Contains(diff.Text, "+v2") {
+		t.Errorf("diff missing the added line:\n%s", diff.Text)
+	}
+	if !strings.Contains(diff.Text, "a.txt") {
+		t.Errorf("diff missing the file name:\n%s", diff.Text)
+	}
+}
+
 func TestSnapshotLeavesHeadIndexAndWorktreeUnchanged(t *testing.T) {
 	dir := newRepo(t)
 
