@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/oklog/ulid/v2"
 
 	"github.com/marcomondini/mondspace-reviewer/internal/domain"
@@ -146,7 +147,80 @@ func mustID(m Model) string {
 	return ""
 }
 
-func (m Model) View() string { return "" }
+var (
+	cursorStyle   = lipgloss.NewStyle().Bold(true)
+	statedStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("2")) // green
+	inferredStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("3")) // yellow
+	flagStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("1")) // red
+)
+
+// View renders the queue: one scannable line per unit, expanding to slots on
+// demand. Stated and inferred rationale differ in both colour and label word.
+func (m Model) View() string {
+	var b strings.Builder
+	if m.filtering {
+		b.WriteString("/" + m.query + "\n")
+	}
+	for pos, i := range m.visible() {
+		u := m.units[i]
+		marker := "  "
+		if pos == m.cursor {
+			marker = cursorStyle.Render("▶ ")
+		}
+		read := " "
+		if m.read[u.ID] {
+			read = "✓"
+		}
+		b.WriteString(marker + read + " [" + u.ID + "] " + strings.Join(u.Files, ", ") + "  " + renderFlags(u.Flags) + "\n")
+		if m.expanded[u.ID] {
+			b.WriteString(m.details(u))
+		}
+	}
+	return b.String()
+}
+
+func (m Model) details(u domain.Unit) string {
+	var b strings.Builder
+	b.WriteString("    WHAT  " + u.Headline.Text + "\n")
+	b.WriteString("    WHY   " + renderWhy(u.Headline) + "\n")
+	for _, n := range m.notes {
+		if n.UnitID != u.ID {
+			continue
+		}
+		line := "    NOTE  " + string(n.Kind)
+		if n.Text != "" {
+			line += ": " + n.Text
+		}
+		if n.SupersededBy != "" {
+			line += " (superseded by " + n.SupersededBy + ")"
+		}
+		b.WriteString(line + "\n")
+	}
+	return b.String()
+}
+
+func renderFlags(flags []domain.Flag) string {
+	if len(flags) == 0 {
+		return "—"
+	}
+	names := make([]string, len(flags))
+	for i, f := range flags {
+		names[i] = string(f)
+	}
+	return flagStyle.Render(strings.Join(names, " · "))
+}
+
+// renderWhy keeps stated and inferred rationale visually distinct: different
+// colour and different label word.
+func renderWhy(h domain.Headline) string {
+	if h.WhySrc == domain.WhyStated {
+		return statedStyle.Render("stated: " + h.Why)
+	}
+	if h.Why == "" {
+		return inferredStyle.Render("inferred: (none stated)")
+	}
+	return inferredStyle.Render("inferred: " + h.Why)
+}
 
 // Cursor is the position within the visible units.
 func (m Model) Cursor() int { return m.cursor }

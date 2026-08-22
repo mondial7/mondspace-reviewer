@@ -1,6 +1,7 @@
 package tui_test
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -163,6 +164,24 @@ func TestQuitSignalsQuit(t *testing.T) {
 	_, cmd = fm.Update(key('q'))
 	if cmd != nil {
 		t.Error("q while filtering should not quit")
+	}
+}
+
+func TestViewRendersHeaderFlagsAndWhy(t *testing.T) {
+	units := []domain.Unit{{
+		ID:       "s-u001",
+		SessionID: "s",
+		Files:    []string{"auth/token.go"},
+		Flags:    []domain.Flag{domain.FlagNoTest},
+		Headline: domain.Headline{Text: "1 edit across 1 file", Why: "swap the lib", WhySrc: domain.WhyStated},
+	}}
+	m := enter(tui.New(units, nil, nil)) // expand the current unit
+
+	view := m.View()
+	for _, want := range []string{"s-u001", "auth/token.go", "no-test", "1 edit across 1 file", "stated:", "swap the lib"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("view missing %q\n---\n%s", want, view)
+		}
 	}
 }
 
