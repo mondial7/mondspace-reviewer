@@ -32,7 +32,9 @@ func Cluster(sessionID string, events []domain.Event) []domain.Unit {
 	}
 
 	for _, e := range events {
-		if e.Kind == domain.KindBatchEnd {
+		// batch_end is a boundary; prompt is a task statement, not a change.
+		// Both seal the open unit without joining one.
+		if e.Kind == domain.KindBatchEnd || e.Kind == domain.KindPrompt {
 			seal()
 			continue
 		}

@@ -27,6 +27,33 @@ func TestClusterEmptyLog(t *testing.T) {
 	}
 }
 
+func TestPromptSealsAndIsNotAMember(t *testing.T) {
+	events := []domain.Event{
+		ev("e1", domain.KindEdit, "a.go"),
+		ev("e2", domain.KindPrompt),
+		ev("e3", domain.KindEdit, "b.go"),
+	}
+
+	units := usecase.Cluster("sess-basic", events)
+
+	if len(units) != 2 {
+		t.Fatalf("got %d units, want 2 (prompt seals)", len(units))
+	}
+	for _, u := range units {
+		for _, id := range u.EventIDs {
+			if id == "e2" {
+				t.Errorf("prompt e2 must not be a member of unit %s", u.ID)
+			}
+		}
+	}
+	if got := units[0].EventIDs; len(got) != 1 || got[0] != "e1" {
+		t.Errorf("unit 0 EventIDs = %v, want [e1]", got)
+	}
+	if got := units[1].EventIDs; len(got) != 1 || got[0] != "e3" {
+		t.Errorf("unit 1 EventIDs = %v, want [e3]", got)
+	}
+}
+
 func TestEndOfLogSealsTrailingUnit(t *testing.T) {
 	events := []domain.Event{
 		ev("e1", domain.KindEdit, "a.go"),
