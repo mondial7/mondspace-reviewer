@@ -24,7 +24,35 @@ func Flags(u domain.Unit, d domain.Diff) []domain.Flag {
 	if changedLines(d.Text) > largeThreshold {
 		flags = append(flags, domain.FlagLarge)
 	}
+	if anyAddedLine(d.Text, hasTodo) {
+		flags = append(flags, domain.FlagTodo)
+	}
 	return flags
+}
+
+var todoMarkers = []string{"TODO", "FIXME", "XXX"}
+
+func hasTodo(line string) bool {
+	for _, m := range todoMarkers {
+		if strings.Contains(line, m) {
+			return true
+		}
+	}
+	return false
+}
+
+// anyAddedLine reports whether any added line (a "+" line that is not the +++
+// header) satisfies pred. The leading "+" is stripped before testing.
+func anyAddedLine(diff string, pred func(string) bool) bool {
+	for _, line := range strings.Split(diff, "\n") {
+		if !strings.HasPrefix(line, "+") || strings.HasPrefix(line, "+++") {
+			continue
+		}
+		if pred(line[1:]) {
+			return true
+		}
+	}
+	return false
 }
 
 // largeThreshold is the changed-line count above which a unit is "large".

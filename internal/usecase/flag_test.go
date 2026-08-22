@@ -43,6 +43,26 @@ func TestFlagLarge(t *testing.T) {
 	}
 }
 
+func TestFlagTodo(t *testing.T) {
+	added := domain.Diff{Text: "@@ -1 +1 @@\n+\t// TODO: handle the edge case\n"}
+	if !hasFlag(usecase.Flags(domain.Unit{}, added), domain.FlagTodo) {
+		t.Error("expected todo flag for an added TODO line")
+	}
+
+	for _, kind := range []string{"FIXME", "XXX"} {
+		d := domain.Diff{Text: "+// " + kind + " later\n"}
+		if !hasFlag(usecase.Flags(domain.Unit{}, d), domain.FlagTodo) {
+			t.Errorf("expected todo flag for added %s", kind)
+		}
+	}
+
+	// A TODO that is being removed, or sitting in unchanged context, is not new.
+	removed := domain.Diff{Text: "@@ -1 +1 @@\n-// TODO: old note\n context TODO stays\n"}
+	if hasFlag(usecase.Flags(domain.Unit{}, removed), domain.FlagTodo) {
+		t.Error("did not expect todo flag for a removed/context TODO")
+	}
+}
+
 func TestFlagNoTest(t *testing.T) {
 	tests := []struct {
 		name  string
