@@ -4,7 +4,10 @@
 package jsonl
 
 import (
+	"bufio"
 	"encoding/json"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 
@@ -25,6 +28,57 @@ func (s *Store) AppendEvent(e domain.Event) error {
 
 func (s *Store) AppendUnit(u domain.Unit) error {
 	return s.appendLine(u.SessionID, "units.jsonl", u)
+}
+
+// Load reconstructs a Session from its append-only files. The task prompt is
+// the first prompt event's stated intent.
+func (s *Store) Load(sessionID string) (domain.Session, error) {
+	sess := domain.Session{ID: sessionID}
+
+	events, err := readLines[domain.Event](filepath.Join(s.root, sessionID, "events.jsonl"))
+	if err != nil {
+		return domain.Session{}, err
+	}
+	sess.Events = events
+	for _, e := range events {
+		if e.Kind == domain.KindPrompt {
+			sess.Prompt = e.StatedIntent
+			break
+		}
+	}
+
+	units, err := readLines[domain.Unit](filepath.Join(s.root, sessionID, "units.jsonl"))
+	if err != nil {
+		return domain.Session{}, err
+	}
+	sess.Units = units
+
+	return sess, nil
+}
+
+// readLines decodes each JSON line of a file into T. A missing file yields no
+// items. A malformed line is skipped, not fatal.
+func readLines[T any](path string) ([]T, error) {
+	f, err := os.Open(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	var items []T
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for sc.Scan() {
+		var v T
+		if err := json.Unmarshal(sc.Bytes(), &v); err != nil {
+			continue
+		}
+		items = append(items, v)
+	}
+	return items, sc.Err()
 }
 
 func (s *Store) appendLine(sessionID, file string, v any) error {

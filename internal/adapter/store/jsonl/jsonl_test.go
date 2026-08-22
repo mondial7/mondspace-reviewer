@@ -10,6 +10,42 @@ import (
 	"github.com/marcomondini/mondspace-reviewer/internal/domain"
 )
 
+func TestLoadReconstructsSession(t *testing.T) {
+	root := t.TempDir()
+	s := jsonl.New(root)
+
+	events := []domain.Event{
+		{ID: "e1", SessionID: "s", Kind: domain.KindPrompt, StatedIntent: "add auth"},
+		{ID: "e2", SessionID: "s", Kind: domain.KindEdit, Files: []string{"a.go"}},
+	}
+	for _, e := range events {
+		if err := s.AppendEvent(e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.AppendUnit(domain.Unit{ID: "s-u001", SessionID: "s", EventIDs: []string{"e2"}, Sealed: true}); err != nil {
+		t.Fatal(err)
+	}
+
+	sess, err := jsonl.New(root).Load("s")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if sess.ID != "s" {
+		t.Errorf("ID = %q, want s", sess.ID)
+	}
+	if sess.Prompt != "add auth" {
+		t.Errorf("Prompt = %q, want %q", sess.Prompt, "add auth")
+	}
+	if len(sess.Events) != 2 {
+		t.Errorf("got %d events, want 2", len(sess.Events))
+	}
+	if len(sess.Units) != 1 || sess.Units[0].ID != "s-u001" {
+		t.Errorf("Units = %+v, want one unit s-u001", sess.Units)
+	}
+}
+
 func TestAppendsAreAdditiveAcrossInstances(t *testing.T) {
 	root := t.TempDir()
 
