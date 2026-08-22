@@ -9,6 +9,25 @@ import (
 	"github.com/marcomondini/mondspace-reviewer/internal/usecase"
 )
 
+func TestBuildEventFromPostToolBatch(t *testing.T) {
+	payload := []byte(`{"session_id": "abc-123", "hook_event_name": "PostToolBatch"}`)
+
+	got, err := usecase.BuildEvent(domain.KindBatchEnd, payload, "id1", time.Unix(0, 0).UTC())
+	if err != nil {
+		t.Fatalf("BuildEvent: %v", err)
+	}
+
+	if got.Kind != domain.KindBatchEnd {
+		t.Errorf("Kind = %q, want batch_end", got.Kind)
+	}
+	if got.Tool != "PostToolBatch" {
+		t.Errorf("Tool = %q, want fallback to hook event name PostToolBatch", got.Tool)
+	}
+	if len(got.Files) != 0 {
+		t.Errorf("Files = %v, want none", got.Files)
+	}
+}
+
 func TestBuildEventFromUserPromptSubmit(t *testing.T) {
 	payload := []byte(`{
 		"session_id": "abc-123",
