@@ -26,6 +26,24 @@ func TestClusterEmptyLog(t *testing.T) {
 	}
 }
 
+func TestBatchEndWithNoActionsEmitsNothing(t *testing.T) {
+	events := []domain.Event{
+		ev("e1", domain.KindBatchEnd),
+		ev("e2", domain.KindEdit, "a.go"),
+		ev("e3", domain.KindBatchEnd),
+		ev("e4", domain.KindBatchEnd),
+	}
+
+	units := usecase.Cluster("sess-basic", events)
+
+	if len(units) != 1 {
+		t.Fatalf("got %d units, want 1 (empty boundaries must not seal)", len(units))
+	}
+	if got := units[0].EventIDs; len(got) != 1 || got[0] != "e2" {
+		t.Errorf("EventIDs = %v, want [e2]", got)
+	}
+}
+
 func TestBatchEndSealsPrecedingActions(t *testing.T) {
 	events := []domain.Event{
 		ev("e1", domain.KindEdit, "a.go"),
