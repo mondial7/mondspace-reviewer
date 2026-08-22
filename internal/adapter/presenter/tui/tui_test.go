@@ -185,6 +185,23 @@ func TestViewRendersHeaderFlagsAndWhy(t *testing.T) {
 	}
 }
 
+func TestViewShowsSupersededMarker(t *testing.T) {
+	units := []domain.Unit{{ID: "s-u001", SessionID: "s", Files: []string{"a.go"}}}
+	notes := []domain.Note{{
+		ID: "n1", UnitID: "s-u001", Kind: domain.NoteObjection,
+		Text: "wrong choice", SupersededBy: "s-u007",
+	}}
+	m := enter(tui.New(units, notes, nil))
+
+	view := m.View()
+	if !strings.Contains(view, "objection") || !strings.Contains(view, "wrong choice") {
+		t.Errorf("view missing the note:\n%s", view)
+	}
+	if !strings.Contains(view, "superseded by s-u007") {
+		t.Errorf("view missing supersession marker:\n%s", view)
+	}
+}
+
 func TestModelStartsAtFirstUnit(t *testing.T) {
 	m := tui.New(threeUnits(), nil, nil)
 	if m.Cursor() != 0 {
