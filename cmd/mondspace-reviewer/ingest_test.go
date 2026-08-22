@@ -3,9 +3,11 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -37,6 +39,37 @@ func TestIngestAssignsULIDAndTimestamp(t *testing.T) {
 	}
 	if e.TS.Before(before) || e.TS.After(time.Now().Add(time.Second)) {
 		t.Errorf("TS %v not within the ingest window", e.TS)
+	}
+}
+
+func TestConcurrentIngestsAllLandIntact(t *testing.T) {
+	root := t.TempDir()
+	const n = 20
+
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			payload := fmt.Sprintf(`{"session_id":"s","hook_event_name":"PostToolUse","tool_name":"Edit","tool_input":{"file_path":"f%d.go"}}`, i)
+			_ = run([]string{"ingest", "--kind=edit", "--out=" + root}, strings.NewReader(payload), &bytes.Buffer{})
+		}(i)
+	}
+	wg.Wait()
+
+	data, err := os.ReadFile(filepath.Join(root, "s", "events.jsonl"))
+	if err != nil {
+		t.Fatalf("reading events.jsonl: %v", err)
+	}
+	lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
+	if len(lines) != n {
+		t.Fatalf("got %d lines, want %d (append not atomic?)", len(lines), n)
+	}
+	for i, l := range lines {
+		var e domain.Event
+		if err := json.Unmarshal([]byte(l), &e); err != nil {
+			t.Errorf("line %d is not intact JSON (interleaved write): %q", i, l)
+		}
 	}
 }
 
