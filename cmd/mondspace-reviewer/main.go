@@ -53,6 +53,8 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout io.Writer) 
 		return runInstallHooks(args)
 	case "ask":
 		return runAsk(ctx, args, stdout)
+	case "export":
+		return runExport(args, stdout)
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}
@@ -114,6 +116,41 @@ const (
 	defaultSummarizerURL = "http://192.168.101.99:1234/v1"
 	defaultModel         = "qwen/qwen3.5-9b"
 )
+
+// runExport writes a review report for a stored session as Markdown or JSON.
+func runExport(args []string, stdout io.Writer) error {
+	fs := flag.NewFlagSet("export", flag.ContinueOnError)
+	format := fs.String("format", "md", "output format (md|json)")
+	out := fs.String("out", ".mondspace-reviewer", "store root directory")
+	session := fs.String("session", "", "session id")
+	if err := fs.Parse(args[1:]); err != nil {
+		return err
+	}
+	if *session == "" {
+		return fmt.Errorf("--session is required")
+	}
+
+	sess, err := jsonl.New(*out).Load(*session)
+	if err != nil {
+		return err
+	}
+	report := usecase.BuildReport(sess)
+
+	switch *format {
+	case "md":
+		_, err = io.WriteString(stdout, usecase.ExportMarkdown(report))
+		return err
+	case "json":
+		data, err := usecase.ExportJSON(report)
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprintln(stdout, string(data))
+		return err
+	default:
+		return fmt.Errorf("unknown format %q (want md|json)", *format)
+	}
+}
 
 // runAsk answers one question about a stored session and prints the answer.
 // Scriptable interrogation: no TUI, no terminal.
