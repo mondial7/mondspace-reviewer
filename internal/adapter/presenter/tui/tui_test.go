@@ -296,6 +296,26 @@ func TestInitFiresSummarizeCommandsPerUnit(t *testing.T) {
 	}
 }
 
+func TestAskModeEntryAndTyping(t *testing.T) {
+	m := send(tui.New(threeUnits(), nil, nil), 'a')
+	if !m.Asking() {
+		t.Fatal("'a' should enter ask mode")
+	}
+	if m.AskScope() != domain.AskUnit {
+		t.Errorf("scope = %q, want unit", m.AskScope())
+	}
+	m = send(m, 'w', 'h', 'y')
+	if m.Question() != "why" {
+		t.Errorf("question = %q, want 'why'", m.Question())
+	}
+
+	// Capital A opens a session-scope question.
+	ms := send(tui.New(threeUnits(), nil, nil), 'A')
+	if !ms.Asking() || ms.AskScope() != domain.AskSession {
+		t.Errorf("'A' should enter session ask mode, got asking=%v scope=%q", ms.Asking(), ms.AskScope())
+	}
+}
+
 func TestModelStartsAtFirstUnit(t *testing.T) {
 	m := tui.New(threeUnits(), nil, nil)
 	if m.Cursor() != 0 {

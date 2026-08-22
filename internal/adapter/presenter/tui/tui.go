@@ -27,6 +27,11 @@ type Model struct {
 	filtering  bool
 	query      string
 
+	asking   bool
+	askScope domain.AskScope
+	question string
+	answer   string
+
 	newID func() string
 	now   func() time.Time
 
@@ -89,6 +94,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if !ok {
 		return m, nil
 	}
+	if m.asking {
+		return m.updateAsk(key)
+	}
 	if m.filtering {
 		return m.updateFilter(key), nil
 	}
@@ -123,11 +131,43 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case "/":
 		m.filtering = true
 		m.query = ""
+	case "a":
+		m.asking, m.askScope, m.question, m.answer = true, domain.AskUnit, "", ""
+	case "A":
+		m.asking, m.askScope, m.question, m.answer = true, domain.AskSession, "", ""
 	case "q":
 		return m, tea.Quit
 	}
 	return m, nil
 }
+
+// updateAsk handles keys while the ask prompt is open. Enter submits, Esc
+// cancels, and every other key edits the question text.
+func (m Model) updateAsk(key tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch key.Type {
+	case tea.KeyEsc:
+		m.asking, m.question = false, ""
+	case tea.KeyBackspace:
+		if m.question != "" {
+			m.question = m.question[:len(m.question)-1]
+		}
+	case tea.KeyRunes, tea.KeySpace:
+		m.question += string(key.Runes)
+	}
+	return m, nil
+}
+
+// Asking reports whether the ask prompt is open.
+func (m Model) Asking() bool { return m.asking }
+
+// AskScope is the scope of the current question.
+func (m Model) AskScope() domain.AskScope { return m.askScope }
+
+// Question is the text typed into the ask prompt.
+func (m Model) Question() string { return m.question }
+
+// Answer is the last answer received.
+func (m Model) Answer() string { return m.answer }
 
 // updateFilter handles keys while the filter prompt is open. Enter commits the
 // query, Esc cancels it, and typing edits it live.
