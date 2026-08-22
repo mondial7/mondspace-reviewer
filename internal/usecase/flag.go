@@ -21,7 +21,28 @@ func Flags(u domain.Unit, d domain.Diff) []domain.Flag {
 	if noTest(u.Files) {
 		flags = append(flags, domain.FlagNoTest)
 	}
+	if changedLines(d.Text) > largeThreshold {
+		flags = append(flags, domain.FlagLarge)
+	}
 	return flags
+}
+
+// largeThreshold is the changed-line count above which a unit is "large".
+const largeThreshold = 150
+
+// changedLines counts added and removed content lines in a unified diff,
+// ignoring the +++/--- file headers.
+func changedLines(diff string) int {
+	n := 0
+	for _, line := range strings.Split(diff, "\n") {
+		if strings.HasPrefix(line, "+++") || strings.HasPrefix(line, "---") {
+			continue
+		}
+		if strings.HasPrefix(line, "+") || strings.HasPrefix(line, "-") {
+			n++
+		}
+	}
+	return n
 }
 
 func noTest(files []string) bool {
