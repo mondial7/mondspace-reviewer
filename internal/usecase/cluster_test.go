@@ -27,6 +27,31 @@ func TestClusterEmptyLog(t *testing.T) {
 	}
 }
 
+func TestUnitFilesAreDedupedUnionInFirstSeenOrder(t *testing.T) {
+	events := []domain.Event{
+		ev("e1", domain.KindEdit, "http/mw.go"),
+		ev("e2", domain.KindEdit, "http/mw.go"),
+		ev("e3", domain.KindEdit, "auth/token.go", "http/mw.go"),
+		ev("e4", domain.KindBatchEnd),
+	}
+
+	units := usecase.Cluster("sess-basic", events)
+
+	if len(units) != 1 {
+		t.Fatalf("got %d units, want 1", len(units))
+	}
+	want := []string{"http/mw.go", "auth/token.go"}
+	got := units[0].Files
+	if len(got) != len(want) {
+		t.Fatalf("Files = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("Files = %v, want %v", got, want)
+		}
+	}
+}
+
 func TestPromptSealsAndIsNotAMember(t *testing.T) {
 	events := []domain.Event{
 		ev("e1", domain.KindEdit, "a.go"),

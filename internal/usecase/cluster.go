@@ -53,13 +53,22 @@ func Cluster(sessionID string, events []domain.Event) []domain.Unit {
 
 func newUnit(sessionID string, ordinal int, members []domain.Event) domain.Unit {
 	ids := make([]string, len(members))
+	var files []string
+	seen := map[string]bool{}
 	for i, e := range members {
 		ids[i] = e.ID
+		for _, f := range e.Files {
+			if !seen[f] {
+				seen[f] = true
+				files = append(files, f)
+			}
+		}
 	}
 	return domain.Unit{
 		ID:        fmt.Sprintf("%s-u%03d", sessionID, ordinal),
 		SessionID: sessionID,
 		EventIDs:  ids,
+		Files:     files,
 		Sealed:    true,
 	}
 }
