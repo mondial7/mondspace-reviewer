@@ -22,6 +22,23 @@ func chatResponse(content string) string {
 	return string(b)
 }
 
+func TestHeadlineErrorsOnNon2xxAndUnreachable(t *testing.T) {
+	u := domain.Unit{ID: "u1"}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "boom", http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+	if _, err := openai.New(srv.URL, "m").Headline(context.Background(), u, domain.Diff{}); err == nil {
+		t.Error("expected an error on HTTP 500")
+	}
+
+	// An address nobody is listening on: connection error.
+	if _, err := openai.New("http://127.0.0.1:1", "m").Headline(context.Background(), u, domain.Diff{}); err == nil {
+		t.Error("expected an error when the endpoint is unreachable")
+	}
+}
+
 func TestHeadlinePostsChatCompletionAndParsesReply(t *testing.T) {
 	var gotPath, gotBody string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
