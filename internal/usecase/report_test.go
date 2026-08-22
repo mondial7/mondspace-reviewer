@@ -57,6 +57,33 @@ func TestBuildReportOpenAgenda(t *testing.T) {
 	}
 }
 
+func TestBuildReportSupersededSection(t *testing.T) {
+	sess := reportSession()
+	// A later unit rewrites auth/token.go, superseding the objection on s-u001.
+	sess.Units = append(sess.Units, domain.Unit{ID: "s-u004", Files: []string{"auth/token.go"}})
+	sess.Notes = append(sess.Notes,
+		domain.Note{ID: "n7", UnitID: "s-u001", Kind: domain.NoteObjection, Text: "bad choice"},
+	)
+
+	r := usecase.BuildReport(sess)
+
+	if len(r.Superseded) != 1 {
+		t.Fatalf("Superseded = %d, want 1", len(r.Superseded))
+	}
+	if r.Superseded[0].SupersededBy != "s-u004" || r.Superseded[0].NoteText != "bad choice" {
+		t.Errorf("Superseded item = %+v, want the objection marked superseded by s-u004", r.Superseded[0])
+	}
+	// The superseded objection must not appear in the live agenda; n2 still does.
+	for _, it := range r.Agenda {
+		if it.NoteText == "bad choice" {
+			t.Error("superseded objection leaked into the live agenda")
+		}
+	}
+	if len(r.Agenda) != 1 {
+		t.Errorf("Agenda = %d, want 1 (only the live objection on s-u002)", len(r.Agenda))
+	}
+}
+
 func TestBuildReportCollectsDebt(t *testing.T) {
 	sess := reportSession()
 	sess.Notes = append(sess.Notes,
