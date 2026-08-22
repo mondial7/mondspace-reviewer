@@ -51,6 +51,8 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout io.Writer) 
 		return runIngest(args, stdin)
 	case "install-hooks":
 		return runInstallHooks(args)
+	case "ask":
+		return runAsk(ctx, args, stdout)
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}
@@ -112,6 +114,61 @@ const (
 	defaultSummarizerURL = "http://192.168.101.99:1234/v1"
 	defaultModel         = "qwen/qwen3.5-9b"
 )
+
+// runAsk answers one question about a stored session and prints the answer.
+// Scriptable interrogation: no TUI, no terminal.
+func runAsk(ctx context.Context, args []string, stdout io.Writer) error {
+	fs := flag.NewFlagSet("ask", flag.ContinueOnError)
+	scope := fs.String("scope", "unit", "ask scope (unit|session)")
+	out := fs.String("out", ".mondspace-reviewer", "store root directory")
+	session := fs.String("session", "", "session id")
+	unitID := fs.String("unit", "", "unit id (unit scope)")
+	repo := fs.String("repo", ".", "repository to diff (unit scope)")
+	summarizerURL := fs.String("summarizer-url", defaultSummarizerURL, "summarizer endpoint")
+	model := fs.String("model", defaultModel, "summarizer model")
+	if err := fs.Parse(args[1:]); err != nil {
+		return err
+	}
+	if *session == "" {
+		return fmt.Errorf("--session is required")
+	}
+	question := strings.TrimSpace(strings.Join(fs.Args(), " "))
+	if question == "" {
+		return fmt.Errorf("a question is required")
+	}
+
+	sess, err := jsonl.New(*out).Load(*session)
+	if err != nil {
+		return err
+	}
+
+	askScope := domain.AskScope(*scope)
+	var unit domain.Unit
+	var diff domain.Diff
+	if askScope == domain.AskUnit {
+		unit = findUnit(sess.Units, *unitID)
+		if d, err := gitsnap.New(*repo, *session).Diff(ctx, unit.From, unit.To, unit.Files); err == nil {
+			diff = d
+		}
+	}
+
+	askCtx := usecase.BuildAskContext(askScope, sess, unit, diff)
+	answer, err := chooseSummarizer(*summarizerURL, *model).Answer(ctx, question, askCtx)
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintln(stdout, answer)
+	return err
+}
+
+func findUnit(units []domain.Unit, id string) domain.Unit {
+	for _, u := range units {
+		if u.ID == id {
+			return u
+		}
+	}
+	return domain.Unit{}
+}
 
 // buildTUIModel loads a stored session, marks superseded notes, and hands the
 // units and notes to the interactive model.
