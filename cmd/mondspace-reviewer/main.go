@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/oklog/ulid/v2"
@@ -36,6 +37,8 @@ func run(args []string, stdin io.Reader, stdout io.Writer) error {
 		return runReview(args, stdout)
 	case "ingest":
 		return runIngest(args, stdin)
+	case "install-hooks":
+		return runInstallHooks(args)
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}
@@ -93,4 +96,30 @@ func runIngest(args []string, stdin io.Reader) error {
 
 func newULID() string {
 	return ulid.Make().String()
+}
+
+// runInstallHooks writes the reviewer's hooks into <dir>/.claude/settings.json,
+// merging with any existing file.
+func runInstallHooks(args []string) error {
+	fs := flag.NewFlagSet("install-hooks", flag.ContinueOnError)
+	dir := fs.String("dir", ".", "project directory containing .claude/")
+	if err := fs.Parse(args[1:]); err != nil {
+		return err
+	}
+
+	claudeDir := filepath.Join(*dir, ".claude")
+	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
+		return err
+	}
+	path := filepath.Join(claudeDir, "settings.json")
+
+	existing, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	merged, err := usecase.InstallHooks(existing)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, merged, 0o644)
 }
