@@ -2,6 +2,7 @@ package usecase_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/marcomondini/mondspace-reviewer/internal/domain"
@@ -16,6 +17,18 @@ type fakeSummarizer struct {
 
 func (s fakeSummarizer) Headline(context.Context, domain.Unit, domain.Diff) (domain.Headline, error) {
 	return s.head, s.err
+}
+
+func TestSummarizeDegradesOnError(t *testing.T) {
+	mechanical := domain.Headline{Text: "2 edits across 1 file", Why: "stated thing", WhySrc: domain.WhyStated}
+	unit := domain.Unit{Headline: mechanical}
+	model := fakeSummarizer{err: errors.New("connection refused")}
+
+	got := usecase.Summarize(context.Background(), model, unit, domain.Diff{})
+
+	if got != mechanical {
+		t.Errorf("on error, headline = %+v, want the mechanical headline %+v", got, mechanical)
+	}
 }
 
 func TestSummarizeInfersWhyWhenNoneStated(t *testing.T) {
