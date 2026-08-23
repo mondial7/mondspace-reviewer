@@ -96,6 +96,40 @@ func TestAnnotateRejectsUnknownUnitAndKind(t *testing.T) {
 	}
 }
 
+func TestReviewContentIsInTheDOMNotOnlyTheCanvas(t *testing.T) {
+	h := web.NewServer(testSession(), nil)
+	body := get(t, h, "/").Body.String()
+
+	// The cinematic scene reads from the DOM; nothing may be canvas-only, so the
+	// review stays usable, selectable and searchable without WebGL (ADR 0012).
+	for _, want := range []string{"auth/token.go", "edited token.go", "no-test"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("review content %q must be server-rendered, not canvas-only", want)
+		}
+	}
+	// Focus mode is reachable without JavaScript deciding it for us.
+	if !strings.Contains(body, "focus") {
+		t.Errorf("page should expose focus mode:\n%s", body)
+	}
+	// The scene is progressive enhancement: a vendored module, not a CDN.
+	if strings.Contains(body, "//unpkg.com") || strings.Contains(body, "//cdn.") {
+		t.Errorf("assets must be served locally, not from a CDN")
+	}
+}
+
+func TestVendoredThreeIsServedLocally(t *testing.T) {
+	h := web.NewServer(testSession(), nil)
+
+	rec := get(t, h, "/assets/vendor/three.module.min.js")
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("three.js should be served locally: status = %d", rec.Code)
+	}
+	if rec.Body.Len() < 100_000 {
+		t.Errorf("three.js body looks truncated: %d bytes", rec.Body.Len())
+	}
+}
+
 func TestIndexListsUnits(t *testing.T) {
 	h := web.NewServer(testSession(), nil)
 
