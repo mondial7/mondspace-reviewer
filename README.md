@@ -1,11 +1,14 @@
 # mondspace-reviewer (`msr`)
 
-**A terminal review companion for autonomous coding agents.**
+**A review companion for autonomous coding agents — in your browser or your terminal.**
 
 While an agent works in auto mode, `msr` turns its raw activity into a
-**reviewable queue of change units** — each collapsible to one scannable line,
-expandable on demand, questionable in natural language, and annotatable in one
-keystroke. It watches; it never writes to the agent.
+**reviewable storyline of change** — one unit per changed file, each with its
+real diff, a concise summary, deterministic flags, and one-click annotation. It
+watches; it never writes to the agent.
+
+Run `msr web` for the full experience: a cinematic storyline of the session, with
+**focus mode** (`f`) one keypress away when you just want the essence.
 
 > The **review log is the product.** Narration and interrogation exist only to
 > help you produce annotations.
@@ -297,17 +300,28 @@ MSR_SUMMARIZER_URL=http://localhost:1234/v1 MSR_MODEL=qwen/qwen3.5-9b \
 
 ## Status
 
-**v1.0.0** — everything below is built, tested, and shippable:
+**v2.0.0** — everything below is built, tested, and shippable:
 
-- Real ingestion (`ingest`, `install-hooks`, fsnotify tailing, git snapshots)
-- Deterministic flags + interactive bubbletea TUI with annotations and supersession
-- LM Studio headlines with `stated`/`inferred` discipline and async fill-in
-- Interrogation (`a` / `A`, plus a scriptable `ask`)
-- Export to Markdown, JSON, and a concise single Slack message
-- `msr gc` to delete throwaway review refs for closed sessions
-- A second agent event source, `opencode` (ADR 0006), alongside `hooks`
+- **Web app** (`msr web`) — the primary interface: a cinematic storyline of the
+  session (Three.js, vendored, offline) with **focus mode** (`f`) for dense,
+  motionless review; scrollable diffs, click-to-annotate, a multi-session
+  workspace, a persistent reviewer-assistant chat, per-unit re-analysis with
+  model attribution, and an audit log of every interaction.
+- **Net-change review** — one unit per changed file against the pre-session git
+  baseline, so an agent's back-and-forth collapses into one clear change
+  (ADR 0002). Also available for any range via `--since` / `--until`.
+- Real ingestion (`ingest`, `install-hooks`, fsnotify tailing, git snapshots),
+  from Claude Code `hooks` or `opencode`.
+- Deterministic flags (`no-test`, `new-dep`, `swallowed-err`, `public-api`,
+  `large`, `todo`, `failed`, `solo-iface`), supersession, and TDD-aware `no-test`.
+- LM Studio headlines with `stated`/`inferred` discipline and async fill-in.
+- Interrogation (`a` / `A`, the web chat, and a scriptable `ask`).
+- Export to Markdown, JSON, and a single Slack message; `msr gc` for review refs.
+- Storage: append-only JSONL by default, or PostgreSQL in a dedicated schema.
+- The bubbletea TUI remains supported (ADR 0004 plans its eventual deprecation).
 
-Planned work is tracked in [issues](https://github.com/mondial7/mondspace-reviewer/issues).
+Decisions are recorded in [`ADR/`](ADR); planned work in
+[issues](https://github.com/mondial7/mondspace-reviewer/issues).
 
 ## Contributing
 
