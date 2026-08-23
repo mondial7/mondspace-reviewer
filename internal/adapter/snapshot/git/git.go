@@ -227,3 +227,46 @@ func (s *Snapshotter) run(ctx context.Context, env []string, args ...string) (st
 	}
 	return strings.TrimSpace(stdout.String()), nil
 }
+
+// commitFieldSep separates the fields of one `git log` record. It is a unit
+// separator rather than anything printable, because a commit subject may
+// legitimately contain any punctuation a naive delimiter would use.
+const commitFieldSep = "\x1f"
+
+// The reported timestamp is the committer date, the same clock `--since`
+// filters on, so what is shown and what was selected can never disagree.
+//
+// CommitsSince lists the commits made from `since` onwards, newest first, so
+// the cockpit can report what a session actually landed. Commits older than the
+// session belong to somebody else and are excluded.
+//
+// A repository with no commits yet returns nothing rather than an error: `git
+// log` fails outright with no HEAD, but an empty history is an ordinary state
+// for a fresh project and must not break the page.
+func (s *Snapshotter) CommitsSince(ctx context.Context, since time.Time) ([]domain.Commit, error) {
+	if since.IsZero() {
+		return nil, nil
+	}
+	out, err := s.run(ctx, os.Environ(), "log",
+		"--since="+since.UTC().Format(time.RFC3339),
+		"--pretty=format:%H"+commitFieldSep+"%an"+commitFieldSep+"%cI"+commitFieldSep+"%s")
+	if err != nil {
+		return nil, nil // no HEAD yet, or no history: not a failure
+	}
+
+	var commits []domain.Commit
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Split(line, commitFieldSep)
+		if len(fields) != 4 {
+			continue
+		}
+		ts, err := time.Parse(time.RFC3339, fields[2])
+		if err != nil {
+			continue
+		}
+		commits = append(commits, domain.Commit{
+			Hash: fields[0], Author: fields[1], TS: ts, Subject: fields[3],
+		})
+	}
+	return commits, nil
+}

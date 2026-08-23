@@ -384,3 +384,72 @@ func TestSnapshotLeavesHeadIndexAndWorktreeUnchanged(t *testing.T) {
 	// The snapshot commit must be a real object.
 	gitCmd(t, dir, "cat-file", "-e", ref.Commit)
 }
+
+func TestCommitsSinceListsOnlyWorkDoneInTheWindow(t *testing.T) {
+	// The cockpit reports how many commits a session produced. Commits that
+	// predate the session are somebody else's work and must not be counted.
+	//
+	// Commit dates are set explicitly rather than slept for: `git log --since`
+	// resolves to whole seconds and is inclusive, so a test that raced the clock
+	// would be flaky at exactly the boundary it is meant to check.
+	dir := newRepo(t) // seeds one "init" commit, dated now
+
+	base := time.Now()
+	commitAt(t, dir, base.Add(-2*time.Hour), "old.txt", "Work from before the session")
+	commitAt(t, dir, base.Add(2*time.Hour), "b.txt", "Add a TokenValidator (#42)")
+
+	// The session began an hour ago: the old commit is out, the new one is in.
+	since := base.Add(-time.Hour)
+
+	got, err := gitsnap.New(dir, "sess-1").CommitsSince(context.Background(), since)
+	if err != nil {
+		t.Fatalf("CommitsSince: %v", err)
+	}
+
+	if len(got) != 1 {
+		t.Fatalf("got %d commits, want only the one made during the session: %+v", len(got), got)
+	}
+	if got[0].Subject != "Add a TokenValidator (#42)" {
+		t.Errorf("Subject = %q", got[0].Subject)
+	}
+	if got[0].Hash == "" || got[0].TS.IsZero() {
+		t.Errorf("a commit needs a hash and a timestamp: %+v", got[0])
+	}
+}
+
+// commitAt writes a file and commits it with an explicit date on both clocks, so
+// a test can place a commit before or after a window without waiting for one.
+func commitAt(t *testing.T, dir string, when time.Time, name, subject string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, name), []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stamp := when.Format(time.RFC3339)
+	gitCmd(t, dir, "add", name)
+	c := exec.Command("git", "commit", "-qm", subject)
+	c.Dir = dir
+	c.Env = append(os.Environ(),
+		"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t",
+		"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t",
+		"GIT_AUTHOR_DATE="+stamp, "GIT_COMMITTER_DATE="+stamp,
+	)
+	if out, err := c.CombinedOutput(); err != nil {
+		t.Fatalf("commit %q: %v\n%s", subject, err, out)
+	}
+}
+
+func TestCommitsSinceIsEmptyNotAnErrorInARepoWithNoCommits(t *testing.T) {
+	// `git log` fails outright on a repo with no HEAD. An empty history is an
+	// ordinary state for a fresh project, not a reason to break the page.
+	dir := t.TempDir()
+	gitCmd(t, dir, "init", "-q")
+
+	got, err := gitsnap.New(dir, "sess-1").CommitsSince(context.Background(), time.Now().Add(-time.Hour))
+
+	if err != nil {
+		t.Fatalf("an empty history should not error: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("got %d commits, want none", len(got))
+	}
+}
