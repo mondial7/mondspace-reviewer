@@ -75,7 +75,7 @@ cd mondspace-reviewer
 go build -o msr ./cmd/mondspace-reviewer
 ```
 
-Requires **Go 1.24+**, `git`, and no CGO. The optional headline/interrogation
+Requires **Go 1.25+**, `git`, and no CGO. The optional headline/interrogation
 features talk to any OpenAI-compatible endpoint (defaulting to a local
 [LM Studio](https://lmstudio.ai) server) and degrade gracefully when it is absent.
 
