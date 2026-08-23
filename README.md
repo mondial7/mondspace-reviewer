@@ -278,6 +278,24 @@ mechanically, and says so.
 The page is served immediately and the story is upgraded in the background, one
 chapter at a time — it never waits on a model.
 
+## Where the model calls go
+
+`msr web` shows every model call at **`/activity`**: what was asked, which model
+served it, how long it took, and whether it failed. Narration, the one call a
+reviewer never triggers, is recorded there too — otherwise it is invisible.
+
+Narration is also the most expensive thing the app does, so it runs **once per
+review**. The story is stored beside the session with a fingerprint of the
+review it describes (file names and their snapshot commits, order-independent),
+and reused while that matches. Re-opening the page, navigating away and back, or
+restarting `msr web` costs nothing.
+
+If narration falls back — the endpoint was down, the model rambled — the
+fallback is stored too, so it is not silently retried by navigation. The story
+page offers an explicit **"ask the model to narrate this session"** button
+instead. It runs at most one narration at a time, so two tabs or an impatient
+double click cannot start two.
+
 ## Summarizer configuration
 
 Headlines and interrogation use any OpenAI-compatible chat endpoint, defaulting
@@ -374,7 +392,9 @@ MSR_SUMMARIZER_URL=http://localhost:1234/v1 MSR_MODEL=qwen/qwen3.5-9b \
   session (Three.js, vendored, offline) with **focus mode** (`f`) for dense,
   motionless review; scrollable diffs, click-to-annotate, a multi-session
   workspace, a persistent reviewer-assistant chat, per-unit re-analysis with
-  model attribution, and an audit log of every interaction.
+  model attribution, live updates over SSE, and an **activity page**
+  (`/activity`) showing every model call with the model that served it and what
+  it cost.
 - **Net-change review** — one unit per changed file against the pre-session git
   baseline, so an agent's back-and-forth collapses into one clear change
   (ADR 0002). Also available for any range via `--since` / `--until`.
