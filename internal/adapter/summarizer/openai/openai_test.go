@@ -503,3 +503,67 @@ func TestPingReportsWhetherTheEndpointIsReachable(t *testing.T) {
 		t.Error("Ping should fail when nothing is listening")
 	}
 }
+
+func TestFreeTextAnswerNeverReturnsTheModelsThinking(t *testing.T) {
+	// A reasoning model that runs out of budget mid-thought leaves content empty
+	// and a "Thinking Process:" monologue in reasoning_content. Showing that as
+	// the answer is worse than saying nothing: it reads like a reply, and it is
+	// the model talking to itself.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, `{"choices":[{"finish_reason":"length","message":{"role":"assistant",`+
+			`"content":"","reasoning_content":"Thinking Process:\n1. Analyze the request…"}}]}`)
+	}))
+	defer srv.Close()
+
+	_, err := openai.New(srv.URL, "m").Answer(context.Background(), "what changed?", domain.AskContext{})
+
+	if err == nil {
+		t.Fatal("expected an error when the model produced only reasoning")
+	}
+	if !strings.Contains(err.Error(), "reasoning") {
+		t.Errorf("the error should say what happened, got: %v", err)
+	}
+	// And it must say how to fix it, since the cause is a budget, not a fault.
+	if !strings.Contains(err.Error(), "token") {
+		t.Errorf("the error should point at the token budget, got: %v", err)
+	}
+}
+
+func TestSchemaAnswerStillReadsReasoningBecauseTheJSONIsThere(t *testing.T) {
+	// The schema case is the opposite: LM Studio puts the constrained JSON in
+	// reasoning_content and leaves content empty, so that IS the answer.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, `{"choices":[{"finish_reason":"stop","message":{"role":"assistant",`+
+			`"content":"","reasoning_content":"{\"title\":\"T\"}"}}]}`)
+	}))
+	defer srv.Close()
+
+	got, err := openai.New(srv.URL, "m").AnswerSchema(context.Background(), "q", domain.AskContext{}, narrativeSchema())
+	if err != nil {
+		t.Fatalf("AnswerSchema: %v", err)
+	}
+	if got != `{"title":"T"}` {
+		t.Errorf("answer = %q, want the constrained JSON", got)
+	}
+}
+
+func TestAskGetsARoomierBudgetThanAHeadline(t *testing.T) {
+	// A one-line headline and a reviewer's answer are not the same size of task,
+	// and the ask path is exactly where running out mid-thought showed up.
+	url, body := captureBody(t, "an answer")
+
+	if _, err := openai.New(url, "m").Answer(context.Background(), "q", domain.AskContext{}); err != nil {
+		t.Fatal(err)
+	}
+	ask, _ := body()["max_tokens"].(float64)
+
+	url2, body2 := captureBody(t, "WHAT: x\nWHY: unknown")
+	if _, err := openai.New(url2, "m").Headline(context.Background(), domain.Unit{}, domain.Diff{}); err != nil {
+		t.Fatal(err)
+	}
+	headline, _ := body2()["max_tokens"].(float64)
+
+	if ask <= headline {
+		t.Errorf("ask budget %v should exceed the headline budget %v", ask, headline)
+	}
+}

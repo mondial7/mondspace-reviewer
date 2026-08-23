@@ -91,6 +91,14 @@ func (s *Store) migrate(ctx context.Context) error {
 			updated_at  timestamptz NOT NULL DEFAULT now(),
 			payload     jsonb NOT NULL
 		)`,
+		`CREATE TABLE IF NOT EXISTS ` + s.table("exchanges") + ` (
+			id          text PRIMARY KEY,
+			session_id  text NOT NULL,
+			ts          timestamptz NOT NULL,
+			seq         bigserial NOT NULL,
+			payload     jsonb NOT NULL
+		)`,
+		`CREATE INDEX IF NOT EXISTS exchanges_session_idx ON ` + s.table("exchanges") + ` (session_id, seq)`,
 		`CREATE INDEX IF NOT EXISTS events_session_idx ON ` + s.table("events") + ` (session_id, seq)`,
 		`CREATE INDEX IF NOT EXISTS units_session_idx ON ` + s.table("units") + ` (session_id, seq)`,
 		`CREATE INDEX IF NOT EXISTS notes_session_idx ON ` + s.table("notes") + ` (session_id, seq)`,
@@ -138,6 +146,20 @@ func (s *Store) AppendNote(n domain.Note) error {
 		`INSERT INTO `+s.table("notes")+` (id, session_id, unit_id, ts, payload)
 		 VALUES ($1, $2, $3, $4, $5) ON CONFLICT (id) DO NOTHING`,
 		n.ID, n.SessionID, n.UnitID, nonZeroTime(n.TS), payload)
+	return err
+}
+
+// AppendExchange records one question and its answer, so the review
+// conversation outlives the process that had it.
+func (s *Store) AppendExchange(e domain.Exchange) error {
+	payload, err := json.Marshal(e)
+	if err != nil {
+		return err
+	}
+	_, err = s.pool.Exec(context.Background(),
+		`INSERT INTO `+s.table("exchanges")+` (id, session_id, ts, payload)
+		 VALUES ($1, $2, $3, $4) ON CONFLICT (id) DO NOTHING`,
+		e.ID, e.SessionID, nonZeroTime(e.TS), payload)
 	return err
 }
 
@@ -200,6 +222,9 @@ func (s *Store) Load(sessionID string) (domain.Session, error) {
 		return domain.Session{}, err
 	}
 	if sess.Notes, err = load[domain.Note](ctx, s, "notes", sessionID); err != nil {
+		return domain.Session{}, err
+	}
+	if sess.Exchanges, err = load[domain.Exchange](ctx, s, "exchanges", sessionID); err != nil {
 		return domain.Session{}, err
 	}
 	return sess, nil

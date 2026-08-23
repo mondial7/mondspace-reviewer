@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/store/jsonl"
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
@@ -238,5 +239,51 @@ func TestLoadNarrativeIsEmptyNotAnErrorForANewSession(t *testing.T) {
 	}
 	if got.Fingerprint != "" || len(got.Chapters) != 0 {
 		t.Errorf("expected an empty narrative, got %+v", got)
+	}
+}
+
+func TestExchangesSurviveARestart(t *testing.T) {
+	// A review conversation is part of the review. Losing it when the process
+	// stops means the reviewer cannot pick a thread back up tomorrow.
+	root := t.TempDir()
+	store := jsonl.New(root)
+
+	first := domain.Exchange{
+		SessionID: "s", Question: "why the retry?", Answer: "s-f001 adds a backoff.",
+		TS: time.Date(2026, 8, 23, 9, 0, 0, 0, time.UTC),
+	}
+	second := domain.Exchange{
+		SessionID: "s", Question: "and the tests?", Answer: "s-f002 covers it.",
+		TS: time.Date(2026, 8, 23, 9, 5, 0, 0, time.UTC),
+	}
+	if err := store.AppendExchange(first); err != nil {
+		t.Fatalf("AppendExchange: %v", err)
+	}
+	if err := store.AppendExchange(second); err != nil {
+		t.Fatalf("AppendExchange: %v", err)
+	}
+
+	got, err := jsonl.New(root).Load("s") // a fresh store: a new process
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if len(got.Exchanges) != 2 {
+		t.Fatalf("got %d exchanges, want both: %+v", len(got.Exchanges), got.Exchanges)
+	}
+	// Oldest first: a conversation reads forwards.
+	if got.Exchanges[0].Question != "why the retry?" || got.Exchanges[1].Answer != "s-f002 covers it." {
+		t.Errorf("exchanges = %+v, want them in order", got.Exchanges)
+	}
+}
+
+func TestLoadHasNoExchangesForASessionNobodyAsked(t *testing.T) {
+	got, err := jsonl.New(t.TempDir()).Load("quiet")
+
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(got.Exchanges) != 0 {
+		t.Errorf("got %+v, want no conversation", got.Exchanges)
 	}
 }

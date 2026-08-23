@@ -203,3 +203,26 @@ func TestLoadNarrativeIsEmptyForAnUnnarratedSession(t *testing.T) {
 		t.Errorf("expected an empty narrative, got %+v", got)
 	}
 }
+
+func TestExchangesRoundTrip(t *testing.T) {
+	// The JSONL store already remembers conversations; Postgres silently not
+	// doing so is exactly how the narrative cache went missing before.
+	store, _ := newStore(t)
+	defer store.Close()
+
+	want := domain.Exchange{
+		ID: "x1", SessionID: "s1", Question: "why the retry?",
+		Answer: "s1-f001 adds a backoff.", TS: time.Now().UTC().Truncate(time.Second),
+	}
+	if err := store.AppendExchange(want); err != nil {
+		t.Fatalf("AppendExchange: %v", err)
+	}
+
+	got, err := store.Load("s1")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(got.Exchanges) != 1 || got.Exchanges[0].Question != want.Question {
+		t.Errorf("exchanges = %+v, want %+v", got.Exchanges, want)
+	}
+}

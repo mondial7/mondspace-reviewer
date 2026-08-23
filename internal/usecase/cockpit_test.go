@@ -1,6 +1,7 @@
 package usecase_test
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -197,5 +198,49 @@ func TestReviewFingerprintIgnoresOrderAndNoticesNewFiles(t *testing.T) {
 	}
 	if usecase.ReviewFingerprint(nil) == "" {
 		t.Error("an empty review still has a fingerprint")
+	}
+}
+
+func TestSessionAskContextCarriesTheChangesThemselves(t *testing.T) {
+	// Asked "what are the most important changes?", the assistant replied that
+	// the context held only file names and no diffs — and it was right. A
+	// question about a session cannot be answered from metadata.
+	units := []domain.Unit{
+		{ID: "u1", Files: []string{"auth/token.go"}},
+		{ID: "u2", Files: []string{"http/mw.go"}},
+	}
+	diffs := map[string]domain.Diff{
+		"u1": {Text: "@@ -1 +1 @@\n+type TokenValidator interface{}\n"},
+		"u2": {Text: "@@ -1 +1 @@\n+mux.Use(auth)\n"},
+	}
+	ctx := usecase.BuildAskContext(domain.AskSession, domain.Session{Units: units}, domain.Unit{}, domain.Diff{})
+
+	got := usecase.WithChanges(ctx, units, diffs, 200)
+
+	for _, want := range []string{"auth/token.go", "TokenValidator", "http/mw.go", "mux.Use"} {
+		if !strings.Contains(got.Diff.Text, want) {
+			t.Errorf("the digest is missing %q:\n%s", want, got.Diff.Text)
+		}
+	}
+}
+
+func TestSessionAskContextStaysWithinItsBudget(t *testing.T) {
+	// A 400-file session must not become a prompt no context window can hold.
+	var units []domain.Unit
+	diffs := map[string]domain.Diff{}
+	for i := 0; i < 400; i++ {
+		id := fmt.Sprintf("u%03d", i)
+		units = append(units, domain.Unit{ID: id, Files: []string{fmt.Sprintf("pkg%03d/a.go", i)}})
+		diffs[id] = domain.Diff{Text: strings.Repeat("+line\n", 200)}
+	}
+
+	got := usecase.WithChanges(domain.AskContext{}, units, diffs, 120)
+
+	if lines := strings.Count(got.Diff.Text, "\n"); lines > 140 {
+		t.Errorf("digest is %d lines, want roughly the 120 asked for", lines)
+	}
+	// And it must say what it left out rather than pretending that was all.
+	if !strings.Contains(got.Diff.Text, "more file") {
+		t.Errorf("the digest should say how much it omitted:\n%s", got.Diff.Text[:300])
 	}
 }

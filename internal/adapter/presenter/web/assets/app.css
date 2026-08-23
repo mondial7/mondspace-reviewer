@@ -945,3 +945,85 @@
 .post[open] > .post__head::before { content: "▾"; color: var(--accent); }
 .post > .post__head:hover .post__file { text-decoration: underline; }
 .post__notecount { color: var(--inferred); font-size: 0.72rem; }
+
+/* Asking for a group's meaning, and the answer's formatting. */
+.describe { display: inline; }
+.describe__btn {
+  font: inherit; font-size: 0.68rem; cursor: pointer; white-space: nowrap;
+  text-transform: uppercase; letter-spacing: 0.07em;
+  color: var(--fg-dim); background: transparent;
+  border: 1px solid var(--rule); border-radius: 999px; padding: 0.1rem 0.55rem;
+}
+.describe__btn:hover { color: var(--accent); border-color: var(--accent); }
+
+/* ── Reviewer assistant ─────────────────────────────────────────────────────*/
+.ask { margin-top: 1rem; border-top: 1px solid var(--rule); padding-top: 0.8rem; }
+.ask__title {
+  margin: 0 0 0.6rem; font-size: 0.72rem; font-weight: 700;
+  color: var(--fg-dim); text-transform: uppercase; letter-spacing: 0.1em;
+}
+.ask__exchange { margin-bottom: 1rem; }
+.ask__q {
+  margin: 0 0 0.4rem; color: var(--accent);
+  padding-left: 0.7rem; border-left: 2px solid var(--accent);
+}
+.ask__a { color: var(--fg); font-size: 0.88rem; line-height: 1.6; }
+.ask__a--failed { color: var(--fg-dim); }
+.ask__when { margin: 0.3rem 0 0; font-size: 0.68rem; color: var(--fg-dim); }
+
+.ask__form { display: flex; flex-direction: column; gap: 0.4rem; }
+.ask__input {
+  width: 100%; min-width: 0; resize: vertical;
+  min-height: 3rem; max-height: 16rem;
+  padding: 0.5rem 0.6rem; font: inherit; line-height: 1.45;
+  color: var(--fg); background: var(--bg);
+  border: 1px solid var(--rule); border-radius: 6px;
+  transition: min-height 0.18s ease, border-color 0.18s ease;
+}
+.ask__input:focus { outline: none; border-color: var(--accent); min-height: 7rem; }
+.ask__actions { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+.ask__btn {
+  font: inherit; font-size: 0.8rem; cursor: pointer;
+  color: var(--bg); background: var(--accent);
+  border: none; border-radius: 6px; padding: 0.35rem 0.9rem;
+}
+.ask__cancel {
+  font: inherit; font-size: 0.75rem; cursor: pointer;
+  color: var(--fg-dim); background: transparent;
+  border: 1px solid var(--rule); border-radius: 6px; padding: 0.3rem 0.7rem;
+}
+.ask__hint { color: var(--fg-dim); font-size: 0.7rem; }
+
+/* Working state: a local model can take half a minute, and a form that looks
+   idle for thirty seconds reads as broken. */
+.ask__working {
+  margin: 0.2rem 0 0; display: flex; gap: 0.5rem; align-items: center;
+  color: var(--inferred); font-size: 0.8rem;
+}
+.ask__spinner {
+  width: 10px; height: 10px; border-radius: 50%;
+  border: 2px solid currentColor; border-right-color: transparent;
+  animation: ask-spin 0.8s linear infinite;
+}
+@keyframes ask-spin { to { transform: rotate(360deg); } }
+.ask__form[data-busy] .ask__btn { opacity: 0.5; pointer-events: none; }
+
+/* While a question is being written the story gets out of the way. */
+.cockpit__story--asking .chron__chapter { display: none; }
+.cockpit__story--asking .ask { margin-top: 0; border-top: none; padding-top: 0; }
+
+/* Markdown in an answer. */
+.ask__a h3, .ask__a h4, .ask__a h5 { margin: 0.7rem 0 0.3rem; font-size: 0.9rem; color: var(--fg); }
+.ask__a p { margin: 0 0 0.5rem; }
+.md__list { margin: 0 0 0.5rem; padding-left: 1.2rem; }
+.md__list li { margin: 0.15rem 0; }
+.ask__a code {
+  background: var(--bg); border: 1px solid var(--rule); border-radius: 3px;
+  padding: 0.05rem 0.3rem; font-size: 0.85em;
+}
+.md__code {
+  margin: 0 0 0.6rem; padding: 0.5rem 0.7rem; overflow-x: auto;
+  background: var(--bg); border: 1px solid var(--rule); border-radius: 4px;
+  font-size: 0.8rem; line-height: 1.5;
+}
+.md__code code { background: none; border: none; padding: 0; }

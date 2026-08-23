@@ -24,7 +24,10 @@ type Summarizer struct {
 	apiKey     string
 	noThinking bool
 	maxTokens  int
-	client     *http.Client
+	// budgetSet records that a caller chose the budget, so the roomier default
+	// for a question cannot quietly override an explicit decision.
+	budgetSet bool
+	client    *http.Client
 
 	mu    sync.Mutex
 	usage port.TokenUsage
@@ -67,6 +70,11 @@ func (s *Summarizer) Ping(ctx context.Context) error {
 // The cap is generous enough for a chapter of prose and a small JSON object.
 const defaultMaxTokens = 1024
 
+// askMaxTokens is the budget for a reviewer's question. A one-line headline and
+// a considered answer are not the same size of task, and the ask path is exactly
+// where running out mid-thought first showed up.
+const askMaxTokens = 4096
+
 func New(baseURL, model string) *Summarizer {
 	return &Summarizer{
 		baseURL:   strings.TrimRight(baseURL, "/"),
@@ -105,6 +113,7 @@ func (s *Summarizer) WithMaxTokens(n int) *Summarizer {
 		n = defaultMaxTokens
 	}
 	s.maxTokens = n
+	s.budgetSet = true
 	return s
 }
 
@@ -150,7 +159,8 @@ type chatUsage struct {
 type chatReply struct {
 	Usage   chatUsage `json:"usage"`
 	Choices []struct {
-		Message struct {
+		FinishReason string `json:"finish_reason"`
+		Message      struct {
 			Content string `json:"content"`
 			// Reasoning is the model thinking aloud, which some servers split out
 			// of content. A schema-constrained reply from LM Studio arrives here
@@ -167,7 +177,7 @@ WHAT: <one concise line describing what changed>
 WHY: <one concise line inferring why, or "unknown">`
 
 func (s *Summarizer) Headline(ctx context.Context, u domain.Unit, d domain.Diff) (domain.Headline, error) {
-	content, err := s.chat(ctx, systemPrompt, userPrompt(u, d), nil)
+	content, err := s.chat(ctx, systemPrompt, userPrompt(u, d), nil, s.maxTokens)
 	if err != nil {
 		return domain.Headline{}, err
 	}
@@ -180,7 +190,17 @@ Cite unit IDs (like s-u001) in your answer. Do NOT invent a stated intent — if
 context does not contain the agent's own words, say the log does not record it.`
 
 func (s *Summarizer) Answer(ctx context.Context, question string, c domain.AskContext) (string, error) {
-	return s.chat(ctx, answerSystemPrompt, askPrompt(question, c), nil)
+	return s.chat(ctx, answerSystemPrompt, askPrompt(question, c), nil, s.askBudget())
+}
+
+// askBudget is the room a question gets. Copying the Summarizer to widen it
+// would duplicate its mutex and its usage counters, so the budget travels with
+// the call instead.
+func (s *Summarizer) askBudget() int {
+	if s.budgetSet {
+		return s.maxTokens
+	}
+	return askMaxTokens
 }
 
 // AnswerSchema is Answer with the reply constrained to a JSON schema, satisfying
@@ -192,13 +212,13 @@ func (s *Summarizer) AnswerSchema(ctx context.Context, question string, c domain
 	}
 	prompt := askPrompt(question, c)
 
-	content, err := s.chat(ctx, answerSystemPrompt, prompt, format)
+	content, err := s.chat(ctx, answerSystemPrompt, prompt, format, s.maxTokens)
 	if errors.Is(err, errRejected) {
 		// The endpoint does not implement structured output, or could not
 		// translate this schema. Ask again without it: the caller still parses
 		// defensively, so a plain reply works — it is only less reliable, which is
 		// better than no narration at all.
-		content, retryErr := s.chat(ctx, answerSystemPrompt, prompt, nil)
+		content, retryErr := s.chat(ctx, answerSystemPrompt, prompt, nil, s.maxTokens)
 		if retryErr != nil {
 			// Both failed. Name the rejection: a server that cannot take the
 			// schema is a different fault from a model that answered badly, and
@@ -215,7 +235,7 @@ func (s *Summarizer) AnswerSchema(ctx context.Context, question string, c domain
 var errRejected = errors.New("request rejected")
 
 // chat runs one chat completion and returns the assistant's message content.
-func (s *Summarizer) chat(ctx context.Context, system, user string, format *responseFormat) (string, error) {
+func (s *Summarizer) chat(ctx context.Context, system, user string, format *responseFormat, maxTokens int) (string, error) {
 	started := time.Now()
 	failed := true
 	var spent chatUsage
@@ -236,7 +256,7 @@ func (s *Summarizer) chat(ctx context.Context, system, user string, format *resp
 		ResponseFormat: format,
 		Model:          s.model,
 		Temperature:    0,
-		MaxTokens:      s.maxTokens,
+		MaxTokens:      maxTokens,
 		Messages: []chatMessage{
 			{Role: "system", Content: system},
 			{Role: "user", Content: user},
@@ -283,13 +303,30 @@ func (s *Summarizer) chat(ctx context.Context, system, user string, format *resp
 	spent = reply.Usage
 	failed = false
 
-	msg := reply.Choices[0].Message
-	if strings.TrimSpace(msg.Content) == "" {
-		// The answer is in the thinking. Better a reply the caller can parse than
-		// an empty string that reads, wrongly, as "the model had nothing to say".
-		return msg.Reasoning, nil
+	choice := reply.Choices[0]
+	if strings.TrimSpace(choice.Message.Content) != "" {
+		return choice.Message.Content, nil
 	}
-	return msg.Content, nil
+
+	// Content is empty. What that means depends entirely on whether a schema was
+	// in force.
+	if format != nil {
+		// Constrained: LM Studio puts the grammar-constrained JSON in
+		// reasoning_content and leaves content empty, so this IS the answer.
+		if strings.TrimSpace(choice.Message.Reasoning) != "" {
+			return choice.Message.Reasoning, nil
+		}
+	} else if strings.TrimSpace(choice.Message.Reasoning) != "" {
+		// Unconstrained: this is the model thinking aloud and never reaching an
+		// answer — almost always because it ran out of budget mid-thought.
+		// Returning it would put a "Thinking Process:" monologue on the page
+		// dressed as a reply, which is worse than saying nothing.
+		return "", fmt.Errorf("the model spent its whole budget on reasoning and "+
+			"produced no answer (finish_reason %q, %d reasoning tokens); raise the "+
+			"token budget or use a model that does less thinking",
+			choice.FinishReason, reply.Usage.Details.ReasoningTokens)
+	}
+	return "", fmt.Errorf("summarizer returned an empty answer (finish_reason %q)", choice.FinishReason)
 }
 
 // askPrompt renders the bounded context and the question into a user message.

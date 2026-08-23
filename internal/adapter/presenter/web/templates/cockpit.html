@@ -122,13 +122,28 @@
         {{ range .Thread }}
         <div class="ask__exchange">
           <p class="ask__q">{{ .Question }}</p>
-          <p class="ask__a">{{ .Answer }}</p>
+          <div class="ask__a{{ if .Failed }} ask__a--failed{{ end }}">
+            {{ if .Failed }}<span class="flag">unanswered</span>{{ end }}
+            {{ markdown .Answer }}
+          </div>
+          <p class="ask__when">{{ clock .TS }}</p>
         </div>
         {{ end }}
-        <form class="ask__form" method="post" action="/ask">
-          <input class="ask__input" name="question" type="text" autocomplete="off"
-                 placeholder="ask about this session — answered only from the log, diffs and your notes">
-          <button class="ask__btn" type="submit">ask</button>
+
+        <!-- The form takes over the column while a question is being written,
+             and says plainly that it is working while the model thinks. -->
+        <form class="ask__form" method="post" action="/ask" id="ask-form">
+          <textarea class="ask__input" name="question" rows="2" id="ask-input"
+                    placeholder="ask about this session — answered only from the log, diffs and your notes"></textarea>
+          <div class="ask__actions">
+            <button class="ask__btn" type="submit">ask</button>
+            <button class="ask__cancel" type="button" id="ask-cancel">cancel</button>
+            <span class="ask__hint">⌘⏎ to send · answered only from this session</span>
+          </div>
+          <p class="ask__working" id="ask-working" hidden>
+            <span class="ask__spinner" aria-hidden="true"></span>
+            <span id="ask-working-text">thinking…</span>
+          </p>
         </form>
       </section>
       {{ end }}
@@ -172,11 +187,18 @@
 
         <!-- What this change is for. Model-written, so labelled inferred; the
              files and churn above it come from git. -->
-        {{ if .Meaning }}
-        <p class="group__meaning"><span class="why why--inferred">inferred</span>{{ .Meaning }}</p>
-        {{ else }}
-        <p class="group__meaning group__meaning--none">not yet described</p>
-        {{ end }}
+        <p class="group__meaning{{ if not .Meaning }} group__meaning--none{{ end }}">
+          {{ if .Meaning }}
+          <span class="why why--inferred">inferred</span>{{ .Meaning }}
+          {{ else }}not yet described{{ end }}
+          {{ if $.CanDescribe }}
+          <!-- The automatic pass is bounded, so most groups in a large session
+               arrive undescribed. This is how a reviewer asks for one. -->
+          <form class="describe" method="post" action="/groups/{{ .ID }}/describe">
+            <button class="describe__btn" type="submit">{{ if .Meaning }}re-describe{{ else }}describe{{ end }}</button>
+          </form>
+          {{ end }}
+        </p>
 
         {{ range .Files }}
         <!-- Folded by default: a hundred open diffs is not a review. Clicking

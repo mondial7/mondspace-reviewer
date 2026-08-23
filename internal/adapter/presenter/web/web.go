@@ -13,6 +13,7 @@ import (
 	"html/template"
 	"io/fs"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -61,12 +62,15 @@ type SessionSummary struct {
 	Started time.Time
 }
 
-// Exchange is one question and its answer. Review is iterative dialogue, so the
-// thread is kept and handed back to the assistant as context (issue #12).
-type Exchange struct {
-	Question string
-	Answer   string
-	TS       time.Time
+// Exchange is one question and its answer. It is domain.Exchange rather than a
+// copy: the conversation is persisted and reloaded, so a second definition here
+// would be a second place for the two to drift apart.
+type Exchange = domain.Exchange
+
+// ExchangeStore persists the review conversation. Declared where it is consumed,
+// so this adapter depends on no other.
+type ExchangeStore interface {
+	AppendExchange(domain.Exchange) error
 }
 
 // AskFunc answers a question given everything already discussed.
@@ -136,6 +140,11 @@ type RepoStatus struct {
 // the whole workspace and repository list afterwards rather than a fragment.
 type AddRepoFunc func(path string) ([]SessionSummary, []RepoStatus, error)
 
+// DescribeFunc writes what one group of changes is for, on demand. The
+// automatic pass is bounded (ADR 0014), so most groups in a large session are
+// left undescribed; this is how a reviewer asks for one.
+type DescribeFunc func(ctx context.Context, groupID string) (string, error)
+
 // Loader materialises one session's review on demand. A workspace may span
 // several repositories and many sessions; building every one at start-up would
 // mean a git diff per file per session, so they are loaded when first opened.
@@ -159,6 +168,8 @@ type Server struct {
 	loader    Loader
 	versions  VersionLister
 	versionOf VersionDiffer
+	describe  DescribeFunc
+	exchanges ExchangeStore
 	// loaded caches sessions opened during this run, so switching back and forth
 	// costs nothing after the first visit.
 	loaded    map[string]Session
@@ -269,6 +280,58 @@ func (s *Server) handleAddRepo(w http.ResponseWriter, r *http.Request) {
 	}
 	s.broadcast("repos")
 	http.Redirect(w, r, "/status", http.StatusSeeOther)
+}
+
+// WithExchanges persists the review conversation, and seeds the thread with
+// whatever was already said, so a reviewer can pick it up where they left it.
+func (s *Server) WithExchanges(store ExchangeStore, earlier []domain.Exchange) *Server {
+	s.exchanges = store
+	for _, e := range earlier {
+		s.thread = append(s.thread, e)
+	}
+	return s
+}
+
+// WithDescribe wires on-demand description of a group of changes.
+func (s *Server) WithDescribe(fn DescribeFunc) *Server {
+	s.describe = fn
+	return s
+}
+
+// handleDescribe writes (or rewrites) one group's meaning. It is the only model
+// call a reviewer can trigger for a group, and it is deliberately explicit:
+// describing every group of a large session automatically is the cost ADR 0014
+// exists to bound.
+func (s *Server) handleDescribe(w http.ResponseWriter, r *http.Request) {
+	s.mu.RLock()
+	describe := s.describe
+	s.mu.RUnlock()
+	if describe == nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	groupID := r.PathValue("id")
+	started := time.Now()
+	meaning, err := describe(context.WithoutCancel(r.Context()), groupID)
+
+	entry := AuditEntry{Action: "describe", Detail: groupID,
+		Millis: time.Since(started).Milliseconds()}
+	if err != nil {
+		entry.Failed = true
+		entry.Detail = groupID + ": " + err.Error()
+	} else {
+		s.mu.Lock()
+		if s.sess.Narrative.Meanings == nil {
+			s.sess.Narrative.Meanings = map[string]string{}
+		}
+		s.sess.Narrative.Meanings[groupID] = meaning
+		s.mu.Unlock()
+	}
+	s.Record(entry)
+	s.broadcast("narrative")
+
+	http.Redirect(w, r, "/#group-"+groupID, http.StatusSeeOther)
 }
 
 // WithVersions wires the file-history overlay: the commits that touched a file,
@@ -432,6 +495,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /units/{id}/reanalyse", s.handleReanalyse)
 	s.mux.HandleFunc("GET /units/{id}/diff", s.handleUnitDiff)
 	s.mux.HandleFunc("GET /units/{id}/versions", s.handleVersions)
+	s.mux.HandleFunc("POST /groups/{id}/describe", s.handleDescribe)
 	s.mux.HandleFunc("GET /cockpit", s.handleCockpit)
 	s.mux.HandleFunc("GET /activity", s.handleActivity)
 	s.mux.HandleFunc("GET /status", s.handleStatus)
@@ -738,24 +802,36 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	answer := "(no assistant configured)"
+	answer, failed := "(no assistant configured)", true
 	if s.ask != nil {
 		s.mu.RLock()
 		history := append([]Exchange(nil), s.thread...)
 		s.mu.RUnlock()
 
-		got, err := s.ask(r.Context(), question, history)
+		got, err := s.ask(context.WithoutCancel(r.Context()), question, history)
 		if err != nil {
-			answer = "(" + err.Error() + ")"
+			answer = err.Error()
 		} else {
-			answer = got
+			answer, failed = got, false
 		}
 	}
 
 	s.mu.Lock()
-	s.thread = append(s.thread, Exchange{Question: question, Answer: answer, TS: s.now()})
+	exchange := Exchange{
+		ID: s.newID(), SessionID: s.sess.ID, Question: question,
+		Answer: answer, Failed: failed, TS: s.now(),
+	}
+	s.thread = append(s.thread, exchange)
 	sessionID := s.sess.ID
+	keep := s.exchanges
 	s.mu.Unlock()
+
+	// A review conversation is part of the review: it must outlive the process.
+	if keep != nil {
+		if err := keep.AppendExchange(exchange); err != nil {
+			fmt.Fprintln(os.Stderr, "msr: could not store the exchange:", err)
+		}
+	}
 	s.record(AuditEntry{SessionID: sessionID, Action: "ask", Detail: question})
 	s.broadcast("answer")
 
@@ -925,6 +1001,7 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 	stats := sess.Stats
 	usage := s.agent.Usage
 	narrative := sess.Narrative
+	canDescribe := s.describe != nil
 	workspace := s.workspace
 	thread := append([]Exchange(nil), s.thread...)
 	hasAsk := s.ask != nil
@@ -986,18 +1063,19 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := struct {
-		Session   Session
-		Workspace []SessionSummary
-		Stats     cockpitStats
-		Narrative domain.Narrative
-		Chapters  []chapterView
-		Groups    []groupView
-		Tree      []domain.TreeNode
-		Thread    []Exchange
-		HasAsk    bool
-		HasReanal bool
-		CanRetry  bool
-		Narrating bool
+		Session     Session
+		Workspace   []SessionSummary
+		Stats       cockpitStats
+		Narrative   domain.Narrative
+		Chapters    []chapterView
+		Groups      []groupView
+		Tree        []domain.TreeNode
+		CanDescribe bool
+		Thread      []Exchange
+		HasAsk      bool
+		HasReanal   bool
+		CanRetry    bool
+		Narrating   bool
 	}{
 		Session: sess, Workspace: workspace,
 		Stats: cockpitStats{
@@ -1008,8 +1086,9 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 			Tokens: tokenTotal(usage),
 		},
 		Narrative: narrative, Chapters: chapters, Groups: groups,
-		Tree:   usecase.FileTree(sess.Units, sess.Diffs),
-		Thread: thread, HasAsk: hasAsk, HasReanal: hasReanal,
+		Tree:        usecase.FileTree(sess.Units, sess.Diffs),
+		CanDescribe: canDescribe,
+		Thread:      thread, HasAsk: hasAsk, HasReanal: hasReanal,
 		CanRetry: canRetry, Narrating: narrating,
 	}
 
@@ -1289,5 +1368,9 @@ func funcs() template.FuncMap {
 	return template.FuncMap{
 		"base": filepath.Base,
 		"add":  func(a, b int) int { return a + b },
+		// A model answers in markdown whether or not it was asked to. Rendered,
+		// not trusted: the text is escaped before any markup is added.
+		"markdown": renderMarkdown,
+		"clock":    func(t time.Time) string { return t.Local().Format("15:04") },
 	}
 }

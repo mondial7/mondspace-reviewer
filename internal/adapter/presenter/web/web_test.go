@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -916,5 +917,54 @@ func TestAddingARepositoryReportsWhyItFailed(t *testing.T) {
 
 	if !strings.Contains(get(t, h, "/status").Body.String(), "not a git repository") {
 		t.Error("the failure should be shown on the page")
+	}
+}
+
+func TestDescribingOneGroupOnDemand(t *testing.T) {
+	// The automatic pass is bounded, so most groups in a large session are left
+	// "not yet described". Without a way to ask, that is a dead end.
+	var asked string
+	h := web.NewServer(testSession(), nil).
+		WithNarrative(domain.Narrative{SessionID: "s", Source: domain.NarrativeModel}).
+		WithDescribe(func(_ context.Context, groupID string) (string, error) {
+			asked = groupID
+			return "Persists the story so a restart costs nothing.", nil
+		})
+
+	// The group id is rendered on the page; take it from there rather than
+	// recomputing it, so the test exercises the same identity the button uses.
+	body := get(t, h, "/").Body.String()
+	id := regexp.MustCompile(`id="group-([0-9a-f]+)"`).FindStringSubmatch(body)
+	if id == nil {
+		t.Fatalf("no group rendered:\n%s", body[:400])
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/groups/"+id[1]+"/describe", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("POST describe = %d, want 303", rec.Code)
+	}
+	if asked != id[1] {
+		t.Errorf("described %q, want %q", asked, id[1])
+	}
+	if !strings.Contains(get(t, h, "/").Body.String(), "Persists the story") {
+		t.Error("the new description should appear on the page")
+	}
+}
+
+func TestDescribeButtonIsOfferedOnlyWhenItCanDoSomething(t *testing.T) {
+	// Without a describer wired there is nothing behind the button, and offering
+	// it would be a promise the page cannot keep.
+	plain := get(t, web.NewServer(testSession(), nil), "/").Body.String()
+	if strings.Contains(plain, "/describe") {
+		t.Error("no describer wired, so no describe control")
+	}
+
+	h := web.NewServer(testSession(), nil).WithDescribe(
+		func(context.Context, string) (string, error) { return "x", nil })
+	if !strings.Contains(get(t, h, "/").Body.String(), "/describe") {
+		t.Error("a wired describer should offer the control")
 	}
 }

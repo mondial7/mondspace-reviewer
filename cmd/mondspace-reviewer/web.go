@@ -150,7 +150,9 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 		WithLoader(sessionLoader(workspace, *out)).
 		WithVersions(snap.FileVersions, snap.DiffAt).
 		WithRepos(openRepos(), addRepo(*out)).
-		WithAsk(webAskFunc(sess, snap, sum)).
+		WithDescribe(describeGroup(sess, units, diffs, sum, store)).
+		WithExchanges(exchangeStore(store), sess.Exchanges).
+		WithAsk(webAskFunc(sess, units, diffs, snap, sum)).
 		WithReanalyse(webReanalyseFunc(snap, sum, *model)).
 		WithAudit(workspaceAudit{writeTo: filepath.Join(storeRoot, *session, "audit.jsonl")})
 
@@ -279,12 +281,25 @@ func storeRelativeTo(repo, out string) string {
 
 // webAskFunc adapts the reviewer-assistant to the bounded-context ask usecase,
 // threading the conversation so far into each question (issue #12).
-func webAskFunc(sess domain.Session, snap port.Snapshotter, sum port.Summarizer) web.AskFunc {
+func webAskFunc(sess domain.Session, units []domain.Unit, diffs map[string]domain.Diff, snap port.Snapshotter, sum port.Summarizer) web.AskFunc {
 	return func(ctx context.Context, question string, history []web.Exchange) (string, error) {
 		askCtx := usecase.BuildAskContext(domain.AskSession, sess, domain.Unit{}, domain.Diff{})
+		// The units the page shows are rebuilt from git, not the ones the store
+		// happens to hold — a retroactive review has none in the store at all, so
+		// asking about it was asking about nothing.
+		askCtx.Units = units
+		// Units and notes alone are metadata; asked what changed, the assistant
+		// correctly answered that it could not say. The digest is what makes a
+		// session-scoped question answerable.
+		askCtx = usecase.WithChanges(askCtx, units, diffs, askDigestLines)
 		return sum.Answer(ctx, withHistory(question, history), askCtx)
 	}
 }
+
+// askDigestLines is how much of the session's change reaches a question. Room
+// enough to answer "what changed" without becoming a prompt no local context
+// window can hold.
+const askDigestLines = 220
 
 // withHistory prefixes the running conversation so follow-ups have context.
 func withHistory(question string, history []web.Exchange) string {
@@ -767,5 +782,49 @@ func addRepo(out string) web.AddRepoFunc {
 			}
 		}
 		return discoverWorkspace(append(known, abs), out), openRepos(), nil
+	}
+}
+
+// exchangeStore persists the review conversation when the store can. Both the
+// JSONL and Postgres stores can; the interface keeps the server from caring.
+func exchangeStore(store port.Store) web.ExchangeStore {
+	if keeper, ok := store.(web.ExchangeStore); ok {
+		return keeper
+	}
+	return nil
+}
+
+// describeGroup writes what one group of changes is for, on request. The
+// automatic pass is bounded, so in a large session most groups arrive
+// undescribed; this is the reviewer asking for one, and it is saved with the
+// story so it is written once.
+func describeGroup(sess domain.Session, units []domain.Unit, diffs map[string]domain.Diff, sum port.Summarizer, store port.Store) web.DescribeFunc {
+	return func(ctx context.Context, groupID string) (string, error) {
+		ctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
+		defer cancel()
+
+		for _, g := range usecase.GroupChanges(units, diffs) {
+			if g.ID != groupID {
+				continue
+			}
+			described := usecase.DescribeGroups(ctx, sum, sess, []domain.ChangeGroup{g}, nil)
+			meaning, ok := described[groupID]
+			if !ok {
+				return "", fmt.Errorf("the model did not describe this change")
+			}
+
+			// Persist it with the story, so the next launch does not pay again.
+			if cache, ok := store.(narrativeCache); ok {
+				if stored, err := cache.LoadNarrative(sess.ID); err == nil && len(stored.Chapters) > 0 {
+					if stored.Meanings == nil {
+						stored.Meanings = map[string]string{}
+					}
+					stored.Meanings[groupID] = meaning
+					_ = cache.SaveNarrative(stored)
+				}
+			}
+			return meaning, nil
+		}
+		return "", fmt.Errorf("no such group in this review")
 	}
 }

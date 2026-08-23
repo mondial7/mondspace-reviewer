@@ -190,3 +190,44 @@ func ReviewFingerprint(files []domain.FileStat) string {
 	sum := sha256.Sum256([]byte(strings.Join(lines, "\n")))
 	return hex.EncodeToString(sum[:16])
 }
+
+// WithChanges adds a bounded digest of what actually changed to an ask context.
+//
+// Without it a session-scoped question carries only file names and note text,
+// and the assistant correctly answers that it cannot say anything: metadata is
+// not a change. The digest is capped because the alternative — every diff — is a
+// prompt no local context window can hold, and it always states what it omitted
+// rather than presenting a truncation as the whole picture.
+func WithChanges(ctx domain.AskContext, units []domain.Unit, diffs map[string]domain.Diff, maxLines int) domain.AskContext {
+	if maxLines <= 0 {
+		maxLines = 200
+	}
+
+	var b strings.Builder
+	used, covered := 0, 0
+	for _, u := range units {
+		if used >= maxLines {
+			break
+		}
+		d := diffs[u.ID]
+		if strings.TrimSpace(d.Text) == "" {
+			continue
+		}
+		// A slice each, so one enormous file cannot consume the whole budget and
+		// hide every other change.
+		compact, _ := CompactDiff(d, perFileDigestLines)
+		b.WriteString("--- " + strings.Join(u.Files, ", ") + "\n" + compact.Text)
+		used += strings.Count(compact.Text, "\n") + 1
+		covered++
+	}
+
+	if left := len(units) - covered; left > 0 {
+		b.WriteString(fmt.Sprintf("… and %d more %s not shown here\n", left, plural("file", left)))
+	}
+
+	ctx.Diff = domain.Diff{Text: b.String()}
+	return ctx
+}
+
+// perFileDigestLines is how much of any one file reaches the digest.
+const perFileDigestLines = 10

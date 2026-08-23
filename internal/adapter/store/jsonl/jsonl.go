@@ -32,6 +32,12 @@ func (s *Store) AppendUnit(u domain.Unit) error {
 	return s.appendLine(u.SessionID, "units.jsonl", u)
 }
 
+// AppendExchange records one question and its answer, so the review
+// conversation outlives the process that had it.
+func (s *Store) AppendExchange(e domain.Exchange) error {
+	return s.appendLine(e.SessionID, "ask.jsonl", e)
+}
+
 func (s *Store) AppendNote(n domain.Note) error {
 	return s.appendLine(n.SessionID, "notes.jsonl", n)
 }
@@ -67,6 +73,12 @@ func (s *Store) Load(sessionID string) (domain.Session, error) {
 		return domain.Session{}, err
 	}
 	sess.Notes = notes
+
+	exchanges, err := readLines[domain.Exchange](filepath.Join(s.root, sessionID, "ask.jsonl"))
+	if err != nil {
+		return domain.Session{}, err
+	}
+	sess.Exchanges = exchanges
 
 	return sess, nil
 }

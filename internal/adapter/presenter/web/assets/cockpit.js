@@ -393,3 +393,59 @@ if (storyCol) new MutationObserver(linkColumns).observe(storyCol, { childList: t
     if (target) setTimeout(() => target.scrollIntoView({ block: 'start' }), 0);
   });
 })();
+
+
+// ── The reviewer assistant ──────────────────────────────────────────────────
+//
+// Asking a question is a mode, not a field at the bottom of a list. While one is
+// being written the story gets out of the way, and while the model is thinking
+// the page says so — a local reasoning model can take half a minute, and a form
+// that looks idle for thirty seconds reads as broken.
+(function ask() {
+  const form = document.getElementById('ask-form');
+  const input = document.getElementById('ask-input');
+  if (!form || !input) return;
+
+  const working = document.getElementById('ask-working');
+  const workingText = document.getElementById('ask-working-text');
+  const cancel = document.getElementById('ask-cancel');
+  const story = document.getElementById('story-col');
+
+  const focus = (on) => story?.classList.toggle('cockpit__story--asking', on);
+
+  input.addEventListener('focus', () => focus(true));
+  input.addEventListener('input', () => focus(input.value.trim() !== ''));
+  cancel?.addEventListener('click', () => {
+    input.value = '';
+    focus(false);
+    input.blur();
+  });
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { input.value = ''; focus(false); input.blur(); }
+    // A textarea takes Enter for a newline, so sending needs the modifier.
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) form.requestSubmit();
+  });
+
+  // The answer arrives with the next page render, so this is a submit-time
+  // state: it has to survive until navigation, not until a callback.
+  form.addEventListener('submit', () => {
+    if (input.value.trim() === '') return;
+    working.hidden = false;
+    form.dataset.busy = 'yes';
+
+    // Some honest texture about what is happening. A local model reasons before
+    // it answers, and saying so is better than an unexplained wait.
+    const stages = [
+      'reading the session…',
+      'reading the diffs and your notes…',
+      'reasoning…',
+      'still reasoning — a local model thinks before it answers…',
+      'writing the answer…',
+    ];
+    let i = 0;
+    setInterval(() => {
+      i = Math.min(i + 1, stages.length - 1);
+      workingText.textContent = stages[i];
+    }, 4000);
+  });
+})();
