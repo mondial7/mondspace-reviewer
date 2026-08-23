@@ -491,7 +491,9 @@ func Brief(text string, max int) string {
 
 func fallbackTitle(sess domain.Session) string {
 	if sess.Prompt != "" {
-		return sess.Prompt
+		// The prompt stands in until a model reads the session. It is arbitrary
+		// user text, so it is trimmed to fit the panel it will appear in.
+		return Brief(sess.Prompt, briefTitleChars)
 	}
 	return "Session " + sess.ID
 }

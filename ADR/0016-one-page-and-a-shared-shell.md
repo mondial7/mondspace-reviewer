@@ -61,6 +61,25 @@ and its per-page toggles. Because zen hides the rail, navigation cannot depend o
 it: **`⌘K`** opens a command palette over the pages *and* over every changed file
 in the session.
 
+## A workspace, not a session
+
+`msr web` opens a **workspace**: every review across every repository it is given
+(`--repo`, plus a repeatable `--repo-also`). Each repository keeps its own store,
+so two projects never collide. With no `--session` it opens the newest review —
+arriving at a repository should not require looking an id up first.
+
+Sessions are **loaded on demand and cached**. Materialising every session at
+start-up would mean a git diff per file per session; instead the first visit pays
+and later ones do not. An unknown or unloadable id falls back to the session
+already open, because a stale link must not strand the reviewer on an error page.
+
+The key constraint this exposed: **a session must carry its own numbers, history
+and story.** Holding them beside the session on the server meant switching showed
+one session's files under another's statistics — worse than showing none. They
+now live on `Session`, so what is displayed cannot disagree with what is being
+read. Only the tracked session can re-narrate; opening another never triggers a
+model call.
+
 ## Consequences
 
 - One address to share, one place to work, and the story finally sits beside the

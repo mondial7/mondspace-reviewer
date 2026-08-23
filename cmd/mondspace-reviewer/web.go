@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -31,6 +32,8 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 	addr := fs.String("addr", "127.0.0.1:7777", "address to listen on (localhost only by default)")
 	out := fs.String("out", ".mondspace-reviewer", "store root directory (jsonl store)")
 	repo := fs.String("repo", ".", "repository to review")
+	var also repoList
+	fs.Var(&also, "repo-also", "another repository to include in the workspace (repeatable)")
 	session := fs.String("session", "", "session id")
 	schema := fs.String("pg-schema", pgstore.DefaultSchema, "Postgres schema (never public)")
 	summarizerURL := fs.String("summarizer-url", defaultSummarizerURL, "OpenAI-compatible summarizer endpoint")
@@ -38,8 +41,14 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
 	}
+	// With no --session, open the newest review in the workspace: a reviewer
+	// arriving at a repository should not have to look up an id first.
+	workspace := discoverWorkspace(append([]string{*repo}, also...), *out)
 	if *session == "" {
-		return fmt.Errorf("--session is required")
+		if len(workspace) == 0 {
+			return fmt.Errorf("no reviews found — run `msr review` first, or pass --session")
+		}
+		*session = workspace[0].ID
 	}
 
 	// Postgres is opt-in via MSR_POSTGRES_DSN; otherwise the JSONL store is used.
@@ -112,7 +121,8 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 		WithAgent(agentStatus(ctx, sum, *summarizerURL, *model)).
 		WithHistories(usecase.FileHistories(sess.Events, units)).
 		WithNarrative(shown).
-		WithWorkspace(discoverSessions(*out, *repo)).
+		WithWorkspace(workspace).
+		WithLoader(sessionLoader(workspace, *out)).
 		WithAsk(webAskFunc(sess, snap, sum)).
 		WithReanalyse(webReanalyseFunc(snap, sum, *model)).
 		WithAudit(auditFile(filepath.Join(*out, *session, "audit.jsonl")))
@@ -522,5 +532,108 @@ func refreshAgent(ctx context.Context, handler *web.Server, sum port.Summarizer,
 		case <-ticker.C:
 			handler.SetAgent(agentStatus(ctx, sum, endpoint, model))
 		}
+	}
+}
+
+// repoList collects a repeatable --repo-also flag, so one server can hold a
+// workspace spanning several repositories.
+type repoList []string
+
+func (r *repoList) String() string     { return strings.Join(*r, ",") }
+func (r *repoList) Set(v string) error { *r = append(*r, v); return nil }
+
+// workspaceEntry is a session and the repository it belongs to. The pairing is
+// what makes multi-repository work: a session id alone does not say which git
+// tree its files live in.
+type workspaceEntry struct {
+	summary web.SessionSummary
+	repo    string
+	out     string
+}
+
+var workspaceIndex = map[string]workspaceEntry{}
+
+// discoverWorkspace lists every review across every repository given, newest
+// first. Each repository keeps its own store unless --out names an absolute
+// path, so two projects never collide.
+func discoverWorkspace(repos []string, out string) []web.SessionSummary {
+	seen := map[string]bool{}
+	var all []web.SessionSummary
+
+	for _, repo := range repos {
+		if repo == "" || seen[mustAbs(repo)] {
+			continue
+		}
+		seen[mustAbs(repo)] = true
+
+		root := out
+		if !filepath.IsAbs(out) {
+			root = filepath.Join(repo, out)
+		}
+		for _, sum := range discoverSessions(root, repo) {
+			if _, clash := workspaceIndex[sum.ID]; clash {
+				continue // the same id in two repositories: first one wins
+			}
+			workspaceIndex[sum.ID] = workspaceEntry{summary: sum, repo: repo, out: root}
+			all = append(all, sum)
+		}
+	}
+
+	sort.SliceStable(all, func(i, j int) bool { return all[i].Started.After(all[j].Started) })
+	return all
+}
+
+// sessionLoader materialises a session from whichever repository owns it. It is
+// called the first time a session is opened and never again for that session,
+// so the git work it does is paid once.
+func sessionLoader(workspace []web.SessionSummary, out string) web.Loader {
+	return func(ctx context.Context, sessionID string) (web.Session, error) {
+		entry, known := workspaceIndex[sessionID]
+		if !known {
+			return web.Session{}, fmt.Errorf("session %q is not in this workspace", sessionID)
+		}
+
+		store := jsonl.New(entry.out)
+		sess, err := store.Load(sessionID)
+		if err != nil {
+			return web.Session{}, err
+		}
+
+		snap := gitsnap.New(entry.repo, sessionID)
+		baseline, err := snap.Baseline(ctx, firstEventTime(sess))
+		if err != nil {
+			return web.Session{}, err
+		}
+		storeRel := storeRelativeTo(entry.repo, entry.out)
+		units, diffs, err := usecase.BuildFileUnits(ctx, snap, sessionID, baseline,
+			domain.SnapshotRef{}, func(f string) bool {
+				return f == storeRel || strings.HasPrefix(f, storeRel+"/")
+			})
+		if err != nil {
+			return web.Session{}, err
+		}
+
+		commits, _ := snap.CommitsSince(ctx, firstEventTime(sess))
+
+		// A story already written for this session is reused; one that has never
+		// been narrated falls back to the deterministic grouping rather than an
+		// empty column. Opening a session must never trigger a model call —
+		// re-reading it is the tracked session's business (ADR 0014).
+		narrative := domain.Narrative{
+			SessionID: sessionID, Title: usecase.Brief(sess.Prompt, 70),
+			Chapters: usecase.GroupByPath(units), Source: domain.NarrativeMechanical,
+		}
+		if stored, err := store.LoadNarrative(sessionID); err == nil &&
+			stored.Fingerprint == usecase.Fingerprint(units) && len(stored.Chapters) > 0 {
+			narrative = stored
+		}
+
+		return web.Session{
+			ID: sessionID, Prompt: sess.Prompt, Repo: filepath.Base(mustAbs(entry.repo)),
+			Units: units, Notes: usecase.MarkSuperseded(units, sess.Notes), Diffs: diffs,
+			Stats:     usecase.ComputeStats(sess, units, diffs, commits, time.Now()),
+			Histories: usecase.FileHistories(sess.Events, units),
+			Narrative: narrative,
+		}, nil
 	}
 }

@@ -771,3 +771,78 @@ func TestCockpitShowsTokensWhenThereAreSome(t *testing.T) {
 		t.Errorf("the cockpit should total the tokens spent:\n%s", body)
 	}
 }
+
+func TestSwitchingSessionLoadsItOnDemand(t *testing.T) {
+	// A workspace may span several repositories and many sessions. Materialising
+	// every one at start-up would mean a git diff per file per session, so they
+	// are loaded when first asked for — and only once.
+	loads := map[string]int{}
+	other := web.Session{
+		ID: "other", Prompt: "port the parser", Repo: "otherrepo",
+		Units: []domain.Unit{{ID: "other-f001", SessionID: "other",
+			Files:    []string{"parser/lex.go"},
+			Headline: domain.Headline{Text: "rewrote the lexer"}}},
+		Diffs: map[string]domain.Diff{"other-f001": {Text: "@@ -1 +1 @@\n+lex\n"}},
+	}
+
+	h := web.NewServer(testSession(), nil).WithLoader(
+		func(_ context.Context, id string) (web.Session, error) {
+			loads[id]++
+			if id == "other" {
+				return other, nil
+			}
+			return web.Session{}, errors.New("no such session")
+		})
+
+	body := get(t, h, "/?session=other").Body.String()
+	if !strings.Contains(body, "parser/lex.go") || !strings.Contains(body, "rewrote the lexer") {
+		t.Errorf("switching should render the other session:\n%s", body)
+	}
+
+	// Asked for again, it comes from the cache rather than being rebuilt.
+	get(t, h, "/?session=other")
+	if loads["other"] != 1 {
+		t.Errorf("loaded %d times, want once — a loaded session is cached", loads["other"])
+	}
+
+	// The session it started with is still there, not replaced.
+	if !strings.Contains(get(t, h, "/").Body.String(), "auth/token.go") {
+		t.Error("switching away must not discard the original session")
+	}
+}
+
+func TestUnknownSessionFallsBackRatherThanFailing(t *testing.T) {
+	// A stale link or a deleted session must not leave the reviewer at an error
+	// page with no way back.
+	h := web.NewServer(testSession(), nil).WithLoader(
+		func(context.Context, string) (web.Session, error) {
+			return web.Session{}, errors.New("gone")
+		})
+
+	rec := get(t, h, "/?session=vanished")
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /?session=vanished = %d, want 200", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "auth/token.go") {
+		t.Error("an unknown session should fall back to the one already open")
+	}
+}
+
+func TestCockpitOffersASessionSwitcher(t *testing.T) {
+	h := web.NewServer(testSession(), nil).WithWorkspace([]web.SessionSummary{
+		{ID: "s", Repo: "mondspace-reviewer", Prompt: "add token validation"},
+		{ID: "other", Repo: "otherrepo", Prompt: "port the parser"},
+	})
+
+	body := get(t, h, "/").Body.String()
+
+	// Navigable without JavaScript: a plain form the browser can submit.
+	if !strings.Contains(body, `name="session"`) {
+		t.Errorf("the cockpit needs a session switcher:\n%s", body)
+	}
+	// Sessions from other repositories are reachable, and say which repo.
+	if !strings.Contains(body, "otherrepo") || !strings.Contains(body, "port the parser") {
+		t.Errorf("the switcher should span repositories:\n%s", body)
+	}
+}

@@ -519,8 +519,24 @@
 .cockpit__panel {
   min-height: 0; min-width: 0;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;   /* brief · field · numbers */
+  grid-template-rows: auto auto minmax(0, 1fr) auto;  /* switcher · brief · field · numbers */
   gap: 0.6rem;
+}
+
+/* Moving between sessions and repositories. */
+.switcher { display: flex; gap: 0.4rem; min-width: 0; }
+.switcher__select {
+  flex: 1; min-width: 0;
+  font: inherit; font-size: 0.78rem;
+  color: var(--fg); background: var(--panel);
+  border: 1px solid var(--rule); border-radius: 8px;
+  padding: 0.45rem 0.6rem; cursor: pointer;
+}
+.switcher__select:hover { border-color: var(--accent); }
+.switcher__go {
+  font: inherit; font-size: 0.75rem; cursor: pointer;
+  color: var(--bg); background: var(--accent);
+  border: none; border-radius: 8px; padding: 0.4rem 0.7rem;
 }
 
 /* The model's reading of the session, at the top of the panel. */

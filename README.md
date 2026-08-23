@@ -280,6 +280,12 @@ chapter at a time — it never waits on a model.
 
 ## The cockpit
 
+```sh
+msr web                                   # newest review in this repo
+msr web --repo=../api --repo-also=../web  # one workspace, several repositories
+msr web --session=<id>                    # a particular review
+```
+
 `msr web` **opens on the cockpit** — while an agent is still working the first
 question is "is anything still happening", not "what shall I review first". The
 review queue is one click away at `/review`, and every deep link from the

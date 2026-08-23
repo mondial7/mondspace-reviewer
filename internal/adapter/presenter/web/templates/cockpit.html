@@ -34,6 +34,22 @@
 
       <!-- The model's own reading of the session. Labelled inferred, because it
            is: the numbers below it are not (ADR 0003). -->
+      <!-- Moving between sessions, and between repositories. A plain GET form,
+           so it works with no JavaScript. -->
+      {{ if .Workspace }}
+      <form class="switcher" method="get" action="/">
+        <select class="switcher__select" name="session" onchange="this.form.submit()"
+                aria-label="Open another session">
+          {{ range .Workspace }}
+          <option value="{{ .ID }}" {{ if eq .ID $.Session.ID }}selected{{ end }}>
+            {{ .Repo }} · {{ if .Prompt }}{{ .Prompt }}{{ else }}{{ .ID }}{{ end }}
+          </option>
+          {{ end }}
+        </select>
+        <noscript><button class="switcher__go" type="submit">open</button></noscript>
+      </form>
+      {{ end }}
+
       <section class="brief">
         <h1 class="brief__title">{{ .Narrative.Title }}</h1>
         {{ with .Narrative.Intro }}<p class="brief__text">{{ . }}</p>{{ end }}

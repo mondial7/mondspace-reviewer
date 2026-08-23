@@ -40,6 +40,12 @@ type Session struct {
 	Units  []domain.Unit
 	Notes  []domain.Note
 	Diffs  map[string]domain.Diff
+	// Stats and Histories travel with the session rather than beside it: the
+	// cockpit can be showing any session in the workspace, and numbers from a
+	// different one would be worse than no numbers at all.
+	Stats     domain.SessionStats
+	Histories map[string]domain.FileHistory
+	Narrative domain.Narrative
 }
 
 // SessionSummary is one row of the workspace: a review that exists, wherever it
@@ -112,6 +118,11 @@ type AgentStatus struct {
 	Usage    port.TokenUsage
 }
 
+// Loader materialises one session's review on demand. A workspace may span
+// several repositories and many sessions; building every one at start-up would
+// mean a git diff per file per session, so they are loaded when first opened.
+type Loader func(ctx context.Context, sessionID string) (Session, error)
+
 // Annotator persists a reviewer's annotation. It is declared where it is
 // consumed so this adapter depends on no other adapter.
 type Annotator interface {
@@ -125,19 +136,20 @@ type Server struct {
 	tmpl  *template.Template
 	notes Annotator
 
-	mu        sync.RWMutex
-	sess      Session
-	histories map[string]domain.FileHistory
+	mu     sync.RWMutex
+	sess   Session
+	loader Loader
+	// loaded caches sessions opened during this run, so switching back and forth
+	// costs nothing after the first visit.
+	loaded    map[string]Session
 	workspace []SessionSummary
 	thread    []Exchange
-	narrative domain.Narrative
 	models    map[string]string // unit ID -> model that produced its headline
 	ask       AskFunc
 	reanalyse ReanalyseFunc
 	audit     AuditLog
 	narrate   NarrateFunc
 	narrating bool
-	stats     domain.SessionStats
 	agent     AgentStatus
 
 	// subs are live subscribers (server-sent events). Each gets a buffered
@@ -153,15 +165,15 @@ type Server struct {
 // case annotations are held in memory only.
 func NewServer(sess Session, notes Annotator) *Server {
 	s := &Server{
-		mux:       http.NewServeMux(),
-		tmpl:      template.Must(template.New("").Funcs(funcs()).ParseFS(templates, "templates/*.html")),
-		sess:      sess,
-		notes:     notes,
-		models:    map[string]string{},
-		histories: map[string]domain.FileHistory{},
-		subs:      map[chan string]struct{}{},
-		newID:     func() string { return ulid.Make().String() },
-		now:       func() time.Time { return time.Now().UTC() },
+		mux:    http.NewServeMux(),
+		tmpl:   template.Must(template.New("").Funcs(funcs()).ParseFS(templates, "templates/*.html")),
+		sess:   sess,
+		notes:  notes,
+		models: map[string]string{},
+		loaded: map[string]Session{},
+		subs:   map[chan string]struct{}{},
+		newID:  func() string { return ulid.Make().String() },
+		now:    func() time.Time { return time.Now().UTC() },
 	}
 	s.routes()
 	return s
@@ -199,12 +211,66 @@ func (s *Server) WithNarrate(fn NarrateFunc) *Server {
 	return s
 }
 
+// WithLoader wires on-demand loading of other sessions, so the cockpit can move
+// between them — and between repositories — without a restart.
+func (s *Server) WithLoader(fn Loader) *Server {
+	s.loader = fn
+	return s
+}
+
+// openSession resolves the ?session= parameter to a session to render. An
+// unknown or unloadable id falls back to the one already open: a stale link
+// must not leave the reviewer at an error page with no way back.
+func (s *Server) openSession(r *http.Request) Session {
+	want := r.URL.Query().Get("session")
+
+	s.mu.RLock()
+	current := s.sess
+	cached, isCached := s.loaded[want]
+	loader := s.loader
+	s.mu.RUnlock()
+
+	if want == "" || want == current.ID || !validSessionID(want) {
+		return current
+	}
+	if isCached {
+		return cached
+	}
+	if loader == nil {
+		return current
+	}
+
+	loadedSess, err := loader(r.Context(), want)
+	if err != nil || loadedSess.ID == "" {
+		return current
+	}
+	s.mu.Lock()
+	s.loaded[want] = loadedSess
+	s.mu.Unlock()
+	return loadedSess
+}
+
+// validSessionID guards the ?session= parameter. It arrives from a URL and is
+// handed to a loader that will use it as a directory name, so it must be a
+// single, benign path segment. The store validates again on its own account;
+// this stops a traversal attempt before it ever gets that far.
+func validSessionID(id string) bool {
+	if id == "" || id == "." || id == ".." {
+		return false
+	}
+	return !strings.ContainsAny(id, `/\`) && !strings.Contains(id, "..")
+}
+
 // SetSession replaces the units and diffs on a running server, so a review of a
 // session that is still being worked on keeps up with it.
 func (s *Server) SetSession(sess Session, histories map[string]domain.FileHistory) {
 	s.mu.Lock()
+	sess.Histories = histories
+	// Stats and the story arrive on their own schedules; a rebuilt unit list
+	// must not wipe either.
+	sess.Stats = s.sess.Stats
+	sess.Narrative = s.sess.Narrative
 	s.sess = sess
-	s.histories = histories
 	s.mu.Unlock()
 	s.broadcast("units")
 }
@@ -212,7 +278,7 @@ func (s *Server) SetSession(sess Session, histories map[string]domain.FileHistor
 // WithHistories supplies each file's edit history, so a unit can show how many
 // times it was touched and when, not only where it ended up.
 func (s *Server) WithHistories(h map[string]domain.FileHistory) *Server {
-	s.histories = h
+	s.sess.Histories = h
 	return s
 }
 
@@ -244,7 +310,7 @@ func (s *Server) SetAgent(a AgentStatus) {
 // WithStats supplies the session's numbers, shown on the cockpit. They are
 // recomputed by the caller as the session moves, not cached here.
 func (s *Server) WithStats(st domain.SessionStats) *Server {
-	s.stats = st
+	s.sess.Stats = st
 	return s
 }
 
@@ -252,14 +318,14 @@ func (s *Server) WithStats(st domain.SessionStats) *Server {
 // cockpit keeps up with a session that is still being worked on.
 func (s *Server) SetStats(st domain.SessionStats) {
 	s.mu.Lock()
-	s.stats = st
+	s.sess.Stats = st
 	s.mu.Unlock()
 	s.broadcast("stats")
 }
 
 // WithNarrative supplies the session's story, shown at /story.
 func (s *Server) WithNarrative(n domain.Narrative) *Server {
-	s.narrative = n
+	s.sess.Narrative = n
 	return s
 }
 
@@ -267,7 +333,7 @@ func (s *Server) WithNarrative(n domain.Narrative) *Server {
 // can upgrade a mechanical narrative without the page ever waiting on it.
 func (s *Server) SetNarrative(n domain.Narrative) {
 	s.mu.Lock()
-	s.narrative = n
+	s.sess.Narrative = n
 	s.mu.Unlock()
 	s.broadcast("narrative")
 }
@@ -685,16 +751,21 @@ type feedItem struct {
 // stream of what changed, and the numbers behind it. It is the one page meant
 // to be left open on a second screen while an agent works.
 func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
+	// Which session is being read may differ from the one this server started
+	// with: a workspace spans repositories, and the switcher moves between them.
+	sess := s.openSession(r)
+
 	s.mu.RLock()
-	views := s.views()
-	stats := s.stats
-	sess := s.sess
+	views := s.viewsOf(sess)
+	stats := sess.Stats
 	usage := s.agent.Usage
-	narrative := s.narrative
+	narrative := sess.Narrative
+	workspace := s.workspace
 	thread := append([]Exchange(nil), s.thread...)
 	hasAsk := s.ask != nil
 	hasReanal := s.reanalyse != nil
-	canRetry := s.narrate != nil && narrative.Source != domain.NarrativeModel
+	canRetry := s.narrate != nil && narrative.Source != domain.NarrativeModel &&
+		sess.ID == s.sess.ID // only the session this server is tracking can re-narrate
 	narrating := s.narrating
 	s.mu.RUnlock()
 
@@ -733,6 +804,7 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 
 	data := struct {
 		Session   Session
+		Workspace []SessionSummary
 		Stats     cockpitStats
 		Narrative domain.Narrative
 		Chapters  []chapterView
@@ -743,7 +815,7 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 		CanRetry  bool
 		Narrating bool
 	}{
-		Session: sess,
+		Session: sess, Workspace: workspace,
 		Stats: cockpitStats{
 			Open:  humanDuration(stats.Open),
 			Live:  stats.Live,
@@ -925,16 +997,21 @@ func (s *Server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) views() []unitView {
-	views := make([]unitView, 0, len(s.sess.Units))
-	for _, u := range s.sess.Units {
-		views = append(views, s.view(u))
+func (s *Server) views() []unitView { return s.viewsOf(s.sess) }
+
+// viewsOf renders any session, not only the one the server started with.
+func (s *Server) viewsOf(sess Session) []unitView {
+	views := make([]unitView, 0, len(sess.Units))
+	for _, u := range sess.Units {
+		views = append(views, s.viewIn(sess, u))
 	}
 	return views
 }
 
-func (s *Server) view(u domain.Unit) unitView {
-	d := s.sess.Diffs[u.ID]
+func (s *Server) view(u domain.Unit) unitView { return s.viewIn(s.sess, u) }
+
+func (s *Server) viewIn(sess Session, u domain.Unit) unitView {
+	d := sess.Diffs[u.ID]
 	added, removed := usecase.DiffStats(d)
 
 	flags := make([]string, len(u.Flags))
@@ -943,7 +1020,7 @@ func (s *Server) view(u domain.Unit) unitView {
 	}
 
 	var notes []domain.Note
-	for _, n := range s.sess.Notes {
+	for _, n := range sess.Notes {
 		if n.UnitID == u.ID {
 			notes = append(notes, n)
 		}
@@ -954,7 +1031,7 @@ func (s *Server) view(u domain.Unit) unitView {
 		why = "(none stated)"
 	}
 
-	h := s.histories[u.ID]
+	h := sess.Histories[u.ID]
 	history := make([]editView, 0, len(h.Edits))
 	for _, e := range h.Edits {
 		history = append(history, editView{
