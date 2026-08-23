@@ -15,10 +15,11 @@ import (
 )
 
 type Summarizer struct {
-	baseURL string
-	model   string
-	apiKey  string
-	client  *http.Client
+	baseURL    string
+	model      string
+	apiKey     string
+	noThinking bool
+	client     *http.Client
 }
 
 func New(baseURL, model string) *Summarizer {
@@ -36,11 +37,26 @@ func (s *Summarizer) WithAPIKey(key string) *Summarizer {
 	return s
 }
 
+// WithoutThinking asks the server to skip the model's reasoning phase. A
+// reasoning model spends most of a small context thinking before it emits any
+// output — measured at 1,400-3,800 reasoning tokens for an 81-token prompt —
+// which is what makes narration fail on a modest context window.
+//
+// LM Studio forwards chat_template_kwargs to the model's chat template, where
+// Qwen-family templates read enable_thinking. A server that does not understand
+// the field ignores it, so this is safe to set but off by default: a model with
+// room to think writes better prose.
+func (s *Summarizer) WithoutThinking() *Summarizer {
+	s.noThinking = true
+	return s
+}
+
 type chatRequest struct {
-	Model       string        `json:"model"`
-	Messages    []chatMessage `json:"messages"`
-	Temperature float64       `json:"temperature"`
-	Stream      bool          `json:"stream"`
+	Model            string         `json:"model"`
+	Messages         []chatMessage  `json:"messages"`
+	Temperature      float64        `json:"temperature"`
+	Stream           bool           `json:"stream"`
+	ChatTemplateArgs map[string]any `json:"chat_template_kwargs,omitempty"`
 }
 
 type chatMessage struct {
@@ -78,14 +94,19 @@ func (s *Summarizer) Answer(ctx context.Context, question string, c domain.AskCo
 
 // chat runs one chat completion and returns the assistant's message content.
 func (s *Summarizer) chat(ctx context.Context, system, user string) (string, error) {
-	reqBody, err := json.Marshal(chatRequest{
+	body := chatRequest{
 		Model:       s.model,
 		Temperature: 0,
 		Messages: []chatMessage{
 			{Role: "system", Content: system},
 			{Role: "user", Content: user},
 		},
-	})
+	}
+	if s.noThinking {
+		body.ChatTemplateArgs = map[string]any{"enable_thinking": false}
+	}
+
+	reqBody, err := json.Marshal(body)
 	if err != nil {
 		return "", err
 	}

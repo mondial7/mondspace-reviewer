@@ -114,6 +114,58 @@ func TestSendsBearerTokenWhenKeySet(t *testing.T) {
 	}
 }
 
+// captureBody runs a server that records the request body and replies with
+// content, so a test can assert on exactly what was sent to the model.
+func captureBody(t *testing.T, content string) (url string, body func() map[string]any) {
+	t.Helper()
+	var raw []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ = io.ReadAll(r.Body)
+		io.WriteString(w, chatResponse(content))
+	}))
+	t.Cleanup(srv.Close)
+	return srv.URL, func() map[string]any {
+		var m map[string]any
+		if err := json.Unmarshal(raw, &m); err != nil {
+			t.Fatalf("request body was not JSON: %v\n%s", err, raw)
+		}
+		return m
+	}
+}
+
+func TestWithoutThinkingDisablesTheModelsThinkingPhase(t *testing.T) {
+	// A reasoning model spends most of a small context thinking before it emits
+	// any output. LM Studio forwards chat_template_kwargs to the chat template,
+	// where enable_thinking=false suppresses that phase.
+	url, body := captureBody(t, "WHAT: x\nWHY: unknown")
+
+	if _, err := openai.New(url, "m").WithoutThinking().Headline(context.Background(), domain.Unit{}, domain.Diff{}); err != nil {
+		t.Fatal(err)
+	}
+
+	kwargs, ok := body()["chat_template_kwargs"].(map[string]any)
+	if !ok {
+		t.Fatalf("no chat_template_kwargs in request: %v", body())
+	}
+	if kwargs["enable_thinking"] != false {
+		t.Errorf("enable_thinking = %v, want false", kwargs["enable_thinking"])
+	}
+}
+
+func TestThinkingIsLeftAloneByDefault(t *testing.T) {
+	// Not every OpenAI-compatible server understands the field, and a model with
+	// room to think gives better prose, so it is opt-in.
+	url, body := captureBody(t, "WHAT: x\nWHY: unknown")
+
+	if _, err := openai.New(url, "m").Headline(context.Background(), domain.Unit{}, domain.Diff{}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, present := body()["chat_template_kwargs"]; present {
+		t.Errorf("chat_template_kwargs should be absent by default: %v", body())
+	}
+}
+
 func TestHeadlineErrorsOnNon2xxAndUnreachable(t *testing.T) {
 	u := domain.Unit{ID: "u1"}
 
