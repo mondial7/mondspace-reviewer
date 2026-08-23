@@ -43,7 +43,7 @@ func main() {
 
 func run(ctx context.Context, args []string, stdin io.Reader, stdout io.Writer) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: msr <review|ingest|install-hooks> ...")
+		return fmt.Errorf("usage: msr <web|review|ask|export|ingest|install-hooks|gc> ...")
 	}
 	switch args[0] {
 	case "review":
