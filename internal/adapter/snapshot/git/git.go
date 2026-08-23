@@ -129,21 +129,30 @@ func (s *Snapshotter) ResolveRef(ctx context.Context, ref string) (domain.Snapsh
 	return domain.SnapshotRef{Commit: out, Label: ref}, nil
 }
 
-// ChangedFiles lists the files whose net content differs from `from` to the
-// current working tree, including new untracked files.
-func (s *Snapshotter) ChangedFiles(ctx context.Context, from domain.SnapshotRef) ([]string, error) {
+// ChangedFiles lists the files whose net content differs from `from` to `to`.
+// An empty `to` diffs against the current working tree (as today), including
+// new untracked files; a supplied `to` bounds the far end to that commit,
+// which excludes untracked files and any working-tree changes made since.
+func (s *Snapshotter) ChangedFiles(ctx context.Context, from, to domain.SnapshotRef) ([]string, error) {
 	set := map[string]bool{}
 
-	tracked, err := s.run(ctx, os.Environ(), "diff", "--name-only", from.Commit, "--")
+	args := []string{"diff", "--name-only", from.Commit}
+	if to.Commit != "" {
+		args = append(args, to.Commit)
+	}
+	args = append(args, "--")
+	tracked, err := s.run(ctx, os.Environ(), args...)
 	if err != nil {
 		return nil, err
 	}
 	for _, f := range nonEmptyLines(tracked) {
 		set[f] = true
 	}
-	if untracked, err := s.run(ctx, os.Environ(), "ls-files", "--others", "--exclude-standard"); err == nil {
-		for _, f := range nonEmptyLines(untracked) {
-			set[f] = true
+	if to.Commit == "" {
+		if untracked, err := s.run(ctx, os.Environ(), "ls-files", "--others", "--exclude-standard"); err == nil {
+			for _, f := range nonEmptyLines(untracked) {
+				set[f] = true
+			}
 		}
 	}
 

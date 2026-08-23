@@ -307,7 +307,7 @@ func runFileReview(ctx context.Context, store port.Store, snap *gitsnap.Snapshot
 	if err != nil {
 		return err
 	}
-	files, err := snap.ChangedFiles(ctx, baseline)
+	files, err := snap.ChangedFiles(ctx, baseline, domain.SnapshotRef{})
 	if err != nil {
 		return err
 	}

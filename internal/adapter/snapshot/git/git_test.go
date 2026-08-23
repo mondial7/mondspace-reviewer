@@ -60,7 +60,7 @@ func TestBaselineNetChangesAndDiff(t *testing.T) {
 	}
 
 	// Net changed files since the baseline: a.txt (changed) and b.txt (added).
-	files, err := s.ChangedFiles(ctx, baseline)
+	files, err := s.ChangedFiles(ctx, baseline, domain.SnapshotRef{})
 	if err != nil {
 		t.Fatalf("ChangedFiles: %v", err)
 	}
@@ -76,6 +76,47 @@ func TestBaselineNetChangesAndDiff(t *testing.T) {
 	}
 	if !strings.Contains(d.Text, "+v2") {
 		t.Errorf("net diff missing the added line:\n%s", d.Text)
+	}
+}
+
+func TestChangedFilesBoundedByUntilExcludesLaterCommits(t *testing.T) {
+	dir := newRepo(t) // commit 1: a.txt
+	gitCmd(t, dir, "rev-parse", "HEAD")
+
+	if err := os.WriteFile(filepath.Join(dir, "b.txt"), []byte("mid\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCmd(t, dir, "add", "b.txt")
+	gitCommitAt(t, dir, "2026-01-02T00:00:00", "mid") // commit 2: adds b.txt
+
+	if err := os.WriteFile(filepath.Join(dir, "c.txt"), []byte("late\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCmd(t, dir, "add", "c.txt")
+	gitCommitAt(t, dir, "2026-01-03T00:00:00", "late") // commit 3: adds c.txt
+
+	s := gitsnap.New(dir, "sess")
+	ctx := context.Background()
+
+	initRef, err := s.ResolveRef(ctx, "HEAD~2")
+	if err != nil {
+		t.Fatalf("ResolveRef HEAD~2: %v", err)
+	}
+	midRef, err := s.ResolveRef(ctx, "HEAD~1")
+	if err != nil {
+		t.Fatalf("ResolveRef HEAD~1: %v", err)
+	}
+
+	files, err := s.ChangedFiles(ctx, initRef, midRef)
+	if err != nil {
+		t.Fatalf("ChangedFiles: %v", err)
+	}
+	got := strings.Join(files, ",")
+	if !strings.Contains(got, "b.txt") {
+		t.Errorf("ChangedFiles(init, mid) = %v, want b.txt", files)
+	}
+	if strings.Contains(got, "c.txt") {
+		t.Errorf("ChangedFiles(init, mid) = %v, must not include c.txt (added after --until)", files)
 	}
 }
 
