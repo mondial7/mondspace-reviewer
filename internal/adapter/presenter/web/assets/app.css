@@ -378,3 +378,13 @@
   .activity__row { grid-template-columns: auto 1fr; }
   .activity__detail { white-space: normal; grid-column: 1 / -1; }
 }
+
+/* Narration is opt-in, not automatic: the reviewer asks for it. */
+.hero__retry { position: relative; z-index: 1; margin: 1.25rem 0 0; display: flex; gap: 0.75rem; align-items: baseline; flex-wrap: wrap; }
+.hero__retrybtn {
+  font: inherit; font-size: 0.9rem; cursor: pointer;
+  color: var(--bg); background: var(--accent);
+  border: none; border-radius: 4px; padding: 0.45rem 0.9rem;
+}
+.hero__retrybtn:hover { filter: brightness(1.1); }
+.hero__retryhint, .hero__retry--busy { color: var(--fg-dim); font-size: 0.85rem; }

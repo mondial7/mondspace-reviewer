@@ -69,6 +69,10 @@ type AskFunc func(ctx context.Context, question string, history []Exchange) (str
 // stable (issue #10).
 type ReanalyseFunc func(ctx context.Context, u domain.Unit) (domain.Headline, string, error)
 
+// NarrateFunc regenerates the session's story. It is slow — several model calls
+// — so it runs in the background and open pages are told when it lands.
+type NarrateFunc func(ctx context.Context)
+
 // AuditEntry records one reviewer interaction. Once reviews are shared, these
 // are records, not a cache: who did what, when (issue #11).
 type AuditEntry struct {
@@ -117,6 +121,8 @@ type Server struct {
 	ask       AskFunc
 	reanalyse ReanalyseFunc
 	audit     AuditLog
+	narrate   NarrateFunc
+	narrating bool
 
 	// subs are live subscribers (server-sent events). Each gets a buffered
 	// channel so a slow reader can never block a request handler.
@@ -168,6 +174,14 @@ func (s *Server) WithAudit(a AuditLog) *Server {
 	return s
 }
 
+// WithNarrate wires re-narration to an explicit control. Narration is the most
+// expensive thing the app does, so it is never triggered by navigation: the
+// reviewer asks for it, or it does not happen.
+func (s *Server) WithNarrate(fn NarrateFunc) *Server {
+	s.narrate = fn
+	return s
+}
+
 // WithNarrative supplies the session's story, shown at /story.
 func (s *Server) WithNarrative(n domain.Narrative) *Server {
 	s.narrative = n
@@ -204,6 +218,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /units/{id}/reanalyse", s.handleReanalyse)
 	s.mux.HandleFunc("GET /story", s.handleStory)
 	s.mux.HandleFunc("GET /activity", s.handleActivity)
+	s.mux.HandleFunc("POST /story/narrate", s.handleNarrate)
 	s.mux.HandleFunc("GET /events", s.handleEvents)
 }
 
@@ -474,6 +489,67 @@ func (s *Server) Record(e AuditEntry) {
 	s.broadcast("activity")
 }
 
+// Narrating reports whether a narration is under way, so a page can say so
+// rather than looking idle.
+func (s *Server) Narrating() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.narrating
+}
+
+// beginNarration claims the single narration slot, reporting false if one is
+// already running. Model calls are the scarce resource here: a reviewer who
+// clicks twice, or two open tabs, must not start two narrations.
+func (s *Server) beginNarration() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.narrating || s.narrate == nil {
+		return false
+	}
+	s.narrating = true
+	return true
+}
+
+func (s *Server) endNarration() {
+	s.mu.Lock()
+	s.narrating = false
+	s.mu.Unlock()
+	s.broadcast("narrative")
+}
+
+// handleNarrate re-narrates the session on request. It returns straight away:
+// the reviewer asked for a story, not for their browser to hang for a minute.
+func (s *Server) handleNarrate(w http.ResponseWriter, r *http.Request) {
+	s.mu.RLock()
+	wired := s.narrate != nil
+	s.mu.RUnlock()
+	if !wired {
+		http.NotFound(w, r)
+		return
+	}
+
+	// The request context dies when this handler returns, so the background work
+	// gets one that outlives it. Already running is not an error: the reviewer
+	// gets the story either way.
+	s.NarrateNow(context.WithoutCancel(r.Context()))
+	http.Redirect(w, r, "/story", http.StatusSeeOther)
+}
+
+// NarrateNow starts narration in the background unless one is already running,
+// reporting whether it started. Both the startup narration and the reviewer's
+// retry go through here, so the two can never overlap.
+func (s *Server) NarrateNow(ctx context.Context) bool {
+	if !s.beginNarration() {
+		return false
+	}
+	go func() {
+		defer s.endNarration()
+		s.narrate(ctx)
+	}()
+	s.broadcast("narrative") // tell open pages it has started
+	return true
+}
+
 // activityView is one audit entry prepared for display.
 type activityView struct {
 	When   string
@@ -554,11 +630,19 @@ func (s *Server) handleStory(w http.ResponseWriter, r *http.Request) {
 		}
 		chapters = append(chapters, cv)
 	}
+	// A retry is offered only when a model has not already written this story:
+	// re-running costs several calls for no gain, so the page must not invite it.
 	data := struct {
 		Session   Session
 		Narrative domain.Narrative
 		Chapters  []chapterView
-	}{Session: s.sess, Narrative: s.narrative, Chapters: chapters}
+		CanRetry  bool
+		Narrating bool
+	}{
+		Session: s.sess, Narrative: s.narrative, Chapters: chapters,
+		CanRetry:  s.narrate != nil && s.narrative.Source != domain.NarrativeModel,
+		Narrating: s.narrating,
+	}
 	s.mu.RUnlock()
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

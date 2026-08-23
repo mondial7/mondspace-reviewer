@@ -31,6 +31,14 @@
         <strong>mechanical</strong> grouping · no model was available to narrate
       {{ end }}
     </p>
+    {{ if .Narrating }}
+    <p class="hero__retry hero__retry--busy">narrating… this page updates itself when it lands</p>
+    {{ else if .CanRetry }}
+    <form class="hero__retry" method="post" action="/story/narrate">
+      <button class="hero__retrybtn" type="submit">ask the model to narrate this session</button>
+      <span class="hero__retryhint">runs once, in the background</span>
+    </form>
+    {{ end }}
     <p class="hero__scroll" aria-hidden="true">scroll</p>
   </header>
 

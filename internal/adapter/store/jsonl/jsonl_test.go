@@ -201,3 +201,42 @@ func TestAppendEventWritesOneLineCreatingDir(t *testing.T) {
 		t.Errorf("line does not contain event id: %s", lines[0])
 	}
 }
+
+func TestNarrativeSurvivesARestart(t *testing.T) {
+	// Narration costs several model calls. A story written once must still be
+	// there next time the reviewer opens the page, or every visit pays again.
+	root := t.TempDir()
+	want := domain.Narrative{
+		SessionID: "s", Title: "Locking down auth", Intro: "…",
+		Source: domain.NarrativeModel, Fingerprint: "abc123",
+		Chapters: []domain.Chapter{{Title: "Tokens", Prose: "p", UnitIDs: []string{"s-f001"}}},
+	}
+
+	if err := jsonl.New(root).SaveNarrative(want); err != nil {
+		t.Fatalf("SaveNarrative: %v", err)
+	}
+	got, err := jsonl.New(root).LoadNarrative("s") // a fresh store: a new process
+	if err != nil {
+		t.Fatalf("LoadNarrative: %v", err)
+	}
+
+	if got.Title != want.Title || got.Fingerprint != want.Fingerprint || got.Source != want.Source {
+		t.Errorf("LoadNarrative = %+v, want %+v", got, want)
+	}
+	if len(got.Chapters) != 1 || got.Chapters[0].Title != "Tokens" {
+		t.Errorf("chapters = %+v, want the stored chapter", got.Chapters)
+	}
+}
+
+func TestLoadNarrativeIsEmptyNotAnErrorForANewSession(t *testing.T) {
+	// A session nobody has narrated yet is an ordinary state, not a failure:
+	// the caller narrates it. Only a real I/O fault should be an error.
+	got, err := jsonl.New(t.TempDir()).LoadNarrative("never-seen")
+
+	if err != nil {
+		t.Fatalf("LoadNarrative on a new session should not error: %v", err)
+	}
+	if got.Fingerprint != "" || len(got.Chapters) != 0 {
+		t.Errorf("expected an empty narrative, got %+v", got)
+	}
+}

@@ -131,3 +131,54 @@ func (s *Store) appendLine(sessionID, file string, v any) error {
 	}
 	return nil
 }
+
+// narrativeFile is the one file in the store that is rewritten rather than
+// appended to: a session has one current story, not a history of them.
+const narrativeFile = "narrative.json"
+
+// SaveNarrative stores a session's story so it survives a restart. It is written
+// to a temporary file and renamed, so a crash mid-write leaves the previous
+// story intact rather than a truncated one.
+func (s *Store) SaveNarrative(n domain.Narrative) error {
+	dir := filepath.Join(s.root, n.SessionID)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	body, err := json.Marshal(n)
+	if err != nil {
+		return err
+	}
+
+	tmp, err := os.CreateTemp(dir, narrativeFile+".*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	if _, err := tmp.Write(body); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), filepath.Join(dir, narrativeFile))
+}
+
+// LoadNarrative returns the stored story, or a zero Narrative when the session
+// has never been narrated. That is an ordinary state, not a failure: the caller
+// narrates it. Only a real I/O fault is an error.
+func (s *Store) LoadNarrative(sessionID string) (domain.Narrative, error) {
+	body, err := os.ReadFile(filepath.Join(s.root, sessionID, narrativeFile))
+	if errors.Is(err, fs.ErrNotExist) {
+		return domain.Narrative{}, nil
+	}
+	if err != nil {
+		return domain.Narrative{}, err
+	}
+	var n domain.Narrative
+	if err := json.Unmarshal(body, &n); err != nil {
+		// A corrupt story is worth re-narrating, not worth failing over.
+		return domain.Narrative{}, nil
+	}
+	return n, nil
+}

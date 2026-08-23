@@ -2,9 +2,12 @@ package usecase
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
@@ -481,4 +484,26 @@ func firstNonEmpty(a, b string) string {
 		return a
 	}
 	return b
+}
+
+// Fingerprint identifies a review by what it contains: which files changed and
+// what they changed to. Narration costs several model calls, so a stored story
+// is reused while the fingerprint matches and re-narrated only when the review
+// itself has moved on — opening the page again is not a reason to pay again.
+//
+// Order does not affect it: the same files reviewed in a different order are the
+// same review.
+func Fingerprint(units []domain.Unit) string {
+	lines := make([]string, 0, len(units))
+	for _, u := range units {
+		files := append([]string(nil), u.Files...)
+		sort.Strings(files)
+		lines = append(lines, strings.Join([]string{
+			u.ID, strings.Join(files, ","), u.From.Commit, u.To.Commit,
+		}, "\x00"))
+	}
+	sort.Strings(lines)
+
+	sum := sha256.Sum256([]byte(strings.Join(lines, "\n")))
+	return hex.EncodeToString(sum[:16])
 }

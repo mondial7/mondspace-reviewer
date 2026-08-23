@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -238,6 +239,91 @@ func (a *recordingAudit) Append(e web.AuditEntry) error {
 type readableAudit struct{ recordingAudit }
 
 func (a *readableAudit) Entries() ([]web.AuditEntry, error) { return a.entries, nil }
+
+func TestStoryOffersRetryOnlyWhenTheModelHasNotNarrated(t *testing.T) {
+	mechanical := domain.Narrative{SessionID: "s", Title: "T", Source: domain.NarrativeMechanical,
+		Chapters: []domain.Chapter{{Title: "auth", Prose: "1 file changed under auth.", UnitIDs: []string{"s-f001"}}}}
+
+	// Fell back to mechanical grouping: offer the reviewer a way to try again.
+	h := web.NewServer(testSession(), nil).WithNarrative(mechanical).
+		WithNarrate(func(context.Context) {})
+	if !strings.Contains(get(t, h, "/story").Body.String(), "/story/narrate") {
+		t.Error("a mechanical story should offer a retry")
+	}
+
+	// Already narrated by the model: re-running costs calls for no gain, so the
+	// page must not invite it.
+	narrated := mechanical
+	narrated.Source = domain.NarrativeModel
+	h = web.NewServer(testSession(), nil).WithNarrative(narrated).
+		WithNarrate(func(context.Context) {})
+	if strings.Contains(get(t, h, "/story").Body.String(), "/story/narrate") {
+		t.Error("a model-narrated story should not offer a retry")
+	}
+
+	// No narrator wired at all: no button, because pressing it could do nothing.
+	h = web.NewServer(testSession(), nil).WithNarrative(mechanical)
+	if strings.Contains(get(t, h, "/story").Body.String(), "/story/narrate") {
+		t.Error("without a narrator there is nothing to retry")
+	}
+}
+
+func TestNarrateRunsInTheBackgroundAndNeverTwiceAtOnce(t *testing.T) {
+	// The whole point of this control: a reviewer who clicks twice, or two open
+	// tabs, must not start two narrations. Model calls are the scarce resource.
+	release := make(chan struct{})
+	var mu sync.Mutex
+	started := 0
+
+	h := web.NewServer(testSession(), nil).WithNarrate(func(context.Context) {
+		mu.Lock()
+		started++
+		mu.Unlock()
+		<-release
+	})
+
+	post := func() int {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/story/narrate", nil))
+		return rec.Code
+	}
+
+	if code := post(); code != http.StatusSeeOther {
+		t.Fatalf("first POST = %d, want 303 (it must not block on the model)", code)
+	}
+	// Wait for the first narration to be under way, then ask again.
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		mu.Lock()
+		n := started
+		mu.Unlock()
+		if n == 1 || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	post()
+	post()
+
+	mu.Lock()
+	got := started
+	mu.Unlock()
+	if got != 1 {
+		t.Errorf("started %d narrations, want exactly 1 while one is running", got)
+	}
+
+	close(release)
+}
+
+func TestNarrateIsRefusedWhenNoNarratorIsWired(t *testing.T) {
+	rec := httptest.NewRecorder()
+	web.NewServer(testSession(), nil).ServeHTTP(rec,
+		httptest.NewRequest(http.MethodPost, "/story/narrate", nil))
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("POST /story/narrate = %d, want 404 when there is no narrator", rec.Code)
+	}
+}
 
 func TestActivityPageShowsWhatWasRecordedNewestFirst(t *testing.T) {
 	audit := &readableAudit{}

@@ -77,33 +77,45 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 	}
 
 	sum := chooseSummarizer(*summarizerURL, *model)
-	// Serve the deterministic story straight away and let the model upgrade it in
-	// the background: the page never waits on a model (ADR 0013).
+	mechanical := domain.Narrative{
+		SessionID:   *session,
+		Title:       sess.Prompt,
+		Chapters:    usecase.GroupByPath(units),
+		Source:      domain.NarrativeMechanical,
+		Fingerprint: usecase.Fingerprint(units),
+	}
+
+	// A story already written for this exact review is reused as it stands.
+	// Narration costs several model calls, so re-opening the page must not pay
+	// for them again — the retry button on the story page is the way to ask.
+	cache, cacheable := store.(narrativeCache)
+	shown := mechanical
+	if cacheable {
+		if stored, err := cache.LoadNarrative(*session); err == nil &&
+			stored.Fingerprint == mechanical.Fingerprint && len(stored.Chapters) > 0 {
+			shown = stored
+		}
+	}
+
 	handler := web.NewServer(view, store).
-		WithNarrative(domain.Narrative{
-			SessionID: *session,
-			Title:     sess.Prompt,
-			Chapters:  usecase.GroupByPath(units),
-			Source:    domain.NarrativeMechanical,
-		}).
+		WithNarrative(shown).
 		WithWorkspace(discoverSessions(*out, *repo)).
 		WithAsk(webAskFunc(sess, snap, sum)).
 		WithReanalyse(webReanalyseFunc(snap, sum, *model)).
 		WithAudit(auditFile(filepath.Join(*out, *session, "audit.jsonl")))
 
-	srv := &http.Server{
-		Handler:           handler,
-		ReadHeaderTimeout: 10 * time.Second,
-	}
-	go func() {
-		// Narration runs in the background and a local model narrates one area at
-		// a time, so the budget is generous; the page never waits on it.
-		narrateCtx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
+	// narrateOnce is the only thing in the app that calls the model unbidden, and
+	// it runs at most once per review: on first sight of it, or when the reviewer
+	// asks again. Whatever it produces — model story or fallback — is stored with
+	// the review's fingerprint, so a failure is not retried by navigating.
+	narrateOnce := func(ctx context.Context) {
+		narrateCtx, cancel := context.WithTimeout(ctx, 20*time.Minute)
 		defer cancel()
 
 		started := time.Now()
 		narrative, err := usecase.NarrateProgressively(narrateCtx, sum, sess, units,
 			handler.SetNarrative) // publish each chapter as the model writes it
+		narrative.Fingerprint = mechanical.Fingerprint
 
 		// Narration is the one model call the reviewer never triggers, so it is
 		// the one most worth recording: without this it is invisible.
@@ -119,7 +131,25 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 		}
 		handler.Record(entry)
 		handler.SetNarrative(narrative)
-	}()
+
+		if cacheable {
+			if err := cache.SaveNarrative(narrative); err != nil {
+				fmt.Fprintln(os.Stderr, "msr: could not store the story:", err)
+			}
+		}
+	}
+	handler = handler.WithNarrate(narrateOnce)
+
+	srv := &http.Server{
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+	if shown.Source != domain.NarrativeModel {
+		// Never narrated, or the stored story is stale. Write it once now; from
+		// here on it is the reviewer's call. Going through the server means this
+		// and a retry click can never overlap.
+		handler.NarrateNow(context.Background())
+	}
 
 	ln, err := net.Listen("tcp", *addr)
 	if err != nil {
@@ -312,4 +342,12 @@ func (a auditFile) Append(e web.AuditEntry) error {
 	defer f.Close()
 	_, err = f.Write(append(line, '\n'))
 	return err
+}
+
+// narrativeCache is the optional ability of a store to remember a session's
+// story between runs. A store without it still works; its stories are simply
+// re-narrated each launch.
+type narrativeCache interface {
+	SaveNarrative(domain.Narrative) error
+	LoadNarrative(sessionID string) (domain.Narrative, error)
 }
