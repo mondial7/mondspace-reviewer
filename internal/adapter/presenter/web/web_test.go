@@ -1,10 +1,14 @@
 package web_test
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/presenter/web"
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
@@ -93,6 +97,91 @@ func TestAnnotateRejectsUnknownUnitAndKind(t *testing.T) {
 	}
 	if len(store.notes) != 0 {
 		t.Errorf("nothing should be persisted for invalid input, got %+v", store.notes)
+	}
+}
+
+func TestAskKeepsConversationHistory(t *testing.T) {
+	var asked []string
+	h := web.NewServer(testSession(), nil).WithAsk(
+		func(_ context.Context, question string, history []web.Exchange) (string, error) {
+			asked = append(asked, question)
+			// The assistant sees what was already discussed (issue #12).
+			return fmt.Sprintf("answer %d (history %d)", len(asked), len(history)), nil
+		})
+
+	ask := func(q string) string {
+		req := httptest.NewRequest(http.MethodPost, "/ask", strings.NewReader("question="+q))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK && rec.Code != http.StatusSeeOther {
+			t.Fatalf("ask %q: status = %d", q, rec.Code)
+		}
+		return rec.Body.String()
+	}
+
+	ask("what+changed")
+	ask("and+why")
+
+	if len(asked) != 2 {
+		t.Fatalf("summarizer called %d times, want 2", len(asked))
+	}
+	// The second question carried the first exchange as context.
+	body := get(t, h, "/").Body.String()
+	for _, want := range []string{"what changed", "and why", "answer 1", "answer 2"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("conversation should persist on the page, missing %q", want)
+		}
+	}
+}
+
+func TestAskSurfacesErrorWithoutCrashing(t *testing.T) {
+	h := web.NewServer(testSession(), nil).WithAsk(
+		func(context.Context, string, []web.Exchange) (string, error) {
+			return "", errors.New("summarizer offline")
+		})
+
+	req := httptest.NewRequest(http.MethodPost, "/ask", strings.NewReader("question=hi"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code >= 500 {
+		t.Errorf("an offline summarizer must not 500: status = %d", rec.Code)
+	}
+	if body := get(t, h, "/").Body.String(); !strings.Contains(body, "offline") {
+		t.Errorf("the offline notice should be shown to the reviewer:\n%s", body)
+	}
+}
+
+func TestWorkspaceListsSessionsAcrossReposAndAgents(t *testing.T) {
+	sessions := []web.SessionSummary{
+		{ID: "s1", Repo: "mondspace-reviewer", Agent: "claude-code", Prompt: "add token validation",
+			Files: 12, Flags: 3, Open: 1, Started: time.Date(2026, 8, 22, 9, 0, 0, 0, time.UTC)},
+		{ID: "s2", Repo: "other-project", Agent: "opencode", Prompt: "port the parser",
+			Files: 4, Flags: 0, Open: 0, Started: time.Date(2026, 8, 23, 11, 30, 0, 0, time.UTC)},
+	}
+	h := web.NewServer(testSession(), nil).WithWorkspace(sessions)
+
+	rec := get(t, h, "/sessions")
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{
+		"s1", "s2",
+		"mondspace-reviewer", "other-project", // repos
+		"claude-code", "opencode", // agents
+		"add token validation", "port the parser", // the storyline across sessions
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("workspace missing %q", want)
+		}
+	}
+	// Each row links into its own review.
+	if !strings.Contains(body, `href="/?session=s1"`) {
+		t.Errorf("workspace rows should link to the session review:\n%s", body)
 	}
 }
 

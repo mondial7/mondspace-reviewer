@@ -195,3 +195,31 @@
 .page--focus .unit__summary { padding: 0.35rem 0.7rem; }
 .page--focus .queue { gap: 0; }
 .page--focus .masthead { padding-bottom: 0.6rem; margin-bottom: 0.8rem; }
+
+/* ── Reviewer assistant (issue #12) ───────────────────────────────────────── */
+.ask {
+  position: relative; z-index: 1;
+  margin: 0 0 1.25rem; padding: 0.8rem 0.9rem;
+  background: color-mix(in srgb, var(--bg-raised) 82%, transparent);
+  border: 1px solid var(--rule); border-radius: 6px;
+  backdrop-filter: blur(6px);
+}
+.page--focus .ask { background: var(--bg-raised); backdrop-filter: none; }
+.ask__title { margin: 0 0 0.5rem; font-size: 0.9rem; color: var(--fg-dim); font-weight: 700; }
+.ask__exchange { margin-bottom: 0.6rem; }
+.ask__q { margin: 0; color: var(--accent); }
+.ask__q::before { content: "› "; }
+.ask__a { margin: 0.15rem 0 0; color: var(--fg); white-space: pre-wrap; }
+.ask__form { display: flex; gap: 0.4rem; margin-top: 0.5rem; }
+.ask__input {
+  flex: 1; padding: 0.35rem 0.5rem; font: inherit;
+  background: var(--bg); color: var(--fg);
+  border: 1px solid var(--rule); border-radius: 4px;
+}
+.ask__btn {
+  padding: 0.35rem 0.8rem; cursor: pointer; font: inherit;
+  color: var(--accent); background: var(--bg);
+  border: 1px solid var(--rule); border-radius: 4px;
+}
+.ask__btn:hover { border-color: var(--accent); }
+.session__agent { color: var(--fg-dim); }

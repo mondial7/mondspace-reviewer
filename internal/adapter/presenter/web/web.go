@@ -7,6 +7,7 @@
 package web
 
 import (
+	"context"
 	"embed"
 	"html/template"
 	"io/fs"
@@ -38,6 +39,30 @@ type Session struct {
 	Diffs  map[string]domain.Diff
 }
 
+// SessionSummary is one row of the workspace: a review that exists, wherever it
+// came from. Sessions span repos and agents (issue #8).
+type SessionSummary struct {
+	ID      string
+	Repo    string
+	Agent   string
+	Prompt  string
+	Files   int
+	Flags   int
+	Open    int // unresolved questions and objections
+	Started time.Time
+}
+
+// Exchange is one question and its answer. Review is iterative dialogue, so the
+// thread is kept and handed back to the assistant as context (issue #12).
+type Exchange struct {
+	Question string
+	Answer   string
+	TS       time.Time
+}
+
+// AskFunc answers a question given everything already discussed.
+type AskFunc func(ctx context.Context, question string, history []Exchange) (string, error)
+
 // Annotator persists a reviewer's annotation. It is declared where it is
 // consumed so this adapter depends on no other adapter.
 type Annotator interface {
@@ -51,8 +76,11 @@ type Server struct {
 	tmpl  *template.Template
 	notes Annotator
 
-	mu   sync.RWMutex
-	sess Session
+	mu        sync.RWMutex
+	sess      Session
+	workspace []SessionSummary
+	thread    []Exchange
+	ask       AskFunc
 
 	newID func() string
 	now   func() time.Time
@@ -79,6 +107,18 @@ func (s *Server) WithClock(newID func() string, now func() time.Time) *Server {
 	return s
 }
 
+// WithAsk wires the reviewer-assistant. Without it, the ask panel is not shown.
+func (s *Server) WithAsk(fn AskFunc) *Server {
+	s.ask = fn
+	return s
+}
+
+// WithWorkspace supplies the sessions listed at /sessions.
+func (s *Server) WithWorkspace(sessions []SessionSummary) *Server {
+	s.workspace = sessions
+	return s
+}
+
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) { s.mux.ServeHTTP(w, r) }
 
 func (s *Server) routes() {
@@ -89,6 +129,8 @@ func (s *Server) routes() {
 	s.mux.Handle("GET /assets/", http.StripPrefix("/assets/", http.FileServer(http.FS(static))))
 	s.mux.HandleFunc("GET /{$}", s.handleIndex)
 	s.mux.HandleFunc("POST /units/{id}/notes", s.handleAnnotate)
+	s.mux.HandleFunc("GET /sessions", s.handleWorkspace)
+	s.mux.HandleFunc("POST /ask", s.handleAsk)
 }
 
 // noteKinds are the annotations a reviewer may attach (SPEC §11).
@@ -176,11 +218,59 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	data := struct {
 		Session Session
 		Units   []unitView
-	}{Session: s.sess, Units: s.views()}
+		Thread  []Exchange
+		HasAsk  bool
+	}{Session: s.sess, Units: s.views(), Thread: s.thread, HasAsk: s.ask != nil}
 	s.mu.RUnlock()
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := s.tmpl.ExecuteTemplate(w, "index.html", data); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+// handleAsk answers a question in the running conversation. An assistant that
+// is offline or failing becomes a visible notice, never a 500.
+func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	question := strings.TrimSpace(r.FormValue("question"))
+	if question == "" {
+		http.Redirect(w, r, "/#ask", http.StatusSeeOther)
+		return
+	}
+
+	answer := "(no assistant configured)"
+	if s.ask != nil {
+		s.mu.RLock()
+		history := append([]Exchange(nil), s.thread...)
+		s.mu.RUnlock()
+
+		got, err := s.ask(r.Context(), question, history)
+		if err != nil {
+			answer = "(" + err.Error() + ")"
+		} else {
+			answer = got
+		}
+	}
+
+	s.mu.Lock()
+	s.thread = append(s.thread, Exchange{Question: question, Answer: answer, TS: s.now()})
+	s.mu.Unlock()
+
+	http.Redirect(w, r, "/#ask", http.StatusSeeOther)
+}
+
+// handleWorkspace lists every known review, across repos and agents.
+func (s *Server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
+	s.mu.RLock()
+	data := struct{ Sessions []SessionSummary }{Sessions: s.workspace}
+	s.mu.RUnlock()
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := s.tmpl.ExecuteTemplate(w, "sessions.html", data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }

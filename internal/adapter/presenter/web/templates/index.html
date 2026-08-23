@@ -23,6 +23,23 @@
     {{ with .Session.Prompt }}<p class="masthead__prompt">{{ . }}</p>{{ end }}
   </header>
 
+  {{ if .HasAsk }}
+  <section class="ask" id="ask">
+    <h2 class="ask__title">reviewer assistant</h2>
+    {{ range .Thread }}
+    <div class="ask__exchange">
+      <p class="ask__q">{{ .Question }}</p>
+      <p class="ask__a">{{ .Answer }}</p>
+    </div>
+    {{ end }}
+    <form class="ask__form" method="post" action="/ask">
+      <input class="ask__input" name="question" type="text" autocomplete="off"
+             placeholder="ask about this session — answered only from the log, diffs and your notes">
+      <button class="ask__btn" type="submit">ask</button>
+    </form>
+  </section>
+  {{ end }}
+
   <main class="queue">
     {{ range .Units }}
     <article class="unit" id="unit-{{ .ID }}"
