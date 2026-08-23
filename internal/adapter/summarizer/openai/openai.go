@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
+	"github.com/mondial7/mondspace-reviewer/internal/port"
 )
 
 type Summarizer struct {
@@ -52,11 +53,26 @@ func (s *Summarizer) WithoutThinking() *Summarizer {
 }
 
 type chatRequest struct {
-	Model            string         `json:"model"`
-	Messages         []chatMessage  `json:"messages"`
-	Temperature      float64        `json:"temperature"`
-	Stream           bool           `json:"stream"`
-	ChatTemplateArgs map[string]any `json:"chat_template_kwargs,omitempty"`
+	Model            string          `json:"model"`
+	Messages         []chatMessage   `json:"messages"`
+	Temperature      float64         `json:"temperature"`
+	Stream           bool            `json:"stream"`
+	ChatTemplateArgs map[string]any  `json:"chat_template_kwargs,omitempty"`
+	ResponseFormat   *responseFormat `json:"response_format,omitempty"`
+}
+
+// responseFormat is the OpenAI structured-output contract. LM Studio compiles
+// the schema into a llama.cpp grammar (GGUF) or Outlines (MLX), so the reply is
+// valid JSON by construction.
+type responseFormat struct {
+	Type       string     `json:"type"`
+	JSONSchema schemaSpec `json:"json_schema"`
+}
+
+type schemaSpec struct {
+	Name   string         `json:"name"`
+	Strict bool           `json:"strict"`
+	Schema map[string]any `json:"schema"`
 }
 
 type chatMessage struct {
@@ -76,7 +92,7 @@ WHAT: <one concise line describing what changed>
 WHY: <one concise line inferring why, or "unknown">`
 
 func (s *Summarizer) Headline(ctx context.Context, u domain.Unit, d domain.Diff) (domain.Headline, error) {
-	content, err := s.chat(ctx, systemPrompt, userPrompt(u, d))
+	content, err := s.chat(ctx, systemPrompt, userPrompt(u, d), nil)
 	if err != nil {
 		return domain.Headline{}, err
 	}
@@ -89,14 +105,25 @@ Cite unit IDs (like s-u001) in your answer. Do NOT invent a stated intent — if
 context does not contain the agent's own words, say the log does not record it.`
 
 func (s *Summarizer) Answer(ctx context.Context, question string, c domain.AskContext) (string, error) {
-	return s.chat(ctx, answerSystemPrompt, askPrompt(question, c))
+	return s.chat(ctx, answerSystemPrompt, askPrompt(question, c), nil)
+}
+
+// AnswerSchema is Answer with the reply constrained to a JSON schema, satisfying
+// port.SchemaAnswerer.
+func (s *Summarizer) AnswerSchema(ctx context.Context, question string, c domain.AskContext, schema port.JSONSchema) (string, error) {
+	format := &responseFormat{
+		Type:       "json_schema",
+		JSONSchema: schemaSpec{Name: schema.Name, Strict: true, Schema: schema.Schema},
+	}
+	return s.chat(ctx, answerSystemPrompt, askPrompt(question, c), format)
 }
 
 // chat runs one chat completion and returns the assistant's message content.
-func (s *Summarizer) chat(ctx context.Context, system, user string) (string, error) {
+func (s *Summarizer) chat(ctx context.Context, system, user string, format *responseFormat) (string, error) {
 	body := chatRequest{
-		Model:       s.model,
-		Temperature: 0,
+		ResponseFormat: format,
+		Model:          s.model,
+		Temperature:    0,
 		Messages: []chatMessage{
 			{Role: "system", Content: system},
 			{Role: "user", Content: user},

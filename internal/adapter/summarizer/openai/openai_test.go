@@ -11,6 +11,7 @@ import (
 
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/summarizer/openai"
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
+	"github.com/mondial7/mondspace-reviewer/internal/port"
 )
 
 func chatResponse(content string) string {
@@ -163,6 +164,64 @@ func TestThinkingIsLeftAloneByDefault(t *testing.T) {
 
 	if _, present := body()["chat_template_kwargs"]; present {
 		t.Errorf("chat_template_kwargs should be absent by default: %v", body())
+	}
+}
+
+func narrativeSchema() port.JSONSchema {
+	return port.JSONSchema{
+		Name: "narrative",
+		Schema: map[string]any{
+			"type":       "object",
+			"properties": map[string]any{"title": map[string]any{"type": "string"}},
+			"required":   []any{"title"},
+		},
+	}
+}
+
+func TestAnswerSchemaConstrainsTheReplyToASchema(t *testing.T) {
+	// LM Studio compiles the schema into a grammar (GGUF) or Outlines (MLX), so
+	// the reply is JSON by construction rather than by hopeful parsing.
+	url, body := captureBody(t, `{"title":"Locking down auth"}`)
+
+	got, err := openai.New(url, "m").AnswerSchema(context.Background(), "tell the story", domain.AskContext{}, narrativeSchema())
+	if err != nil {
+		t.Fatalf("AnswerSchema: %v", err)
+	}
+	if got != `{"title":"Locking down auth"}` {
+		t.Errorf("answer = %q, want the model's content", got)
+	}
+
+	format, ok := body()["response_format"].(map[string]any)
+	if !ok {
+		t.Fatalf("no response_format in request: %v", body())
+	}
+	if format["type"] != "json_schema" {
+		t.Errorf("response_format.type = %v, want json_schema", format["type"])
+	}
+	spec, ok := format["json_schema"].(map[string]any)
+	if !ok {
+		t.Fatalf("no json_schema in response_format: %v", format)
+	}
+	if spec["name"] != "narrative" {
+		t.Errorf("json_schema.name = %v, want narrative", spec["name"])
+	}
+	if spec["strict"] != true {
+		t.Errorf("json_schema.strict = %v, want true", spec["strict"])
+	}
+	if _, present := spec["schema"].(map[string]any); !present {
+		t.Errorf("json_schema.schema missing: %v", spec)
+	}
+}
+
+func TestAnswerLeavesTheReplyFormatFreeByDefault(t *testing.T) {
+	url, body := captureBody(t, "prose is fine here")
+
+	if _, err := openai.New(url, "m").Answer(context.Background(), "q", domain.AskContext{}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, present := body()["response_format"]; present {
+		t.Errorf("response_format should be absent for a free-text answer: %v", body())
 	}
 }
 

@@ -29,6 +29,21 @@ type Summarizer interface {
 	Answer(ctx context.Context, question string, c domain.AskContext) (string, error)
 }
 
+// JSONSchema is a named JSON Schema a model's reply must conform to. Schema is
+// the schema document itself, as it would be written in JSON.
+type JSONSchema struct {
+	Name   string
+	Schema map[string]any
+}
+
+// SchemaAnswerer is an optional capability of a Summarizer: an endpoint that can
+// constrain the reply to a schema, so structure is guaranteed by the server
+// rather than parsed hopefully from prose. Callers must type-assert for it and
+// keep working without it — not every endpoint or model supports it.
+type SchemaAnswerer interface {
+	AnswerSchema(ctx context.Context, question string, c domain.AskContext, schema JSONSchema) (string, error)
+}
+
 // Store persists the append-only session log.
 type Store interface {
 	AppendEvent(domain.Event) error
