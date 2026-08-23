@@ -271,6 +271,57 @@ func TestAnswerLeavesTheReplyFormatFreeByDefault(t *testing.T) {
 	}
 }
 
+func TestRequestsCapTheirOwnLength(t *testing.T) {
+	// LM Studio's documented mitigation for a model stuck inside an unclosed
+	// structure is a token cap. Without one the ceiling is the server's default,
+	// which is how a narration burned 299 tokens and returned finish_reason
+	// "length" with nothing in it.
+	url, body := captureBody(t, "WHAT: x\nWHY: unknown")
+
+	if _, err := openai.New(url, "m").Headline(context.Background(), domain.Unit{}, domain.Diff{}); err != nil {
+		t.Fatal(err)
+	}
+
+	max, ok := body()["max_tokens"].(float64)
+	if !ok {
+		t.Fatalf("no max_tokens in request: %v", body())
+	}
+	if max <= 0 {
+		t.Errorf("max_tokens = %v, want a positive cap", max)
+	}
+}
+
+func TestWithMaxTokensOverridesTheCap(t *testing.T) {
+	url, body := captureBody(t, "x")
+
+	if _, err := openai.New(url, "m").WithMaxTokens(2048).Answer(context.Background(), "q", domain.AskContext{}); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := body()["max_tokens"]; got != float64(2048) {
+		t.Errorf("max_tokens = %v, want 2048", got)
+	}
+}
+
+func TestASchemaRejectionIsNamedWhenTheRetryAlsoFails(t *testing.T) {
+	// The unconstrained retry is the right resilience, but it must not bury why
+	// it happened: a server that cannot translate the schema is a different fault
+	// from a model that answered badly, and the two need different fixes.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "cannot convert schema", http.StatusBadRequest)
+	}))
+	defer srv.Close()
+
+	_, err := openai.New(srv.URL, "m").AnswerSchema(context.Background(), "q", domain.AskContext{}, narrativeSchema())
+
+	if err == nil {
+		t.Fatal("expected an error when both attempts fail")
+	}
+	if !strings.Contains(err.Error(), "schema") {
+		t.Errorf("error should say the schema was rejected, got: %v", err)
+	}
+}
+
 func TestAnswerReadsAReplyTheServerFiledAsReasoning(t *testing.T) {
 	// Measured against LM Studio with qwen/qwen3.5-9b: a schema-constrained reply
 	// arrives complete (finish_reason "stop") but in reasoning_content, with

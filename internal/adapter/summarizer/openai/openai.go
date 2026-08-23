@@ -21,14 +21,23 @@ type Summarizer struct {
 	model      string
 	apiKey     string
 	noThinking bool
+	maxTokens  int
 	client     *http.Client
 }
 
+// defaultMaxTokens caps every reply. LM Studio's own guidance for a model that
+// gets stuck inside an unclosed structure is a token cap, and an uncapped
+// request leaves the ceiling to the server: measured, a narration spent 299
+// tokens reasoning and came back with finish_reason "length" and no content.
+// The cap is generous enough for a chapter of prose and a small JSON object.
+const defaultMaxTokens = 1024
+
 func New(baseURL, model string) *Summarizer {
 	return &Summarizer{
-		baseURL: strings.TrimRight(baseURL, "/"),
-		model:   model,
-		client:  http.DefaultClient,
+		baseURL:   strings.TrimRight(baseURL, "/"),
+		model:     model,
+		maxTokens: defaultMaxTokens,
+		client:    http.DefaultClient,
 	}
 }
 
@@ -39,17 +48,28 @@ func (s *Summarizer) WithAPIKey(key string) *Summarizer {
 	return s
 }
 
-// WithoutThinking asks the server to skip the model's reasoning phase. A
-// reasoning model spends most of a small context thinking before it emits any
-// output — measured at 1,400-3,800 reasoning tokens for an 81-token prompt —
-// which is what makes narration fail on a modest context window.
+// WithoutThinking asks the server to skip the model's reasoning phase, which is
+// what exhausts a modest context window before any output appears.
 //
 // LM Studio forwards chat_template_kwargs to the model's chat template, where
-// Qwen-family templates read enable_thinking. A server that does not understand
-// the field ignores it, so this is safe to set but off by default: a model with
+// some templates read enable_thinking. Measured against qwen/qwen3.5-9b it made
+// no difference at all — reasoning tokens were identical with and without it, so
+// that template ignores the flag. It is kept because other templates honour it,
+// and it is off by default: unverified for any given model, and a model with
 // room to think writes better prose.
 func (s *Summarizer) WithoutThinking() *Summarizer {
 	s.noThinking = true
+	return s
+}
+
+// WithMaxTokens overrides the reply cap. A longer answer needs a larger one; a
+// zero or negative value restores the default rather than uncapping, because an
+// uncapped reply is how this fails.
+func (s *Summarizer) WithMaxTokens(n int) *Summarizer {
+	if n <= 0 {
+		n = defaultMaxTokens
+	}
+	s.maxTokens = n
 	return s
 }
 
@@ -57,6 +77,7 @@ type chatRequest struct {
 	Model            string          `json:"model"`
 	Messages         []chatMessage   `json:"messages"`
 	Temperature      float64         `json:"temperature"`
+	MaxTokens        int             `json:"max_tokens,omitempty"`
 	Stream           bool            `json:"stream"`
 	ChatTemplateArgs map[string]any  `json:"chat_template_kwargs,omitempty"`
 	ResponseFormat   *responseFormat `json:"response_format,omitempty"`
@@ -127,10 +148,18 @@ func (s *Summarizer) AnswerSchema(ctx context.Context, question string, c domain
 
 	content, err := s.chat(ctx, answerSystemPrompt, prompt, format)
 	if errors.Is(err, errRejected) {
-		// The endpoint does not implement structured output. Ask again without
-		// it: the caller still parses defensively, so a plain reply works — it is
-		// only less reliable, which is better than no narration at all.
-		return s.chat(ctx, answerSystemPrompt, prompt, nil)
+		// The endpoint does not implement structured output, or could not
+		// translate this schema. Ask again without it: the caller still parses
+		// defensively, so a plain reply works — it is only less reliable, which is
+		// better than no narration at all.
+		content, retryErr := s.chat(ctx, answerSystemPrompt, prompt, nil)
+		if retryErr != nil {
+			// Both failed. Name the rejection: a server that cannot take the
+			// schema is a different fault from a model that answered badly, and
+			// they need different fixes.
+			return "", fmt.Errorf("schema rejected (%v), and the unconstrained retry failed: %w", err, retryErr)
+		}
+		return content, nil
 	}
 	return content, err
 }
@@ -145,6 +174,7 @@ func (s *Summarizer) chat(ctx context.Context, system, user string, format *resp
 		ResponseFormat: format,
 		Model:          s.model,
 		Temperature:    0,
+		MaxTokens:      s.maxTokens,
 		Messages: []chatMessage{
 			{Role: "system", Content: system},
 			{Role: "user", Content: user},
