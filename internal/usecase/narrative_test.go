@@ -243,6 +243,38 @@ func TestPerChapterNarrationKeepsAreaOnPartialFailure(t *testing.T) {
 	}
 }
 
+// unmatchedThenPerChapter answers the whole-session prompt with well-formed JSON
+// that names nothing real, then answers per-chapter prompts properly.
+type unmatchedThenPerChapter struct{}
+
+func (unmatchedThenPerChapter) Answer(_ context.Context, question string, _ domain.AskContext) (string, error) {
+	if strings.Contains(question, "chapters") {
+		return `{"title":"T","intro":"I","chapters":[{"title":"Ghost","prose":"p","groups":["nowhere"]}]}`, nil
+	}
+	return `{"title":"Real chapter","prose":"Real prose."}`, nil
+}
+
+func TestNarrateRejectsAStoryThatMatchedNothing(t *testing.T) {
+	got, err := usecase.Narrate(context.Background(), unmatchedThenPerChapter{}, domain.Session{ID: "s"}, narrativeUnits())
+	if err != nil {
+		t.Fatalf("should have recovered per-chapter: %v", err)
+	}
+
+	// A model story whose chapters match no real unit is worthless: it must not
+	// be shown as a one-chapter catch-all.
+	if len(got.Chapters) == 1 && strings.HasPrefix(got.Chapters[0].Title, "Also in this session") {
+		t.Fatalf("a story that matched nothing was accepted: %+v", got.Chapters)
+	}
+	for _, c := range got.Chapters {
+		if c.Title == "Ghost" {
+			t.Errorf("a chapter naming no real area was kept")
+		}
+	}
+	if got.Chapters[0].Prose != "Real prose." {
+		t.Errorf("expected the per-chapter narration to take over, got %+v", got.Chapters[0])
+	}
+}
+
 func TestNarrateFallsBackOnUnparseableReply(t *testing.T) {
 	n := &narrator{reply: "I think the session was mostly about authentication, honestly."}
 

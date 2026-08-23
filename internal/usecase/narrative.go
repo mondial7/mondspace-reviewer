@@ -88,6 +88,14 @@ func NarrateProgressively(ctx context.Context, n Narrator, sess domain.Session, 
 	}
 
 	groups := fallback.Chapters
+	progress := func(partial []domain.Chapter) {
+		if onProgress != nil {
+			onProgress(domain.Narrative{
+				SessionID: sess.ID, Title: fallback.Title, Intro: fallback.Intro,
+				Chapters: partial, Source: domain.NarrativeModel,
+			})
+		}
+	}
 
 	// One call for the whole session is tried once: it gives the best grouping
 	// when the model has room for it. A small local context usually cannot manage
@@ -112,14 +120,7 @@ func NarrateProgressively(ctx context.Context, n Narrator, sess domain.Session, 
 		// instead: a much smaller prompt and answer, which a small local context
 		// can manage. The grouping stays deterministic; the model supplies the
 		// words, and each chapter is published as it is written.
-		if chapters, ok := narrateEachChapter(ctx, n, sess, units, groups, func(partial []domain.Chapter) {
-			if onProgress != nil {
-				onProgress(domain.Narrative{
-					SessionID: sess.ID, Title: fallback.Title, Intro: fallback.Intro,
-					Chapters: partial, Source: domain.NarrativeModel,
-				})
-			}
-		}); ok {
+		if chapters, ok := narrateEachChapter(ctx, n, sess, units, groups, progress); ok {
 			return domain.Narrative{
 				SessionID: sess.ID,
 				Title:     fallback.Title,
@@ -137,9 +138,18 @@ func NarrateProgressively(ctx context.Context, n Narrator, sess domain.Session, 
 			Title: c.Title, Prose: c.Prose, UnitIDs: c.resolve(groups),
 		})
 	}
-	chapters := reconcileChapters(resolved, units)
-	if len(chapters) == 0 {
-		return fallback, fmt.Errorf("model chapters matched no real units")
+	chapters, kept := reconcileChapters(resolved, units)
+	if kept == 0 {
+		// Well-formed JSON that named nothing real. Everything would land in the
+		// catch-all chapter, which tells the reviewer nothing — narrate per area
+		// instead.
+		if perChapter, ok := narrateEachChapter(ctx, n, sess, units, groups, progress); ok {
+			return domain.Narrative{
+				SessionID: sess.ID, Title: fallback.Title, Intro: fallback.Intro,
+				Chapters: perChapter, Source: domain.NarrativeModel,
+			}, nil
+		}
+		return fallback, fmt.Errorf("model chapters matched no real areas")
 	}
 
 	out := domain.Narrative{
@@ -248,14 +258,14 @@ func explainNarrationFailure(err error) error {
 
 // reconcileChapters keeps only unit ids that really exist, drops emptied
 // chapters, and appends whatever the model left out so nothing is lost.
-func reconcileChapters(chapters []domain.Chapter, units []domain.Unit) []domain.Chapter {
+func reconcileChapters(chapters []domain.Chapter, units []domain.Unit) (out []domain.Chapter, kept int) {
 	known := map[string]bool{}
 	for _, u := range units {
 		known[u.ID] = true
 	}
 
 	placed := map[string]bool{}
-	out := make([]domain.Chapter, 0, len(chapters))
+	out = make([]domain.Chapter, 0, len(chapters))
 	for _, c := range chapters {
 		var ids []string
 		for _, id := range c.UnitIDs {
@@ -269,6 +279,7 @@ func reconcileChapters(chapters []domain.Chapter, units []domain.Unit) []domain.
 		}
 		c.UnitIDs = ids
 		out = append(out, c)
+		kept++
 	}
 
 	var missed []string
@@ -284,7 +295,7 @@ func reconcileChapters(chapters []domain.Chapter, units []domain.Unit) []domain.
 			UnitIDs: missed,
 		})
 	}
-	return out
+	return out, kept
 }
 
 // modelNarrative is the JSON contract asked of the model. Chapters reference
