@@ -520,7 +520,7 @@ MSR_SUMMARIZER_URL=http://localhost:1234/v1 MSR_MODEL=qwen/qwen3.5-9b \
 
 ## Status
 
-**v3.1.0** — everything below is built, tested, and shippable:
+**v4.0.0** — everything below is built, tested, and shippable:
 
 - **Web app** (`msr web`) — the primary interface: a single-page cockpit with
   the story, the diffs, annotation and re-analysis side by side; a live

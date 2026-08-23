@@ -4,6 +4,49 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.0] — 2026-08-23
+
+Git is the subject of a review. A session is a lens on it.
+
+### Changed
+
+- **A `Target` is what gets reviewed** — a range of history with a name (ADR
+  0017). Git supplies most of them: every recent **commit** as `parent..commit`,
+  every **tag** as the range since the tag before it, every **pull request** as
+  the commits referencing it, and the **working tree** when it is dirty. A root
+  commit diffs against the empty tree, which is the only honest way to say
+  everything here is new.
+- **A recorded session is one kind of target, not the index.** It still answers
+  what an agent run did and still holds the stated intent nothing else has. Every
+  other target lists the sessions overlapping it, so the intent behind a commit
+  is one click away — the run enriching the commit rather than containing it.
+- **`--since`/`--until` stop being a special case.** They name a range like any
+  other target.
+- **Identity is derived, not stored**: a target's id is a hash of its repository
+  and range, so the same commit or tag always reviews to the same id across
+  restarts, machines and clones — and nothing needs migrating when a session is
+  deleted.
+- Net change per file is untouched (ADR 0002 stands). `BuildFileUnits` always
+  took two refs; only what supplies them changed. Its first parameter was called
+  `sessionID` and was only ever the unit-id prefix — it is `reviewID` now.
+
+### Added
+
+- A target picker in place of the session switcher. Against this repository it
+  offers 48 things to review — 40 commits, 4 tags, 3 recorded runs and the
+  uncommitted work — where before it offered 3 sessions.
+- Any target can be narrated and have its groups described, not only the one the
+  server started with.
+
+### Breaking
+
+- **Notes keyed to unit ids derived from a session id do not carry over** to the
+  same files reviewed as a commit. The old ids still resolve for the session
+  targets that produced them, but a note attaches to a review, and the same code
+  under a different range is a different review.
+- `?session=` still resolves — a session is still a target — but `?target=` is
+  what the application now links to.
+
 ## [3.1.0] — 2026-08-23
 
 ### Added
@@ -200,6 +243,7 @@ First public release. Watching one agent, one session, one repo.
 - Session identifiers are validated to prevent path traversal outside the store
   root.
 
+[4.0.0]: https://github.com/mondial7/mondspace-reviewer/releases/tag/v4.0.0
 [3.1.0]: https://github.com/mondial7/mondspace-reviewer/releases/tag/v3.1.0
 [3.0.0]: https://github.com/mondial7/mondspace-reviewer/releases/tag/v3.0.0
 [2.0.0]: https://github.com/mondial7/mondspace-reviewer/releases/tag/v2.0.0
