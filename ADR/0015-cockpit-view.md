@@ -14,8 +14,15 @@ is over.
 
 ## Decision
 
-Add `/cockpit`: one desktop screen, three panes, meant to be left open on a
-second monitor while the agent works.
+Make the cockpit the **landing page** (`/`), moving the review queue to
+`/review`. One desktop screen, three panes, meant to be left open on a second
+monitor while the agent works.
+
+While an agent is still working the first question is "is anything still
+happening", not "what shall I review first" — so the monitor is what you arrive
+at, and the queue is one click away. Annotating or re-analysing still returns to
+`/review#unit-…`: a reviewer working through the queue must not be thrown back
+to the cockpit and lose their place.
 
 - **Pulse (top left).** An isometric grid of blocks, one per changed file,
   that breathes while the session is live and settles when it goes quiet.
@@ -31,8 +38,9 @@ Three rules keep it honest:
   The cockpit sits beside a narration feature precisely so the two can be told
   apart at a glance.
 - **A diff is compacted, never truncated in silence.** `CompactDiff` keeps every
-  hunk header — the shape of the change — and always states how many lines it
-  dropped. One 900-line generated file must not push everything else off the
+  hunk header — the shape of the change — drops git's per-file plumbing (the
+  feed already names the file, and those lines were eating five of every
+  fourteen shown), and always states how many lines it dropped. One 900-line generated file must not push everything else off the
   screen, but a review tool that quietly hides diff content is worse than one
   that shows none.
 - **The geometry is decoration.** Like ADR 0012's starfield, the scene reads the

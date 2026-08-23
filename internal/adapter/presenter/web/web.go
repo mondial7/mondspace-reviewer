@@ -228,7 +228,10 @@ func (s *Server) routes() {
 		panic("web: embedded assets missing: " + err.Error())
 	}
 	s.mux.Handle("GET /assets/", http.StripPrefix("/assets/", http.FileServer(http.FS(static))))
-	s.mux.HandleFunc("GET /{$}", s.handleIndex)
+	// The cockpit is the landing page: while an agent is still working, the first
+	// question is "is anything still happening", not "what shall I review first".
+	s.mux.HandleFunc("GET /{$}", s.handleCockpit)
+	s.mux.HandleFunc("GET /review", s.handleIndex)
 	s.mux.HandleFunc("POST /units/{id}/notes", s.handleAnnotate)
 	s.mux.HandleFunc("GET /sessions", s.handleWorkspace)
 	s.mux.HandleFunc("POST /ask", s.handleAsk)
@@ -360,7 +363,7 @@ func (s *Server) handleAnnotate(w http.ResponseWriter, r *http.Request) {
 		Action: "annotate", Detail: string(note.Kind) + ": " + note.Text})
 	s.broadcast("note")
 
-	http.Redirect(w, r, "/#unit-"+unit.ID, http.StatusSeeOther)
+	http.Redirect(w, r, "/review#unit-"+unit.ID, http.StatusSeeOther)
 }
 
 func (s *Server) unit(id string) (domain.Unit, bool) {
@@ -469,7 +472,7 @@ func (s *Server) handleReanalyse(w http.ResponseWriter, r *http.Request) {
 		// A failing model must not lose the existing headline.
 		s.record(AuditEntry{SessionID: unit.SessionID, UnitID: unit.ID,
 			Action: "reanalyse", Detail: "failed: " + err.Error()})
-		http.Redirect(w, r, "/#unit-"+unit.ID, http.StatusSeeOther)
+		http.Redirect(w, r, "/review#unit-"+unit.ID, http.StatusSeeOther)
 		return
 	}
 
@@ -486,7 +489,7 @@ func (s *Server) handleReanalyse(w http.ResponseWriter, r *http.Request) {
 		Action: "reanalyse", Detail: model})
 	s.broadcast("headline")
 
-	http.Redirect(w, r, "/#unit-"+unit.ID, http.StatusSeeOther)
+	http.Redirect(w, r, "/review#unit-"+unit.ID, http.StatusSeeOther)
 }
 
 // record appends to the audit log. A log that cannot be written must not break

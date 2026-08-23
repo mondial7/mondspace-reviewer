@@ -21,7 +21,7 @@ function isLive() {
 // not turn the pulse into a wall of geometry.
 function blockCount() {
   const files = document.querySelectorAll('.post').length;
-  return Math.max(1, Math.min(files || 1, 36));
+  return Math.max(4, Math.min(files || 4, 25));
 }
 
 async function start() {
@@ -47,8 +47,10 @@ async function start() {
   // A true isometric look needs an orthographic camera on the (1,1,1) diagonal;
   // a perspective camera would give a 3/4 view, not an isometric one.
   const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 100);
-  camera.position.set(12, 12, 12);
-  camera.lookAt(0, 0, 0);
+  camera.position.set(12, 10, 12);
+  // Aim at the middle of the blocks, not the floor they stand on: looking at the
+  // origin pushes the whole grid into the top half of the pane.
+  camera.lookAt(0, 0.75, 0);
 
   scene.add(new THREE.AmbientLight(0xffffff, 0.55));
   const key = new THREE.DirectionalLight(0xffffff, 0.9);
@@ -60,6 +62,9 @@ async function start() {
   const css = getComputedStyle(document.documentElement);
   const accent = new THREE.Color(css.getPropertyValue('--accent').trim() || '#cba6f7');
   const added = new THREE.Color(css.getPropertyValue('--add').trim() || '#a6e3a1');
+
+  // SPACING is the gap between block centres, in block widths.
+  const SPACING = 1.4;
 
   const group = new THREE.Group();
   scene.add(group);
@@ -76,7 +81,7 @@ async function start() {
     const cube = new THREE.Mesh(geometry, material);
     const x = (i % side) - (side - 1) / 2;
     const z = Math.floor(i / side) - (side - 1) / 2;
-    cube.position.set(x * 1.35, 0, z * 1.35);
+    cube.position.set(x * SPACING, 0, z * SPACING);
     // A staggered phase makes the grid ripple rather than pulse as one slab.
     cube.userData.phase = (x + z) * 0.6 + i * 0.15;
     group.add(cube);
@@ -87,13 +92,19 @@ async function start() {
     const { clientWidth: w, clientHeight: h } = canvas;
     if (!w || !h) return;
     renderer.setSize(w, h, false);
-    // Keep the frustum square-ish so blocks never shear when the pane resizes.
-    const span = 0.55 * side * 1.35 + 2;
+
+    // Fit the grid to the shorter axis so it fills the pane without cropping,
+    // whatever shape the pane happens to be. An isometric grid is as wide as its
+    // diagonal, hence the sqrt(2).
+    const extent = (side - 1) * SPACING * Math.SQRT2 * 0.5 + 1.6;
     const aspect = w / h;
-    camera.left = -span * aspect;
-    camera.right = span * aspect;
-    camera.top = span;
-    camera.bottom = -span;
+    const [halfW, halfH] = aspect >= 1
+      ? [extent * aspect, extent]
+      : [extent, extent / aspect];
+    camera.left = -halfW;
+    camera.right = halfW;
+    camera.top = halfH;
+    camera.bottom = -halfH;
     camera.updateProjectionMatrix();
   }
   resize();

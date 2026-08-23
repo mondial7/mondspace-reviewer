@@ -125,6 +125,31 @@ func TestCompactDiffKeepsTheShapeAndElidesTheBulk(t *testing.T) {
 	}
 }
 
+func TestCompactDiffDropsGitFileHeaders(t *testing.T) {
+	// A feed shows the filename above the diff, so git's file plumbing is pure
+	// noise — and in a 14-line budget it was eating five of them.
+	d := domain.Diff{Text: "diff --git a/x.go b/x.go\n" +
+		"new file mode 100644\n" +
+		"index 0000000..f8632dd\n" +
+		"--- /dev/null\n" +
+		"+++ b/x.go\n" +
+		"@@ -0,0 +1,2 @@\n+package x\n+// hello\n"}
+
+	got, _ := usecase.CompactDiff(d, 12)
+
+	for _, noise := range []string{"diff --git", "new file mode", "index 0000000", "/dev/null"} {
+		if strings.Contains(got.Text, noise) {
+			t.Errorf("git plumbing %q should not reach the feed:\n%s", noise, got.Text)
+		}
+	}
+	// The change itself, and the hunk header that locates it, must survive.
+	for _, keep := range []string{"@@ -0,0 +1,2 @@", "+package x", "+// hello"} {
+		if !strings.Contains(got.Text, keep) {
+			t.Errorf("the actual change %q was lost:\n%s", keep, got.Text)
+		}
+	}
+}
+
 func TestCompactDiffLeavesAShortDiffAlone(t *testing.T) {
 	d := domain.Diff{Text: "@@ -1 +1 @@\n-old\n+new\n"}
 

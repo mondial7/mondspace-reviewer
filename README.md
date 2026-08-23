@@ -280,9 +280,10 @@ chapter at a time — it never waits on a model.
 
 ## The cockpit
 
-`msr web` opens on the review queue, but `/cockpit` is the page to leave on a
-second screen while an agent is still working. One desktop screen, three panes,
-and only the feed scrolls:
+`msr web` **opens on the cockpit** — while an agent is still working the first
+question is "is anything still happening", not "what shall I review first". The
+review queue is one click away at `/review`, and every deep link from the
+cockpit lands there. One desktop screen, three panes, and only the feed scrolls:
 
 - an **isometric grid** — one block per changed file — that breathes while the
   session is live and settles when it goes quiet;
@@ -292,8 +293,9 @@ and only the feed scrolls:
 Every number there comes from git or the event log. **Nothing on the cockpit is
 model-derived** — that is the point of putting it beside a narration feature.
 
-Long diffs are *compacted*, never silently truncated: hunk headers all survive,
-so the shape of the change does, and the elision says how many lines it dropped
+Long diffs are *compacted*, never silently truncated: hunk headers all survive
+so the shape of the change does, git's per-file plumbing is dropped (the feed
+already names the file), and the elision says how many lines it left out
 (`… 37 more lines`).
 
 **Pull requests, honestly.** `msr` talks to no forge. PRs are counted by matching

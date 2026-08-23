@@ -11,7 +11,7 @@
 <body class="page page--cockpit" data-live="{{ .Stats.Live }}">
 
   <nav class="storynav">
-    <a class="storynav__link" href="/">review</a>
+    <a class="storynav__link" href="/review">review</a>
     <a class="storynav__link" href="/story">story</a>
     <a class="storynav__link" href="/activity">activity</a>
     <a class="storynav__link" href="/sessions">all sessions</a>
@@ -66,7 +66,7 @@
       {{ range .Feed }}
       <article class="post">
         <header class="post__head">
-          <a class="post__file" href="/#unit-{{ .ID }}">{{ .File }}</a>
+          <a class="post__file" href="/review#unit-{{ .ID }}">{{ .File }}</a>
           <span class="post__stats">
             <span class="unit__stat unit__stat--add">+{{ .Added }}</span>
             <span class="unit__stat unit__stat--del">-{{ .Removed }}</span>
@@ -75,8 +75,8 @@
         </header>
         <p class="post__line">{{ .Headline }}</p>
         {{ if .Diff }}
-        <pre class="post__diff{{ if .Compacted }} post__diff--compact{{ end }}">{{ range .Diff }}<span class="diff diff--{{ .Kind }}">{{ .Text }}</span>
-{{ end }}</pre>
+        <pre class="post__diff{{ if .Compacted }} post__diff--compact{{ end }}"><code>{{ range .Diff }}<span class="diff__line diff__line--{{ .Kind }}">{{ .Text }}</span>
+{{ end }}</code></pre>
         {{ end }}
       </article>
       {{ else }}

@@ -85,11 +85,35 @@ func countChangedLines(d domain.Diff) (added, removed int) {
 	return added, removed
 }
 
+// gitFileHeader matches the plumbing git puts above each file's hunks. A feed
+// names the file itself, so these lines carry nothing — and on a small budget
+// they were consuming five of every fourteen lines shown.
+func gitFileHeader(line string) bool {
+	switch {
+	case strings.HasPrefix(line, "diff --git "),
+		strings.HasPrefix(line, "index "),
+		strings.HasPrefix(line, "--- "),
+		strings.HasPrefix(line, "+++ "),
+		strings.HasPrefix(line, "new file mode "),
+		strings.HasPrefix(line, "deleted file mode "),
+		strings.HasPrefix(line, "old mode "),
+		strings.HasPrefix(line, "new mode "),
+		strings.HasPrefix(line, "similarity index "),
+		strings.HasPrefix(line, "rename from "),
+		strings.HasPrefix(line, "rename to "):
+		return true
+	}
+	return false
+}
+
 // CompactDiff shortens a diff to about maxLines, keeping every hunk header so
 // the shape of the change survives, and says how much it left out. A feed of
 // changes is unreadable if one 2,000-line diff pushes everything else off the
 // screen — but silently truncating a diff in a review tool is worse than not
 // showing it, so the elision is always visible.
+//
+// Git's per-file plumbing is dropped: the caller shows the filename, so those
+// lines add nothing and cost several of a small budget.
 //
 // It reports whether it compacted anything; a diff already short enough is
 // returned untouched.
@@ -97,9 +121,19 @@ func CompactDiff(d domain.Diff, maxLines int) (domain.Diff, bool) {
 	if maxLines <= 0 {
 		maxLines = 12
 	}
-	lines := strings.Split(strings.TrimRight(d.Text, "\n"), "\n")
+	all := strings.Split(strings.TrimRight(d.Text, "\n"), "\n")
+
+	lines := make([]string, 0, len(all))
+	for _, line := range all {
+		if !gitFileHeader(line) {
+			lines = append(lines, line)
+		}
+	}
 	if len(lines) <= maxLines {
-		return d, false
+		if len(lines) == len(all) {
+			return d, false
+		}
+		return domain.Diff{Text: strings.Join(lines, "\n") + "\n"}, true
 	}
 
 	// Hunk headers first: they are the map of the change. Then fill the rest of
