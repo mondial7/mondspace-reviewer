@@ -75,7 +75,15 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 	}
 
 	sum := chooseSummarizer(*summarizerURL, *model)
+	// Serve the deterministic story straight away and let the model upgrade it in
+	// the background: the page never waits on a model (ADR 0013).
 	handler := web.NewServer(view, store).
+		WithNarrative(domain.Narrative{
+			SessionID: *session,
+			Title:     sess.Prompt,
+			Chapters:  usecase.GroupByPath(units),
+			Source:    domain.NarrativeMechanical,
+		}).
 		WithWorkspace(discoverSessions(*out, *repo)).
 		WithAsk(webAskFunc(sess, snap, sum)).
 		WithReanalyse(webReanalyseFunc(snap, sum, *model)).
@@ -85,6 +93,19 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
+	go func() {
+		// Narration runs in the background and a local model narrates one area at
+		// a time, so the budget is generous; the page never waits on it.
+		narrateCtx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
+		defer cancel()
+		narrative, err := usecase.NarrateProgressively(narrateCtx, sum, sess, units,
+			handler.SetNarrative) // publish each chapter as the model writes it
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "msr: story fell back to mechanical grouping:", err)
+		}
+		handler.SetNarrative(narrative)
+	}()
+
 	ln, err := net.Listen("tcp", *addr)
 	if err != nil {
 		return err

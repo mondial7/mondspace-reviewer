@@ -101,6 +101,7 @@ type Server struct {
 	sess      Session
 	workspace []SessionSummary
 	thread    []Exchange
+	narrative domain.Narrative
 	models    map[string]string // unit ID -> model that produced its headline
 	ask       AskFunc
 	reanalyse ReanalyseFunc
@@ -150,6 +151,20 @@ func (s *Server) WithAudit(a AuditLog) *Server {
 	return s
 }
 
+// WithNarrative supplies the session's story, shown at /story.
+func (s *Server) WithNarrative(n domain.Narrative) *Server {
+	s.narrative = n
+	return s
+}
+
+// SetNarrative replaces the story while the server is running, so a slow model
+// can upgrade a mechanical narrative without the page ever waiting on it.
+func (s *Server) SetNarrative(n domain.Narrative) {
+	s.mu.Lock()
+	s.narrative = n
+	s.mu.Unlock()
+}
+
 // WithWorkspace supplies the sessions listed at /sessions.
 func (s *Server) WithWorkspace(sessions []SessionSummary) *Server {
 	s.workspace = sessions
@@ -169,6 +184,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /sessions", s.handleWorkspace)
 	s.mux.HandleFunc("POST /ask", s.handleAsk)
 	s.mux.HandleFunc("POST /units/{id}/reanalyse", s.handleReanalyse)
+	s.mux.HandleFunc("GET /story", s.handleStory)
 }
 
 // noteKinds are the annotations a reviewer may attach (SPEC §11).
@@ -355,6 +371,44 @@ func (s *Server) record(e AuditEntry) {
 	_ = s.audit.Append(e)
 }
 
+// chapterView pairs a chapter's prose with the real units it covers, so the
+// page can show model narration beside facts that come from git.
+type chapterView struct {
+	Title string
+	Prose string
+	Units []unitView
+}
+
+// handleStory renders the session as a long-form, chaptered read (ADR 0013).
+func (s *Server) handleStory(w http.ResponseWriter, r *http.Request) {
+	s.mu.RLock()
+	byID := map[string]unitView{}
+	for _, v := range s.views() {
+		byID[v.ID] = v
+	}
+	chapters := make([]chapterView, 0, len(s.narrative.Chapters))
+	for _, c := range s.narrative.Chapters {
+		cv := chapterView{Title: c.Title, Prose: c.Prose}
+		for _, id := range c.UnitIDs {
+			if v, ok := byID[id]; ok {
+				cv.Units = append(cv.Units, v)
+			}
+		}
+		chapters = append(chapters, cv)
+	}
+	data := struct {
+		Session   Session
+		Narrative domain.Narrative
+		Chapters  []chapterView
+	}{Session: s.sess, Narrative: s.narrative, Chapters: chapters}
+	s.mu.RUnlock()
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := s.tmpl.ExecuteTemplate(w, "story.html", data); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
 // handleWorkspace lists every known review, across repos and agents.
 func (s *Server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 	s.mu.RLock()
@@ -445,5 +499,6 @@ func shortHandle(id string) string {
 func funcs() template.FuncMap {
 	return template.FuncMap{
 		"base": filepath.Base,
+		"add":  func(a, b int) int { return a + b },
 	}
 }

@@ -233,3 +233,112 @@
 }
 .reanalyse__btn:hover { color: var(--accent); border-color: var(--accent); }
 .detail__model { color: var(--fg-dim); }
+
+/* ── Story view: long-form reading with parallax (ADR 0013) ───────────────── */
+
+.page--story { padding: 0; }
+
+/* Parallax is done with a scrolling container and depth-shifted layers, so it
+   costs no JavaScript and honours reduced motion by simply not applying. */
+@media (prefers-reduced-motion: no-preference) {
+  .page--story:not(.page--focus) {
+    height: 100vh; overflow-y: auto; overflow-x: hidden;
+    perspective: 2px; perspective-origin: 0 0;
+  }
+  .page--story:not(.page--focus) .hero { transform-style: preserve-3d; }
+  .page--story:not(.page--focus) .hero__title { transform: translateZ(-1px) scale(1.5); }
+  .page--story:not(.page--focus) .hero__eyebrow { transform: translateZ(-0.5px) scale(1.25); }
+}
+
+.storynav {
+  position: sticky; top: 0; z-index: 3;
+  display: flex; align-items: center; gap: 1rem;
+  padding: 0.6rem clamp(1rem, 5vw, 4rem);
+  background: color-mix(in srgb, var(--bg) 78%, transparent);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--rule);
+}
+.storynav__link { color: var(--fg-dim); text-decoration: none; }
+.storynav__link:hover { color: var(--accent); }
+
+/* Hero */
+.hero {
+  position: relative; z-index: 1;
+  min-height: 78vh; display: flex; flex-direction: column; justify-content: center;
+  padding: 4rem clamp(1rem, 8vw, 8rem) 3rem;
+  max-width: 60rem;
+}
+.hero__eyebrow {
+  margin: 0 0 0.6rem; letter-spacing: 0.25em; text-transform: uppercase;
+  font-size: 0.72rem; color: var(--accent);
+}
+.hero__title {
+  margin: 0; font-size: clamp(2rem, 6vw, 3.6rem); line-height: 1.1; font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.hero__intro {
+  margin: 1.2rem 0 0; max-width: 42rem;
+  font-size: clamp(1.05rem, 2.2vw, 1.3rem); line-height: 1.65; color: var(--fg);
+}
+.hero__source { margin: 1.6rem 0 0; font-size: 0.82rem; color: var(--fg-dim); }
+.hero__source--model strong { color: var(--inferred); }
+.hero__source--mechanical strong { color: var(--fg-dim); }
+.hero__scroll { margin-top: 2.5rem; font-size: 0.75rem; color: var(--fg-dim); letter-spacing: 0.3em; }
+@media (prefers-reduced-motion: no-preference) {
+  .page--story:not(.page--focus) .hero__scroll { animation: bob 2.4s ease-in-out infinite; }
+  @keyframes bob { 0%,100% { opacity: 0.4; } 50% { opacity: 1; } }
+}
+
+/* Chapters — the reading column */
+.story { position: relative; z-index: 1; padding: 0 clamp(1rem, 8vw, 8rem) 4rem; }
+.chapter {
+  max-width: 42rem; margin: 0 0 6rem;
+  padding-top: 2rem; border-top: 1px solid var(--rule);
+}
+.chapter__index {
+  font-size: 0.72rem; letter-spacing: 0.3em; color: var(--accent); margin-bottom: 0.6rem;
+}
+.chapter__title {
+  margin: 0 0 0.8rem; font-size: clamp(1.4rem, 3.4vw, 2rem); line-height: 1.2; letter-spacing: -0.01em;
+}
+.chapter__prose {
+  margin: 0 0 1.4rem; font-size: 1.05rem; line-height: 1.75; color: var(--fg);
+}
+.chapter__units { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.3rem; }
+.chapter__unit {
+  display: flex; align-items: baseline; gap: 0.6rem; flex-wrap: wrap;
+  padding: 0.3rem 0.5rem; border-left: 2px solid var(--rule);
+}
+.chapter__unit:hover { border-left-color: var(--accent); }
+.chapter__file { color: var(--fg); text-decoration: none; }
+.chapter__file:hover { color: var(--accent); }
+.chapter__stats { margin-left: auto; white-space: nowrap; }
+
+/* Chapters fade up as they enter the reading position. */
+@media (prefers-reduced-motion: no-preference) {
+  .page--story:not(.page--focus) .chapter { animation: chapter-in 600ms ease both; }
+  @keyframes chapter-in {
+    from { opacity: 0; transform: translateY(18px); }
+    to   { opacity: 1; transform: none; }
+  }
+}
+
+.storyend {
+  position: relative; z-index: 1;
+  padding: 3rem clamp(1rem, 8vw, 8rem) 6rem; color: var(--fg-dim);
+  border-top: 1px solid var(--rule);
+}
+.storyend a { color: var(--accent); }
+
+/* Focus mode: the same story, plain and dense. */
+.page--focus.page--story { height: auto; overflow: visible; perspective: none; }
+.page--focus .hero { min-height: auto; padding: 1.5rem clamp(1rem, 4vw, 3rem) 1rem; }
+.page--focus .hero__title { font-size: 1.4rem; transform: none; }
+.page--focus .hero__eyebrow, .page--focus .hero__scroll { display: none; }
+.page--focus .hero__intro { font-size: 1rem; }
+.page--focus .chapter { margin-bottom: 2rem; padding-top: 1rem; animation: none; }
+.page--focus .chapter__title { font-size: 1.1rem; }
+.page--focus .chapter__prose { font-size: 0.95rem; line-height: 1.55; }
+.page--focus .story { padding: 0 clamp(1rem, 4vw, 3rem) 2rem; }
+.masthead__story { color: var(--accent); text-decoration: none; }
+.masthead__story:hover { text-decoration: underline; }

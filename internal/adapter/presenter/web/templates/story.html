@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ .Narrative.Title }} — mondspace-reviewer</title>
+  <link rel="stylesheet" href="/assets/app.css">
+  <script type="module" src="/assets/storyline.js" defer></script>
+</head>
+<body class="page page--story">
+  <canvas class="starfield" id="starfield" aria-hidden="true"></canvas>
+
+  <nav class="storynav">
+    <a class="storynav__link" href="/">review</a>
+    <a class="storynav__link" href="/sessions">all sessions</a>
+    <button class="masthead__focus" id="focus-toggle" type="button"
+            aria-pressed="false" title="Toggle focus mode (f)">focus mode <kbd>f</kbd></button>
+  </nav>
+
+  <!-- Hero: the session in one line. -->
+  <header class="hero">
+    <p class="hero__eyebrow">a session, told as a story</p>
+    <h1 class="hero__title">{{ .Narrative.Title }}</h1>
+    <p class="hero__intro">{{ .Narrative.Intro }}</p>
+    <p class="hero__source hero__source--{{ .Narrative.Source }}">
+      {{ if eq .Narrative.Source "model" }}
+        narrative <strong>inferred</strong> by a model · files, diffs and stats come from git
+      {{ else }}
+        <strong>mechanical</strong> grouping · no model was available to narrate
+      {{ end }}
+    </p>
+    <p class="hero__scroll" aria-hidden="true">scroll</p>
+  </header>
+
+  <main class="story">
+    {{ range $i, $c := .Chapters }}
+    <section class="chapter">
+      <div class="chapter__index" aria-hidden="true">{{ printf "%02d" (add $i 1) }}</div>
+      <h2 class="chapter__title">{{ $c.Title }}</h2>
+      <p class="chapter__prose">{{ $c.Prose }}</p>
+
+      <ul class="chapter__units">
+        {{ range $c.Units }}
+        <li class="chapter__unit">
+          <a class="chapter__file" href="/#unit-{{ .ID }}">{{ .File }}</a>
+          <span class="chapter__stats">
+            <span class="unit__stat unit__stat--add">+{{ .Added }}</span>
+            <span class="unit__stat unit__stat--del">-{{ .Removed }}</span>
+          </span>
+          {{ range .Flags }}<span class="flag">{{ . }}</span>{{ end }}
+        </li>
+        {{ end }}
+      </ul>
+    </section>
+    {{ else }}
+    <p class="queue__empty">Nothing to tell yet — this session changed no files.</p>
+    {{ end }}
+  </main>
+
+  <footer class="storyend">
+    <p>That's the session. <a href="/">Read the diffs</a> to review them line by line.</p>
+  </footer>
+</body>
+</html>

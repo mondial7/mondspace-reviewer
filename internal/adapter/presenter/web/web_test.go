@@ -100,6 +100,69 @@ func TestAnnotateRejectsUnknownUnitAndKind(t *testing.T) {
 	}
 }
 
+func TestStoryPageReadsAsChaptersWithProse(t *testing.T) {
+	narrative := domain.Narrative{
+		SessionID: "s",
+		Title:     "Locking down authentication",
+		Intro:     "The session added token validation and wired it into the request path.",
+		Source:    domain.NarrativeModel,
+		Chapters: []domain.Chapter{
+			{Title: "Token validation", Prose: "A TokenValidator interface was extracted and tested.",
+				UnitIDs: []string{"s-f001"}},
+			{Title: "Request path", Prose: "Middleware now guards every route.",
+				UnitIDs: []string{"s-f002"}},
+		},
+	}
+	h := web.NewServer(testSession(), nil).WithNarrative(narrative)
+
+	rec := get(t, h, "/story")
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{
+		"Locking down authentication",      // the title
+		"wired it into the request path",   // the intro
+		"Token validation", "Request path", // chapter titles
+		"A TokenValidator interface was extracted", // the prose
+		"auth/token.go", // real files beside the prose
+		"+2",            // real stats, from git not the model
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("story missing %q", want)
+		}
+	}
+	// Model-written prose must be labelled as inferred (ADR 0003 / 0013).
+	if !strings.Contains(body, "inferred") {
+		t.Errorf("model-written narrative must be labelled inferred:\n%s", body)
+	}
+	// Each chapter links into the real review of its units.
+	if !strings.Contains(body, `href="/#unit-s-f001"`) {
+		t.Errorf("chapters should link into the diff review:\n%s", body)
+	}
+	// Focus mode is available here too.
+	if !strings.Contains(body, "focus-toggle") {
+		t.Errorf("story page should offer focus mode:\n%s", body)
+	}
+}
+
+func TestStoryPageLabelsMechanicalFallback(t *testing.T) {
+	narrative := domain.Narrative{
+		SessionID: "s", Title: "Session s", Intro: "2 files changed.",
+		Source:   domain.NarrativeMechanical,
+		Chapters: []domain.Chapter{{Title: "auth", Prose: "1 file changed under auth.", UnitIDs: []string{"s-f001"}}},
+	}
+	h := web.NewServer(testSession(), nil).WithNarrative(narrative)
+
+	body := get(t, h, "/story").Body.String()
+
+	// The reviewer must be able to tell a model story from a mechanical one.
+	if !strings.Contains(body, "mechanical") {
+		t.Errorf("a fallback narrative should say so:\n%s", body)
+	}
+}
+
 func TestReanalyseReplacesHeadlineAndRecordsModel(t *testing.T) {
 	var called []string
 	h := web.NewServer(testSession(), nil).WithReanalyse(
