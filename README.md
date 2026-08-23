@@ -112,6 +112,13 @@ msr review --source=replay --file=testdata/sessions/basic.jsonl --plain
    msr review --source=hooks --plain --session=<session-id>          # line-oriented, scriptable
    ```
 
+   `--source=opencode` works the same way, tailing an OpenCode session log
+   instead of Claude Code's hooks — `msr review --tui --source=opencode
+   --session=<session-id> --repo=.`. The domain never knows which agent it is
+   watching; only the adapter changes. See [ADR
+   0006](ADR/0006-opencode-event-source.md) for the assumed OpenCode payload
+   shape and its mapping onto `domain.Event`.
+
    **Retroactive review** reconstructs the session's *net* change from git — one
    reviewable unit per file, diffed against the commit just before the session —
    so an agent's back-and-forth on a file collapses into a single, clear change
@@ -134,7 +141,7 @@ msr review --source=replay --file=testdata/sessions/basic.jsonl --plain
 |---|---|
 | `msr install-hooks --dir=.` | Write the four agent hooks into `.claude/settings.json` (merges, never clobbers). |
 | `msr ingest --kind=…` | Append one hook event (reads hook JSON on stdin, always exits 0). |
-| `msr review --source=replay\|hooks [--plain\|--tui] [--verbose]` | Cluster and present the session. `--verbose` (`-v`) lists each unit's member events and snapshot refs. |
+| `msr review --source=replay\|hooks\|opencode [--plain\|--tui] [--verbose]` | Cluster and present the session. `--verbose` (`-v`) lists each unit's member events and snapshot refs. |
 | `msr ask --scope=unit\|session --session=… "question"` | Answer a question from the bounded log context. |
 | `msr export --format=md\|json --session=…` | Produce the review report, debt list, and open agenda. |
 
@@ -177,8 +184,9 @@ internal/
   usecase/   Cluster, Flag, Summarize, Ask, Supersede, Export — pure functions over the log
   port/      EventSource, Snapshotter, Summarizer, Store, Presenter
   adapter/
-    source/hooks   tails events.jsonl (fsnotify + poll fallback)
-    source/replay  replays a recorded log — the test source
+    source/hooks     tails events.jsonl from Claude Code (fsnotify + poll fallback)
+    source/opencode  tails an OpenCode session log — same tailing, different payload shape
+    source/replay    replays a recorded log — the test source
     snapshot/git   throwaway snapshot commits; never touches HEAD/index/worktree
     summarizer/openai  LM Studio / any OpenAI-compatible endpoint
     summarizer/null    passthrough, used offline
@@ -243,9 +251,10 @@ MSR_SUMMARIZER_URL=http://localhost:1234/v1 MSR_MODEL=qwen/qwen3.5-9b \
 - LM Studio headlines with `stated`/`inferred` discipline and async fill-in
 - Interrogation (`a` / `A`, plus a scriptable `ask`)
 - Export to Markdown and JSON
+- A second agent event source, `opencode` (ADR 0006), alongside `hooks`
 
 Planned work is tracked in [issues](https://github.com/mondial7/mondspace-reviewer/issues)
-(OpenCode adapter, the `solo-iface` flag, live-streaming into the TUI, and more).
+(the `solo-iface` flag, live-streaming into the TUI, and more).
 
 ## Contributing
 
