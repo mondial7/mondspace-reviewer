@@ -58,6 +58,8 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout io.Writer) 
 		return runExport(args, stdout)
 	case "web":
 		return runWeb(ctx, args, stdout)
+	case "gc":
+		return runGC(ctx, args, stdout)
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}
@@ -193,6 +195,81 @@ func runExport(args []string, stdout io.Writer) error {
 	default:
 		return fmt.Errorf("unknown format %q (want md|json)", *format)
 	}
+}
+
+// runGC deletes throwaway review refs (refs/mondspace/review/<session>,
+// SPEC §7) for sessions that are done. With --session it deletes just that
+// session's ref; otherwise it deletes the ref for every session whose store
+// directory under --out is gone (its logs no longer exist). --dry-run prints
+// what would be removed without touching any ref.
+func runGC(ctx context.Context, args []string, stdout io.Writer) error {
+	fs := flag.NewFlagSet("gc", flag.ContinueOnError)
+	session := fs.String("session", "", "delete only this session's review ref")
+	repo := fs.String("repo", ".", "repository containing the review refs")
+	out := fs.String("out", ".mondspace-reviewer", "store root directory")
+	dryRun := fs.Bool("dry-run", false, "print what would be removed, without deleting")
+	if err := fs.Parse(args[1:]); err != nil {
+		return err
+	}
+
+	snap := gitsnap.New(*repo, "")
+
+	var targets []string
+	if *session != "" {
+		targets = []string{*session}
+	} else {
+		refs, err := snap.ReviewRefs(ctx)
+		if err != nil {
+			return err
+		}
+		stored, err := storedSessions(*out)
+		if err != nil {
+			return err
+		}
+		targets = usecase.SessionsToGC(refs, stored)
+	}
+
+	if len(targets) == 0 {
+		_, err := fmt.Fprintln(stdout, "nothing to garbage-collect: no review refs are eligible")
+		return err
+	}
+
+	for _, id := range targets {
+		ref := "refs/mondspace/review/" + id
+		if *dryRun {
+			if _, err := fmt.Fprintf(stdout, "would delete %s\n", ref); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := snap.DeleteReviewRef(ctx, id); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(stdout, "deleted %s\n", ref); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// storedSessions lists the session IDs that still have a store directory
+// under root — a missing directory (root itself, or an individual session)
+// is not an error: it just means nothing is stored there yet.
+func storedSessions(root string) ([]string, error) {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var ids []string
+	for _, e := range entries {
+		if e.IsDir() {
+			ids = append(ids, e.Name())
+		}
+	}
+	return ids, nil
 }
 
 // runAsk answers one question about a stored session and prints the answer.
