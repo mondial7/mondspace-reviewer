@@ -1,6 +1,7 @@
 package web_test
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -377,5 +378,72 @@ func TestIndexListsUnits(t *testing.T) {
 	// stated vs inferred must be distinguishable in the markup, not just by colour.
 	if !strings.Contains(body, "stated") || !strings.Contains(body, "inferred") {
 		t.Errorf("index should label rationale source:\n%s", body)
+	}
+}
+
+func TestSSEStreamsUpdatesAndSetsHeaders(t *testing.T) {
+	h := web.NewServer(testSession(), nil)
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL+"/events", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("subscribing: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if got := resp.Header.Get("Content-Type"); !strings.HasPrefix(got, "text/event-stream") {
+		t.Errorf("Content-Type = %q, want text/event-stream", got)
+	}
+	if got := resp.Header.Get("Cache-Control"); !strings.Contains(got, "no-cache") {
+		t.Errorf("Cache-Control = %q, want no-cache", got)
+	}
+
+	// A change on the server reaches the subscriber without polling.
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		h.SetNarrative(domain.Narrative{SessionID: "s", Title: "new story"})
+	}()
+
+	sc := bufio.NewScanner(resp.Body)
+	for sc.Scan() {
+		if strings.HasPrefix(sc.Text(), "event: ") {
+			if got := strings.TrimPrefix(sc.Text(), "event: "); got != "narrative" {
+				t.Errorf("event = %q, want narrative", got)
+			}
+			return
+		}
+	}
+	t.Fatal("no event received before the stream ended")
+}
+
+func TestSSEStopsWhenTheClientGoesAway(t *testing.T) {
+	h := web.NewServer(testSession(), nil)
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL+"/events", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("subscribing: %v", err)
+	}
+	if n := h.Subscribers(); n != 1 {
+		t.Fatalf("subscribers = %d, want 1", n)
+	}
+
+	cancel()
+	resp.Body.Close()
+
+	// The server must drop the subscriber rather than leak the goroutine.
+	deadline := time.Now().Add(5 * time.Second)
+	for h.Subscribers() != 0 {
+		if time.Now().After(deadline) {
+			t.Fatalf("subscriber still registered after disconnect: %d", h.Subscribers())
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 }

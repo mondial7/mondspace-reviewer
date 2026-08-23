@@ -9,6 +9,7 @@ package web
 import (
 	"context"
 	"embed"
+	"fmt"
 	"html/template"
 	"io/fs"
 	"net/http"
@@ -107,6 +108,11 @@ type Server struct {
 	reanalyse ReanalyseFunc
 	audit     AuditLog
 
+	// subs are live subscribers (server-sent events). Each gets a buffered
+	// channel so a slow reader can never block a request handler.
+	subs   map[chan string]struct{}
+	nextID int
+
 	newID func() string
 	now   func() time.Time
 }
@@ -120,6 +126,7 @@ func NewServer(sess Session, notes Annotator) *Server {
 		sess:   sess,
 		notes:  notes,
 		models: map[string]string{},
+		subs:   map[chan string]struct{}{},
 		newID:  func() string { return ulid.Make().String() },
 		now:    func() time.Time { return time.Now().UTC() },
 	}
@@ -163,6 +170,7 @@ func (s *Server) SetNarrative(n domain.Narrative) {
 	s.mu.Lock()
 	s.narrative = n
 	s.mu.Unlock()
+	s.broadcast("narrative")
 }
 
 // WithWorkspace supplies the sessions listed at /sessions.
@@ -185,6 +193,79 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /ask", s.handleAsk)
 	s.mux.HandleFunc("POST /units/{id}/reanalyse", s.handleReanalyse)
 	s.mux.HandleFunc("GET /story", s.handleStory)
+	s.mux.HandleFunc("GET /events", s.handleEvents)
+}
+
+// Subscribers is the number of live event streams currently attached.
+func (s *Server) Subscribers() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return len(s.subs)
+}
+
+// broadcast tells every live page that something changed. It never blocks: a
+// subscriber that is not keeping up simply misses this nudge, and the next one
+// (or its own reload) brings it back in sync.
+func (s *Server) broadcast(event string) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for ch := range s.subs {
+		select {
+		case ch <- event:
+		default:
+		}
+	}
+}
+
+// handleEvents streams server-sent events so an open page updates itself as the
+// review changes — a narrated chapter, a new annotation, a re-analysed headline
+// — without polling.
+func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+
+	ch := make(chan string, 8)
+	s.mu.Lock()
+	s.subs[ch] = struct{}{}
+	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		delete(s.subs, ch)
+		s.mu.Unlock()
+	}()
+
+	h := w.Header()
+	h.Set("Content-Type", "text/event-stream")
+	h.Set("Cache-Control", "no-cache")
+	h.Set("Connection", "keep-alive")
+	h.Set("X-Accel-Buffering", "no") // defeat proxy buffering
+	w.WriteHeader(http.StatusOK)
+	flusher.Flush()
+
+	// A heartbeat keeps the connection (and any intermediary) from timing out,
+	// and is how a dead client is noticed.
+	ticker := time.NewTicker(20 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case event := <-ch:
+			if _, err := fmt.Fprintf(w, "event: %s\ndata: {}\n\n", event); err != nil {
+				return
+			}
+			flusher.Flush()
+		case <-ticker.C:
+			if _, err := fmt.Fprint(w, ": ping\n\n"); err != nil {
+				return
+			}
+			flusher.Flush()
+		}
+	}
 }
 
 // noteKinds are the annotations a reviewer may attach (SPEC §11).
@@ -233,6 +314,7 @@ func (s *Server) handleAnnotate(w http.ResponseWriter, r *http.Request) {
 	s.mu.Unlock()
 	s.record(AuditEntry{SessionID: unit.SessionID, UnitID: unit.ID,
 		Action: "annotate", Detail: string(note.Kind) + ": " + note.Text})
+	s.broadcast("note")
 
 	http.Redirect(w, r, "/#unit-"+unit.ID, http.StatusSeeOther)
 }
@@ -320,6 +402,7 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 	sessionID := s.sess.ID
 	s.mu.Unlock()
 	s.record(AuditEntry{SessionID: sessionID, Action: "ask", Detail: question})
+	s.broadcast("answer")
 
 	http.Redirect(w, r, "/#ask", http.StatusSeeOther)
 }
@@ -357,6 +440,7 @@ func (s *Server) handleReanalyse(w http.ResponseWriter, r *http.Request) {
 	s.mu.Unlock()
 	s.record(AuditEntry{SessionID: unit.SessionID, UnitID: unit.ID,
 		Action: "reanalyse", Detail: model})
+	s.broadcast("headline")
 
 	http.Redirect(w, r, "/#unit-"+unit.ID, http.StatusSeeOther)
 }
