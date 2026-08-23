@@ -37,7 +37,68 @@ func Flags(u domain.Unit, d domain.Diff) []domain.Flag {
 	if anyRemovedLine(d.Text, isExportedDecl) {
 		flags = append(flags, domain.FlagPublicAPI)
 	}
+	if hasSoloIface(d.Text) {
+		flags = append(flags, domain.FlagSoloIface)
+	}
 	return flags
+}
+
+// interfaceDecl matches an added Go interface declaration, e.g.
+// "type Validator interface {".
+var interfaceDecl = regexp.MustCompile(`^type\s+([A-Za-z_]\w*)\s+interface\s*\{`)
+
+// ifaceMethodSig matches a method signature line inside an interface body,
+// e.g. "Validate(token string) error", capturing the method name.
+var ifaceMethodSig = regexp.MustCompile(`^([A-Z]\w*)\s*\(`)
+
+// methodWithRecv matches an added method declaration with a receiver, e.g.
+// "func (v *tokenValidator) Validate(token string) error {", capturing the
+// method name.
+var methodWithRecv = regexp.MustCompile(`^func\s*\([^)]*\)\s*([A-Za-z_]\w*)\s*\(`)
+
+// hasSoloIface implements the SPEC §9 "solo-iface" heuristic: the diff
+// declares a new Go interface, and the same diff adds no method (with a
+// receiver) whose name matches one of the interface's declared methods.
+//
+// This is a PURE DIFF HEURISTIC — it never looks at the rest of the repo
+// (ADR 0001 forbids usecase code from doing I/O), only at the lines this one
+// diff adds. That means it can both over-flag (an implementation that lands
+// in a later, separate unit/diff still reads as "solo") and under-flag (a
+// same-diff type with an unrelated method that happens to share a name is
+// treated as an implementation). See ADR 0011 for the tradeoff.
+func hasSoloIface(diff string) bool {
+	var added []string
+	for _, line := range strings.Split(diff, "\n") {
+		if !strings.HasPrefix(line, "+") || strings.HasPrefix(line, "+++") {
+			continue
+		}
+		added = append(added, strings.TrimSpace(line[1:]))
+	}
+
+	methods := map[string]bool{}
+	found := false
+	for i, line := range added {
+		m := interfaceDecl.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+		found = true
+		for j := i + 1; j < len(added) && added[j] != "}"; j++ {
+			if mm := ifaceMethodSig.FindStringSubmatch(added[j]); mm != nil {
+				methods[mm[1]] = true
+			}
+		}
+	}
+	if !found {
+		return false
+	}
+
+	for _, line := range added {
+		if mm := methodWithRecv.FindStringSubmatch(line); mm != nil && methods[mm[1]] {
+			return false
+		}
+	}
+	return true
 }
 
 // exportedDecl matches a Go declaration of an exported (capitalised) identifier:

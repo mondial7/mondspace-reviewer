@@ -136,6 +136,30 @@ func TestFlagsOrderedAndCleanUnit(t *testing.T) {
 	}
 }
 
+func TestFlagsOrderedWithSoloIfaceLast(t *testing.T) {
+	// solo-iface is deterministic-order's newest member: it comes after
+	// public-api, alongside no-test/todo/new-dep tripped by the same diff.
+	u := domain.Unit{Files: []string{"api.go"}}
+	d := domain.Diff{Text: strings.Join([]string{
+		`+import "github.com/x/y"`,
+		`+// TODO: revisit`,
+		`+type Validator interface {`,
+		`+	Validate(token string) error`,
+		`+}`,
+	}, "\n")}
+
+	got := usecase.Flags(u, d)
+	want := []domain.Flag{domain.FlagNoTest, domain.FlagTodo, domain.FlagNewDep, domain.FlagSoloIface}
+	if len(got) != len(want) {
+		t.Fatalf("flags = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("flags = %v, want %v (order matters)", got, want)
+		}
+	}
+}
+
 func TestFlagPublicAPI(t *testing.T) {
 	changed := []string{
 		"-func Foo() {",
@@ -160,6 +184,49 @@ func TestFlagPublicAPI(t *testing.T) {
 		if hasFlag(usecase.Flags(domain.Unit{}, domain.Diff{Text: line + "\n"}), domain.FlagPublicAPI) {
 			t.Errorf("did not expect public-api for %q", line)
 		}
+	}
+}
+
+func TestFlagSoloIface(t *testing.T) {
+	newIfaceNoImpl := domain.Diff{Text: strings.Join([]string{
+		`+type Validator interface {`,
+		`+	Validate(token string) error`,
+		`+}`,
+	}, "\n")}
+	if !hasFlag(usecase.Flags(domain.Unit{}, newIfaceNoImpl), domain.FlagSoloIface) {
+		t.Error("expected solo-iface for a new interface with no implementing method in the diff")
+	}
+
+	newIfaceWithImpl := domain.Diff{Text: strings.Join([]string{
+		`+type Validator interface {`,
+		`+	Validate(token string) error`,
+		`+}`,
+		`+`,
+		`+func (v *tokenValidator) Validate(token string) error {`,
+		`+	return nil`,
+		`+}`,
+	}, "\n")}
+	if hasFlag(usecase.Flags(domain.Unit{}, newIfaceWithImpl), domain.FlagSoloIface) {
+		t.Error("did not expect solo-iface when the diff also adds a matching method")
+	}
+
+	noIface := domain.Diff{Text: strings.Join([]string{
+		`+func (v *tokenValidator) Validate(token string) error {`,
+		`+	return nil`,
+		`+}`,
+	}, "\n")}
+	if hasFlag(usecase.Flags(domain.Unit{}, noIface), domain.FlagSoloIface) {
+		t.Error("did not expect solo-iface with no new interface in the diff")
+	}
+
+	// A removed interface is not "new" — nothing to flag.
+	removedIface := domain.Diff{Text: strings.Join([]string{
+		`-type Validator interface {`,
+		`-	Validate(token string) error`,
+		`-}`,
+	}, "\n")}
+	if hasFlag(usecase.Flags(domain.Unit{}, removedIface), domain.FlagSoloIface) {
+		t.Error("did not expect solo-iface for a removed interface")
 	}
 }
 

@@ -52,6 +52,11 @@ func ReviewLive(ctx context.Context, src port.EventSource, snap port.Snapshotter
 		for _, id := range u.EventIDs {
 			members = append(members, byID[id])
 		}
+		// Flags is pure over unit+diff and never sees events, so a failed member
+		// event can only be detected here, where events are still in hand.
+		if anyEventFailed(members) {
+			u.Flags = append(u.Flags, domain.FlagFailed)
+		}
 		u.Headline = MechanicalHeadline(members)
 
 		if err := store.AppendUnit(u); err != nil {
@@ -80,4 +85,15 @@ func ReviewLive(ctx context.Context, src port.EventSource, snap port.Snapshotter
 		}
 	}
 	return nil
+}
+
+// anyEventFailed reports whether any member event recorded a failed tool call
+// (Event.Failed, set by `msr ingest` on PostToolUseFailure).
+func anyEventFailed(events []domain.Event) bool {
+	for _, e := range events {
+		if e.Failed {
+			return true
+		}
+	}
+	return false
 }

@@ -46,6 +46,45 @@ func TestReviewLiveAttachesFlagsFromDiff(t *testing.T) {
 	}
 }
 
+func TestReviewLiveFlagsFailedToolCalls(t *testing.T) {
+	failed := ev("e1", domain.KindBash, "api.go")
+	failed.Failed = true
+	events := []domain.Event{
+		failed,
+		ev("e2", domain.KindBatchEnd),
+	}
+	snap := &fakeSnapshotter{}
+	pres := &fakePresenter{}
+
+	if err := usecase.ReviewLive(context.Background(), &fakeSource{events: events}, snap, &fakeStore{}, pres); err != nil {
+		t.Fatalf("ReviewLive: %v", err)
+	}
+
+	if len(pres.units) != 1 {
+		t.Fatalf("got %d units, want 1", len(pres.units))
+	}
+	if !hasFlag(pres.units[0].Flags, domain.FlagFailed) {
+		t.Errorf("unit flags = %v, want failed", pres.units[0].Flags)
+	}
+}
+
+func TestReviewLiveDoesNotFlagFailedWhenNoEventFailed(t *testing.T) {
+	events := []domain.Event{
+		ev("e1", domain.KindBash, "api.go"),
+		ev("e2", domain.KindBatchEnd),
+	}
+	snap := &fakeSnapshotter{}
+	pres := &fakePresenter{}
+
+	if err := usecase.ReviewLive(context.Background(), &fakeSource{events: events}, snap, &fakeStore{}, pres); err != nil {
+		t.Fatalf("ReviewLive: %v", err)
+	}
+
+	if hasFlag(pres.units[0].Flags, domain.FlagFailed) {
+		t.Errorf("unit flags = %v, did not want failed", pres.units[0].Flags)
+	}
+}
+
 func TestReviewLiveBracketsUnitsWithConsecutiveSnapshots(t *testing.T) {
 	events := []domain.Event{
 		ev("e1", domain.KindEdit, "a.go"),

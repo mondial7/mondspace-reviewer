@@ -53,7 +53,11 @@ func ExportMarkdown(r domain.Report) string {
 	if len(r.Unreviewed) > 0 {
 		b.WriteString("## Unreviewed\n\n")
 		for _, it := range r.Unreviewed {
-			fmt.Fprintf(&b, "- %s — %s\n", it.UnitID, it.Headline.Text)
+			fmt.Fprintf(&b, "- %s — %s", it.UnitID, it.Headline.Text)
+			if len(it.Flags) > 0 {
+				fmt.Fprintf(&b, " %s", renderItemFlags(it.Flags))
+			}
+			b.WriteString("\n")
 		}
 		b.WriteString("\n")
 	}
@@ -79,7 +83,20 @@ func writeItem(b *strings.Builder, it domain.ReportItem) {
 	if it.NoteText != "" {
 		fmt.Fprintf(b, ": %s", it.NoteText)
 	}
+	if len(it.Flags) > 0 {
+		fmt.Fprintf(b, " %s", renderItemFlags(it.Flags))
+	}
 	b.WriteString("\n")
+}
+
+// renderItemFlags renders a report item's flags as a bracketed, space-joined
+// list, e.g. "[failed] [large]".
+func renderItemFlags(flags []domain.Flag) string {
+	names := make([]string, len(flags))
+	for i, f := range flags {
+		names[i] = "[" + string(f) + "]"
+	}
+	return strings.Join(names, " ")
 }
 
 // renderWhy keeps the stated/inferred distinction visible in exports too.

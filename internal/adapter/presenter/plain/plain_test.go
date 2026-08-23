@@ -111,6 +111,17 @@ func TestPresentRendersFlags(t *testing.T) {
 	}
 }
 
+func TestPresentRendersFailedFlag(t *testing.T) {
+	var buf bytes.Buffer
+	u := domain.Unit{ID: "u", Flags: []domain.Flag{domain.FlagFailed}}
+	if err := plain.New(&buf).Present(u, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := buf.String(); !strings.Contains(got, "FLAG  failed") {
+		t.Errorf("failed flag not rendered:\n%s", got)
+	}
+}
+
 func TestPresentDistinguishesStatedFromInferred(t *testing.T) {
 	render := func(h domain.Headline) string {
 		var buf bytes.Buffer

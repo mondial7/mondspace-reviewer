@@ -72,6 +72,17 @@ func TestExportMarkdownPreservesWhySource(t *testing.T) {
 	}
 }
 
+func TestExportMarkdownShowsFlags(t *testing.T) {
+	sess := reportSession()
+	sess.Units[1].Flags = []domain.Flag{domain.FlagFailed}
+
+	md := usecase.ExportMarkdown(usecase.BuildReport(sess))
+
+	if !strings.Contains(md, "[failed]") {
+		t.Errorf("markdown should surface the failed flag:\n%s", md)
+	}
+}
+
 func TestExportMarkdownSupersededAndUnreviewed(t *testing.T) {
 	sess := reportSession()
 	sess.Units = append(sess.Units,
