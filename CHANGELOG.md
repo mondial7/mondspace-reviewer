@@ -4,6 +4,82 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.0] — 2026-08-23
+
+One page to review a session, across as many repositories as you like.
+
+### Added
+
+- **The cockpit** (`/`) — the whole review on one screen (ADR 0015, ADR 0016):
+  a fixed panel carrying a model-written title and brief for the session; the
+  story as prose; and the changes with diffs, notes, annotation and re-analysis.
+  Clicking a chapter brings its files alongside it.
+- **An isometric field that means something.** One block per changed file:
+  height is lines changed (log-scaled), colour is growth / deletion / flagged,
+  depth is recency, and it moves only while the session is live. A still field
+  means nothing is happening.
+- **A workspace of repositories.** `--repo` is repeatable; with none given `msr`
+  opens the checkout it is in, or offers the checkouts one level below it. Past
+  five it lists them and asks rather than opening forty. Sessions load on demand
+  and each remembers which repository owns it. Repositories can also be opened
+  while the app runs, from `/status`.
+- **`/status`** — is the reviewer's model online (re-probed every 20s), what it
+  has spent split into prompt / completion / *of which reasoning*, the open
+  repositories, and every session. **`/activity`** — every model call and every
+  change to the review, across the whole workspace.
+- **Schema-enforced model output.** Where the endpoint supports it the story is
+  requested as `json_schema` with the real area names as an `enum`, so an
+  invented area cannot be emitted at all (ADR 0014). Measured on a 32k context:
+  unconstrained the model spent all 299 completion tokens reasoning and returned
+  nothing in 107s; schema-enforced it returned valid JSON in 54 tokens and 2.2s.
+- **Per-file history.** How many times a file was touched and when, opening into
+  a per-file log, and a full-diff overlay that steps through that file's git
+  history with the arrow keys.
+- **Grouped changes.** Files changed together in a directory are shown together,
+  with one model-written sentence about what the change is *for*.
+- **A shared shell**: a spatial backdrop and one nav rail on every page, **zen
+  mode** (`⌘Z`, `Esc` to leave), a **command palette** (`⌘K`) over pages and
+  files, and a **theme switch** (`⌘J`) — dark, light, or follow the system.
+- **Token accounting.** The adapter records what every call cost; a cap
+  (`max_tokens`) is sent on every request, which is LM Studio's own remedy for a
+  model stuck inside an unclosed structure.
+- A **deep-universe palette**, measured rather than eyeballed: every token clears
+  WCAG AA against both the background and the panel.
+
+### Changed
+
+- **`/review` and `/story` are gone**, folded into the cockpit; both permanently
+  redirect, so links and bookmarks still work.
+- **`msr web` needs no `--session`** — it opens the newest review it can find.
+- **Narration runs once per review, not once per launch.** The story is stored
+  with a fingerprint of the review it describes and reused while that matches;
+  re-opening the page costs nothing. A fallback is stored too, so a failure is
+  retried by pressing a button rather than by navigating. While a session is
+  still moving the review refreshes every 15s from one `git diff --numstat`
+  call, and re-narration is bounded to once every five minutes.
+- **Mechanical headlines are no longer shown.** "edited jsonl.go" above a row
+  labelled `jsonl.go` said nothing; a per-file headline now appears only when a
+  model wrote one. Diffs are folded by default and open on the file name.
+- **Zen mode replaces focus mode**, and applies to every page rather than one.
+
+### Fixed
+
+- **A schema-constrained reply arrives in `reasoning_content` with `content`
+  empty** — the grammar constrains sampling inside the chat template's thinking
+  block. Reading only `content` is what made narration fall back silently.
+- **An endpoint that rejects a schema** is retried unconstrained, and if that
+  also fails the error names the rejection rather than only the second failure.
+- **Listeners bound inside the changes column** were lost whenever a live update
+  replaced it, which killed the history overlay, the tree links and the view
+  switch within seconds on an active session. All are delegated now.
+- **`--out` was both the pattern for finding a store and the resolved path**, so
+  opening a repository at runtime silently found nothing.
+- **`/dev/null` counted as a terminal**, so a script redirecting from it was
+  shown a prompt nobody could answer.
+- Postgres remembers a session's story too; it was JSONL-only, so the
+  once-per-review rule silently did not apply to the store the web app is meant
+  for.
+
 ## [2.0.0] — 2026-08-23
 
 The web app becomes the primary interface, and review becomes the *net change* of
@@ -91,5 +167,6 @@ First public release. Watching one agent, one session, one repo.
 - Session identifiers are validated to prevent path traversal outside the store
   root.
 
+[3.0.0]: https://github.com/mondial7/mondspace-reviewer/releases/tag/v3.0.0
 [2.0.0]: https://github.com/mondial7/mondspace-reviewer/releases/tag/v2.0.0
 [1.0.0]: https://github.com/mondial7/mondspace-reviewer/releases/tag/v1.0.0
