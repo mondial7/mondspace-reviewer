@@ -257,6 +257,27 @@ msr web --session=<session-id> --repo=. --pg-schema=mondspace_reviewer
 
 The web app is becoming the primary interface; the TUI remains supported.
 
+## The story view
+
+```sh
+msr web --session=<session-id> --repo=.   # then open /story, or "read as a story →"
+```
+
+`/story` is the session as a **long-form, chaptered read** — a parallax landing
+page rather than a table: a hero, then chapters of related work, each with prose
+explaining what changed and why, and the real files, stats and flags beside it.
+Press **`f`** for focus mode to read the same story plain and dense.
+
+Grouping is deterministic (by area) and always works offline; a model regroups
+and writes the prose when one is reachable. Nothing the model says is taken on
+trust: chapter prose is labelled *inferred*, invented file or area names are
+dropped, and anything it forgets is appended, so the story can neither lose nor
+fabricate a change (ADR 0013). If the model is unavailable the page still reads,
+mechanically, and says so.
+
+The page is served immediately and the story is upgraded in the background, one
+chapter at a time — it never waits on a model.
+
 ## Summarizer configuration
 
 Headlines and interrogation use any OpenAI-compatible chat endpoint, defaulting
