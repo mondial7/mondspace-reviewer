@@ -123,6 +123,7 @@ type Server struct {
 	audit     AuditLog
 	narrate   NarrateFunc
 	narrating bool
+	stats     domain.SessionStats
 
 	// subs are live subscribers (server-sent events). Each gets a buffered
 	// channel so a slow reader can never block a request handler.
@@ -182,6 +183,22 @@ func (s *Server) WithNarrate(fn NarrateFunc) *Server {
 	return s
 }
 
+// WithStats supplies the session's numbers, shown on the cockpit. They are
+// recomputed by the caller as the session moves, not cached here.
+func (s *Server) WithStats(st domain.SessionStats) *Server {
+	s.stats = st
+	return s
+}
+
+// SetStats replaces the session's numbers while the server is running, so the
+// cockpit keeps up with a session that is still being worked on.
+func (s *Server) SetStats(st domain.SessionStats) {
+	s.mu.Lock()
+	s.stats = st
+	s.mu.Unlock()
+	s.broadcast("stats")
+}
+
 // WithNarrative supplies the session's story, shown at /story.
 func (s *Server) WithNarrative(n domain.Narrative) *Server {
 	s.narrative = n
@@ -217,6 +234,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /ask", s.handleAsk)
 	s.mux.HandleFunc("POST /units/{id}/reanalyse", s.handleReanalyse)
 	s.mux.HandleFunc("GET /story", s.handleStory)
+	s.mux.HandleFunc("GET /cockpit", s.handleCockpit)
 	s.mux.HandleFunc("GET /activity", s.handleActivity)
 	s.mux.HandleFunc("POST /story/narrate", s.handleNarrate)
 	s.mux.HandleFunc("GET /events", s.handleEvents)
@@ -548,6 +566,86 @@ func (s *Server) NarrateNow(ctx context.Context) bool {
 	}()
 	s.broadcast("narrative") // tell open pages it has started
 	return true
+}
+
+// cockpitStats is the session's numbers rendered for display: durations and
+// counts as strings, so the template holds no formatting logic.
+type cockpitStats struct {
+	Open         string
+	Live         bool
+	Files        int
+	Added        int
+	Removed      int
+	Commits      int
+	PullRequests int
+}
+
+// feedItem is one change in the cockpit stream: a sentence and its diff, with
+// the diff compacted when it would otherwise swamp everything else.
+type feedItem struct {
+	unitView
+	Compacted bool
+}
+
+// handleCockpit renders the session at a glance: whether it is still moving, a
+// stream of what changed, and the numbers behind it. It is the one page meant
+// to be left open on a second screen while an agent works.
+func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
+	s.mu.RLock()
+	views := s.views()
+	stats := s.stats
+	sess := s.sess
+	s.mu.RUnlock()
+
+	// Newest first: a cockpit answers "what just happened".
+	items := make([]feedItem, 0, len(views))
+	for i := len(views) - 1; i >= 0; i-- {
+		v := views[i]
+		full := sess.Diffs[v.ID]
+		compact, wasCompacted := usecase.CompactDiff(full, cockpitDiffLines)
+		if wasCompacted {
+			v.Diff = splitDiff(compact.Text)
+		}
+		items = append(items, feedItem{unitView: v, Compacted: wasCompacted})
+	}
+
+	data := struct {
+		Session Session
+		Stats   cockpitStats
+		Feed    []feedItem
+	}{
+		Session: sess,
+		Stats: cockpitStats{
+			Open:  humanDuration(stats.Open),
+			Live:  stats.Live,
+			Files: stats.Files, Added: stats.Added, Removed: stats.Removed,
+			Commits: stats.Commits, PullRequests: stats.PullRequests,
+		},
+		Feed: items,
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := s.tmpl.ExecuteTemplate(w, "cockpit.html", data); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+// cockpitDiffLines is how much of one diff the feed shows before compacting. It
+// is small on purpose: the cockpit is for noticing a change, and the review page
+// is one click away for reading it properly.
+const cockpitDiffLines = 14
+
+// humanDuration renders a span the way someone reads a clock, not a stopwatch.
+func humanDuration(d time.Duration) string {
+	if d <= 0 {
+		return "just started"
+	}
+	h := int(d.Hours())
+	m := int(d.Minutes()) % 60
+	if h == 0 {
+		return fmt.Sprintf("%dm", m)
+	}
+	return fmt.Sprintf("%dh %dm", h, m)
 }
 
 // activityView is one audit entry prepared for display.

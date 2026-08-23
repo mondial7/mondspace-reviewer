@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cockpit — {{ .Session.ID }}</title>
+  <link rel="stylesheet" href="/assets/app.css">
+  <script type="module" src="/assets/cockpit.js" defer></script>
+  <script type="module" src="/assets/live.js" defer></script>
+</head>
+<body class="page page--cockpit" data-live="{{ .Stats.Live }}">
+
+  <nav class="storynav">
+    <a class="storynav__link" href="/">review</a>
+    <a class="storynav__link" href="/story">story</a>
+    <a class="storynav__link" href="/activity">activity</a>
+    <a class="storynav__link" href="/sessions">all sessions</a>
+    <button class="masthead__focus" id="focus-toggle" type="button"
+            aria-pressed="false" title="Toggle focus mode (f)">focus mode <kbd>f</kbd></button>
+  </nav>
+
+  <!-- Three panes on one desktop screen: nothing here scrolls but the feed. -->
+  <main class="cockpit">
+
+    <!-- Left: is anything still happening? -->
+    <section class="cockpit__pulse">
+      <canvas class="cockpit__scene" id="cockpit-scene" aria-hidden="true"></canvas>
+      <p class="cockpit__status cockpit__status--{{ if .Stats.Live }}live{{ else }}idle{{ end }}">
+        {{ if .Stats.Live }}<span class="cockpit__dot"></span>working — more is coming
+        {{ else }}<span class="cockpit__dot"></span>idle — nothing for a while{{ end }}
+      </p>
+      <p class="cockpit__task">{{ .Session.Prompt }}</p>
+    </section>
+
+    <!-- Right: the session in numbers. Every one of these comes from git or
+         the event log, never from a model. -->
+    <section class="cockpit__stats">
+      <div class="stat">
+        <span class="stat__value">{{ .Stats.Open }}</span>
+        <span class="stat__label">open</span>
+      </div>
+      <div class="stat">
+        <span class="stat__value">{{ .Stats.Files }}</span>
+        <span class="stat__label">{{ if eq .Stats.Files 1 }}file{{ else }}files{{ end }}</span>
+      </div>
+      <div class="stat">
+        <span class="stat__value stat__value--lines">
+          <span class="unit__stat--add">+{{ .Stats.Added }}</span>
+          <span class="unit__stat--del">-{{ .Stats.Removed }}</span>
+        </span>
+        <span class="stat__label">lines</span>
+      </div>
+      <div class="stat">
+        <span class="stat__value">{{ .Stats.Commits }}</span>
+        <span class="stat__label">{{ if eq .Stats.Commits 1 }}commit{{ else }}commits{{ end }}</span>
+      </div>
+      <div class="stat">
+        <span class="stat__value">{{ .Stats.PullRequests }}</span>
+        <span class="stat__label" title="Counted from commit subjects — msr talks to no forge">PRs</span>
+      </div>
+    </section>
+
+    <!-- Bottom: what changed, newest first. The only scrolling region. -->
+    <section class="cockpit__feed">
+      <h2 class="cockpit__feedtitle">what changed</h2>
+      {{ range .Feed }}
+      <article class="post">
+        <header class="post__head">
+          <a class="post__file" href="/#unit-{{ .ID }}">{{ .File }}</a>
+          <span class="post__stats">
+            <span class="unit__stat unit__stat--add">+{{ .Added }}</span>
+            <span class="unit__stat unit__stat--del">-{{ .Removed }}</span>
+          </span>
+          {{ range .Flags }}<span class="flag">{{ . }}</span>{{ end }}
+        </header>
+        <p class="post__line">{{ .Headline }}</p>
+        {{ if .Diff }}
+        <pre class="post__diff{{ if .Compacted }} post__diff--compact{{ end }}">{{ range .Diff }}<span class="diff diff--{{ .Kind }}">{{ .Text }}</span>
+{{ end }}</pre>
+        {{ end }}
+      </article>
+      {{ else }}
+      <p class="queue__empty">Nothing has changed yet.</p>
+      {{ end }}
+    </section>
+  </main>
+</body>
+</html>

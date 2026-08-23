@@ -97,7 +97,13 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 		}
 	}
 
+	// The cockpit's numbers are git facts, gathered once now and refreshed while
+	// the page is open. A repository that cannot list commits still gets every
+	// other stat rather than an empty panel.
+	commits, _ := snap.CommitsSince(ctx, firstEventTime(sess))
+
 	handler := web.NewServer(view, store).
+		WithStats(usecase.ComputeStats(sess, units, diffs, commits, time.Now())).
 		WithNarrative(shown).
 		WithWorkspace(discoverSessions(*out, *repo)).
 		WithAsk(webAskFunc(sess, snap, sum)).
@@ -150,6 +156,12 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 		// and a retry click can never overlap.
 		handler.NarrateNow(context.Background())
 	}
+
+	// A cockpit left open on a second screen must not go stale: the session it is
+	// watching may still be running, so the numbers are recomputed on a tick and
+	// pushed to open pages. Reading git every 15s is cheap; a model is never
+	// involved.
+	go refreshStats(ctx, handler, snap, store, *session, units, diffs)
 
 	ln, err := net.Listen("tcp", *addr)
 	if err != nil {
@@ -360,3 +372,25 @@ var (
 	_ narrativeCache = (*jsonl.Store)(nil)
 	_ narrativeCache = (*pgstore.Store)(nil)
 )
+
+// refreshStats keeps the cockpit's numbers current while a session is still
+// being worked on. It reads git and the event log only — never a model — so it
+// is cheap enough to run on a timer, and it stops with the server.
+func refreshStats(ctx context.Context, handler *web.Server, snap *gitsnap.Snapshotter, store port.Store, sessionID string, units []domain.Unit, diffs map[string]domain.Diff) {
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			sess, err := store.Load(sessionID)
+			if err != nil {
+				continue // a transient read must not kill the ticker
+			}
+			commits, _ := snap.CommitsSince(ctx, firstEventTime(sess))
+			handler.SetStats(usecase.ComputeStats(sess, units, diffs, commits, time.Now()))
+		}
+	}
+}

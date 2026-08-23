@@ -600,3 +600,69 @@ func TestSSEStopsWhenTheClientGoesAway(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 }
+
+func TestCockpitShowsStatsFeedAndLiveness(t *testing.T) {
+	h := web.NewServer(testSession(), nil).WithStats(domain.SessionStats{
+		Open: 90 * time.Minute, Live: true,
+		Files: 2, Added: 12, Removed: 4, Commits: 3, PullRequests: 1,
+	})
+
+	rec := get(t, h, "/cockpit")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /cockpit = %d, want 200", rec.Code)
+	}
+	body := rec.Body.String()
+
+	// The four numbers the reviewer asked for, all from git or the event log.
+	for _, want := range []string{"1h 30m", "3", "1", "+12", "-4"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("cockpit is missing the stat %q", want)
+		}
+	}
+	// The feed: one line per change, with its diff.
+	if !strings.Contains(body, "auth/token.go") || !strings.Contains(body, "edited token.go") {
+		t.Errorf("cockpit feed should list the changes:\n%s", body)
+	}
+	// Liveness is exposed to the page so the animation can react to it.
+	if !strings.Contains(body, `data-live="true"`) {
+		t.Errorf("a live session should say so in the DOM:\n%s", body)
+	}
+}
+
+func TestCockpitGoesCalmWhenTheSessionIsFinished(t *testing.T) {
+	h := web.NewServer(testSession(), nil).WithStats(domain.SessionStats{Live: false, Files: 2})
+
+	if !strings.Contains(get(t, h, "/cockpit").Body.String(), `data-live="false"`) {
+		t.Error("an idle session should report itself as not live")
+	}
+}
+
+func TestCockpitCompactsAnEnormousDiff(t *testing.T) {
+	// One 2,000-line diff must not push every other change off the screen.
+	var huge strings.Builder
+	huge.WriteString("@@ -1,900 +1,900 @@\n")
+	for i := 0; i < 900; i++ {
+		huge.WriteString("+generated\n")
+	}
+	sess := testSession()
+	sess.Diffs["s-f001"] = domain.Diff{Text: huge.String()}
+
+	body := get(t, web.NewServer(sess, nil), "/cockpit").Body.String()
+
+	if strings.Count(body, "generated") > 40 {
+		t.Errorf("the feed should compact a huge diff, found %d lines of it", strings.Count(body, "generated"))
+	}
+	// And say that it did, rather than truncating in silence.
+	if !strings.Contains(body, "more line") {
+		t.Errorf("a compacted diff must say how much it left out:\n%s", body)
+	}
+}
+
+func TestCockpitFeedIsNewestFirst(t *testing.T) {
+	// A cockpit answers "what just happened", so the newest change leads.
+	body := get(t, web.NewServer(testSession(), nil), "/cockpit").Body.String()
+
+	if strings.Index(body, "http/middleware.go") > strings.Index(body, "auth/token.go") {
+		t.Error("the feed should lead with the most recent change")
+	}
+}
