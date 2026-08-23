@@ -1,24 +1,33 @@
 /* mondspace-reviewer — hand-written, BEM. No framework. */
 
 :root {
-  --bg: #1e1e2e;
-  --bg-raised: #262637;
-  --fg: #cdd6f4;
-  --fg-dim: #8b90a8;
-  --rule: #35354a;
-  --add: #a6e3a1;
-  --del: #f38ba8;
-  --hunk: #89dceb;
-  --accent: #cba6f7;
-  --stated: #a6e3a1;
-  --inferred: #f9e2af;
-  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  /* Deep universe: a near-black hull with a faint blue cast, so instrument
+     colours read as lit rather than printed. The three surfaces are only a few
+     points apart — on a background this dark, a small step is plenty of
+     separation, and a large one looks like grey boxes floating in space. */
+  --bg: #05070e;
+  --bg-raised: #0c0f1b;
+  --panel: #090c16;
+  --hull: #03040a;
+  /* Bright enough that a panel edge reads on near-black — at #1b2136 the
+     borders measured 1.22:1 against the panel and simply vanished. */
+  --rule: #2b3455;
 
-  /* Cockpit chrome: instrument panels sit slightly above the hull, lit from
-     within. --panel is used everywhere a readout lives. */
-  --panel: #22222f;
-  --panel-glow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
-  --hull: #16161f;
+  /* Starlight, not white: pure white on near-black glares. */
+  --fg: #ccd4ec;
+  --fg-dim: #737e9e;
+
+  /* Signal colours are pushed brighter and slightly desaturated so they hold up
+     against a near-black ground without vibrating on it. */
+  --add: #4fdc95;
+  --del: #ff6b83;
+  --hunk: #5cc2ff;
+  --accent: #a78bfa;
+  --stated: #4fdc95;
+  --inferred: #ffcc70;
+
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  --panel-glow: inset 0 1px 0 rgba(167, 139, 250, 0.06);
   --gutter: clamp(0.75rem, 1.6vw, 1.25rem);
 }
 
@@ -163,9 +172,11 @@
 .page {
   position: relative; z-index: 1;
   min-height: 100vh;
+  /* Two very faint nebulae, far dimmer than before: at this depth they should
+     be a suggestion of colour, not a gradient you can name. */
   background:
-    radial-gradient(1200px 800px at 70% -10%, #2a2145 0%, transparent 60%),
-    radial-gradient(900px 700px at 10% 110%, #16304a 0%, transparent 55%),
+    radial-gradient(1300px 900px at 72% -12%, #150f2e 0%, transparent 62%),
+    radial-gradient(1000px 800px at 8% 112%, #06182b 0%, transparent 58%),
     var(--bg);
 }
 
@@ -313,7 +324,7 @@
   width: min(560px, 92vw);
   background: var(--panel);
   border: 1px solid var(--accent); border-radius: 10px;
-  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.72);
   overflow: hidden;
 }
 .palette__input {
@@ -831,7 +842,7 @@
 .overlay__sheet {
   width: min(1100px, 94vw); height: min(88vh, 900px);
   background: var(--panel); border: 1px solid var(--accent); border-radius: 10px;
-  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.78);
   display: flex; flex-direction: column; overflow: hidden;
 }
 .overlay__bar {
