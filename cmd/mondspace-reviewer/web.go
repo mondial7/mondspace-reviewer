@@ -51,6 +51,15 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 		*session = workspace[0].ID
 	}
 
+	// The session being served decides which repository and store to read. With
+	// several repositories in the workspace, --repo is only the starting point:
+	// using it for a session that lives elsewhere reads the wrong git tree and
+	// finds no changes at all.
+	if entry, known := workspaceIndex[*session]; known {
+		*repo = entry.repo
+		*out = entry.out
+	}
+
 	// Postgres is opt-in via MSR_POSTGRES_DSN; otherwise the JSONL store is used.
 	store, closeStore, err := openStore(ctx, *out, *schema)
 	if err != nil {
@@ -289,6 +298,12 @@ func discoverSessions(out, repo string) []web.SessionSummary {
 		}
 		s, err := store.Load(e.Name())
 		if err != nil {
+			continue
+		}
+		// A directory with no events is not a session. Side files — an audit log,
+		// a stored narrative — can create one, and an empty impostor that sorts
+		// first will shadow the real session of that name in another repository.
+		if len(s.Events) == 0 {
 			continue
 		}
 		summary := web.SessionSummary{

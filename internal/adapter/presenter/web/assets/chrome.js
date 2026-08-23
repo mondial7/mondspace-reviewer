@@ -53,6 +53,38 @@ for (const b of document.querySelectorAll('[data-zen-toggle]')) {
   b.addEventListener('click', () => setZen(!zen));
 }
 
+// ── Theme ───────────────────────────────────────────────────────────────────
+//
+// Three states, not two: dark, light, and following the operating system. A
+// two-state toggle silently overrides the OS forever after one click, which is
+// the wrong default for someone who switches at sunset.
+
+const THEME_KEY = 'msr:theme';
+const THEMES = ['system', 'dark', 'light'];
+
+let theme = THEMES.includes(stored(THEME_KEY)) ? stored(THEME_KEY) : 'system';
+
+function applyTheme() {
+  const root = document.documentElement;
+  if (theme === 'system') root.removeAttribute('data-theme');
+  else root.setAttribute('data-theme', theme);
+  for (const b of document.querySelectorAll('[data-theme-toggle]')) {
+    b.textContent = theme === 'system' ? 'auto' : theme;
+    b.title = `Theme: ${theme} — click to change (\u2318J)`;
+  }
+}
+
+function cycleTheme() {
+  theme = THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length];
+  remember(THEME_KEY, theme);
+  applyTheme();
+}
+
+applyTheme();
+for (const b of document.querySelectorAll('[data-theme-toggle]')) {
+  b.addEventListener('click', cycleTheme);
+}
+
 // ── Command palette ─────────────────────────────────────────────────────────
 //
 // Zen hides the nav rail, so navigation cannot depend on it. The palette is the
@@ -64,6 +96,8 @@ const DESTINATIONS = [
   { label: 'Activity', hint: 'every model call, with what it cost', href: '/activity' },
   { label: 'Status', hint: 'is the reviewer model online', href: '/status' },
   { label: 'Sessions', hint: 'every review, across repositories', href: '/sessions' },
+  { label: 'Toggle theme', hint: 'dark · light · follow the system', action: cycleTheme },
+  { label: 'Toggle zen', hint: 'hide the shell and work', action: () => setZen(!zen) },
 ];
 
 let palette = null;
@@ -135,6 +169,10 @@ function moveCursor(delta) {
 
 function go(target) {
   closePalette();
+  if (target.action) {
+    target.action();
+    return;
+  }
   if (target.href) {
     window.location.href = target.href;
     return;
@@ -177,6 +215,12 @@ document.addEventListener('keydown', (e) => {
   if (mod && e.key.toLowerCase() === 'k') {
     e.preventDefault();
     paletteOpen() ? closePalette() : openPalette();
+    return;
+  }
+  if (mod && e.key.toLowerCase() === 'j') {
+    if (isTyping(e.target)) return;
+    e.preventDefault();
+    cycleTheme();
     return;
   }
   if (mod && e.key.toLowerCase() === 'z') {
