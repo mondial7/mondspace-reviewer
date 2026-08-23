@@ -8,12 +8,77 @@ import (
 	"strings"
 
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
+	"github.com/mondial7/mondspace-reviewer/internal/port"
 )
 
 // Narrator answers a prompt. Declared where it is consumed so the usecase layer
 // depends on no adapter (ADR 0001); any Summarizer satisfies it.
 type Narrator interface {
 	Answer(ctx context.Context, question string, c domain.AskContext) (string, error)
+}
+
+// ask puts a question to the narrator, constraining the reply to schema when the
+// narrator can enforce one. An endpoint that compiles the schema into a grammar
+// returns valid JSON by construction; one that cannot returns prose, which the
+// callers still parse defensively.
+//
+// The AskContext is empty on purpose: the prompt already carries everything, and
+// the summarizer would otherwise append the whole session a second time.
+func ask(ctx context.Context, n Narrator, question string, schema port.JSONSchema) (string, error) {
+	if sa, ok := n.(port.SchemaAnswerer); ok {
+		return sa.AnswerSchema(ctx, question, domain.AskContext{}, schema)
+	}
+	return n.Answer(ctx, question, domain.AskContext{})
+}
+
+// narrativeSchema describes the whole-session reply. Area names are an enum of
+// the real areas, so a model that cannot name a fictional one cannot invent one —
+// the check in reconcileChapters becomes a backstop rather than the only defence.
+func narrativeSchema(groups []domain.Chapter) port.JSONSchema {
+	names := make([]string, 0, len(groups))
+	for _, g := range groups {
+		names = append(names, g.Title)
+	}
+	return port.JSONSchema{
+		Name: "session_narrative",
+		Schema: object(map[string]any{
+			"title": map[string]any{"type": "string"},
+			"intro": map[string]any{"type": "string"},
+			"chapters": map[string]any{
+				"type": "array",
+				"items": object(map[string]any{
+					"title": map[string]any{"type": "string"},
+					"prose": map[string]any{"type": "string"},
+					"groups": map[string]any{
+						"type":  "array",
+						"items": map[string]any{"type": "string", "enum": names},
+					},
+				}, "title", "prose", "groups"),
+			},
+		}, "title", "intro", "chapters"),
+	}
+}
+
+// chapterSchema describes a single narrated area.
+func chapterSchema() port.JSONSchema {
+	return port.JSONSchema{
+		Name: "chapter",
+		Schema: object(map[string]any{
+			"title": map[string]any{"type": "string"},
+			"prose": map[string]any{"type": "string"},
+		}, "title", "prose"),
+	}
+}
+
+// object builds a closed JSON Schema object. Strict structured output requires
+// additionalProperties:false and every property listed as required.
+func object(props map[string]any, required ...string) map[string]any {
+	return map[string]any{
+		"type":                 "object",
+		"properties":           props,
+		"required":             required,
+		"additionalProperties": false,
+	}
 }
 
 // GroupByPath clusters units by their top-level path segment. It is the
@@ -101,11 +166,9 @@ func NarrateProgressively(ctx context.Context, n Narrator, sess domain.Session, 
 	// when the model has room for it. A small local context usually cannot manage
 	// it — the reply comes back truncated or empty — so rather than retry the
 	// same shape, fall through to narrating one area at a time.
-	//
-	// The AskContext is empty on purpose: the prompt already carries everything,
-	// and the summarizer would otherwise append the whole session a second time.
 	var parsed modelNarrative
-	reply, err := n.Answer(ctx, narrativePrompt(sess, units, groups, promptExamplesPerGroup), domain.AskContext{})
+	shown := boundedGroups(groups)
+	reply, err := ask(ctx, n, narrativePrompt(sess, units, shown, promptExamplesPerGroup), narrativeSchema(shown))
 	lastErr := err
 	if err == nil {
 		if m, ok := parseNarrative(reply); ok {
@@ -175,7 +238,7 @@ func narrateEachChapter(ctx context.Context, n Narrator, sess domain.Session, un
 	narrated := 0
 	for _, g := range groups {
 		c := g
-		if reply, err := n.Answer(ctx, chapterPrompt(sess, g, byID), domain.AskContext{}); err == nil {
+		if reply, err := ask(ctx, n, chapterPrompt(sess, g, byID), chapterSchema()); err == nil {
 			if m, ok := parseChapter(reply); ok {
 				c.Title = firstNonEmpty(m.Title, g.Title)
 				c.Prose = firstNonEmpty(m.Prose, g.Prose)
@@ -357,9 +420,6 @@ func narrativePrompt(sess domain.Session, units []domain.Unit, groups []domain.C
 	}
 	b.WriteString(fmt.Sprintf("\n%d files changed, in these areas:\n", len(units)))
 
-	if len(groups) > promptMaxGroups {
-		groups = groups[:promptMaxGroups]
-	}
 	byID := map[string]domain.Unit{}
 	for _, u := range units {
 		byID[u.ID] = u
@@ -385,6 +445,15 @@ each. Use only the area names in brackets; do not invent names; cover every area
 Answer with JSON only, no explanation:
 {"title":"..","intro":"..","chapters":[{"title":"..","prose":"..","groups":["area"]}]}`)
 	return b.String()
+}
+
+// boundedGroups caps how many areas a prompt and its schema describe, so both
+// stay small whether the session touched five files or five hundred.
+func boundedGroups(groups []domain.Chapter) []domain.Chapter {
+	if len(groups) > promptMaxGroups {
+		return groups[:promptMaxGroups]
+	}
+	return groups
 }
 
 // A local model spends most of its budget "thinking": in measurement, a small

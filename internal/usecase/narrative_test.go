@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
+	"github.com/mondial7/mondspace-reviewer/internal/port"
 	"github.com/mondial7/mondspace-reviewer/internal/usecase"
 )
 
@@ -272,6 +273,107 @@ func TestNarrateRejectsAStoryThatMatchedNothing(t *testing.T) {
 	}
 	if got.Chapters[0].Prose != "Real prose." {
 		t.Errorf("expected the per-chapter narration to take over, got %+v", got.Chapters[0])
+	}
+}
+
+// schemaNarrator implements the optional port.SchemaAnswerer capability and
+// records the schema it was handed.
+type schemaNarrator struct {
+	narrator
+	schemas []port.JSONSchema
+}
+
+func (n *schemaNarrator) AnswerSchema(ctx context.Context, question string, c domain.AskContext, s port.JSONSchema) (string, error) {
+	n.schemas = append(n.schemas, s)
+	return n.Answer(ctx, question, c)
+}
+
+func TestNarrateConstrainsTheReplyWhenTheNarratorCan(t *testing.T) {
+	n := &schemaNarrator{narrator: narrator{
+		reply: `{"title":"T","intro":"I","chapters":[{"title":"Auth","prose":"p","groups":["auth"]}]}`,
+	}}
+
+	got, err := usecase.Narrate(context.Background(), n, domain.Session{ID: "s"}, narrativeUnits())
+	if err != nil {
+		t.Fatalf("Narrate: %v", err)
+	}
+	if got.Source != domain.NarrativeModel {
+		t.Fatalf("Source = %q, want model", got.Source)
+	}
+
+	if len(n.schemas) != 1 {
+		t.Fatalf("asked with %d schemas, want the whole-session call to be constrained", len(n.schemas))
+	}
+	props, ok := n.schemas[0].Schema["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("schema has no properties: %v", n.schemas[0].Schema)
+	}
+	for _, field := range []string{"title", "intro", "chapters"} {
+		if _, present := props[field]; !present {
+			t.Errorf("schema is missing the %q field: %v", field, props)
+		}
+	}
+}
+
+func TestNarrativeSchemaAllowsOnlyRealAreaNames(t *testing.T) {
+	// The schema is compiled into a grammar server-side, so restricting the area
+	// names to an enum makes a hallucinated area impossible to emit rather than
+	// merely something to detect afterwards.
+	n := &schemaNarrator{narrator: narrator{
+		reply: `{"title":"T","intro":"I","chapters":[{"title":"Auth","prose":"p","groups":["auth"]}]}`,
+	}}
+
+	if _, err := usecase.Narrate(context.Background(), n, domain.Session{ID: "s"}, narrativeUnits()); err != nil {
+		t.Fatalf("Narrate: %v", err)
+	}
+
+	got := groupEnum(t, n.schemas[0].Schema)
+	want := map[string]bool{"auth": true, "http": true, "root": true}
+	if len(got) != len(want) {
+		t.Fatalf("groups enum = %v, want the three real areas", got)
+	}
+	for _, name := range got {
+		if !want[name] {
+			t.Errorf("groups enum offers %q, which is not a real area", name)
+		}
+	}
+}
+
+// groupEnum digs the enum of allowed area names out of the narrative schema.
+func groupEnum(t *testing.T, schema map[string]any) []string {
+	t.Helper()
+	dive := func(m map[string]any, key string) map[string]any {
+		next, ok := m[key].(map[string]any)
+		if !ok {
+			t.Fatalf("schema has no %q: %v", key, m)
+		}
+		return next
+	}
+	chapters := dive(dive(schema, "properties"), "chapters")
+	groups := dive(dive(dive(chapters, "items"), "properties"), "groups")
+	values, ok := dive(groups, "items")["enum"].([]string)
+	if !ok {
+		t.Fatalf("groups items carry no string enum: %v", groups)
+	}
+	return values
+}
+
+func TestPerChapterNarrationIsAlsoConstrained(t *testing.T) {
+	// The per-chapter fallback is exactly where structure matters most: it runs
+	// because the model is short of room, which is when it rambles.
+	n := &schemaNarrator{narrator: narrator{reply: `not json at all`}}
+
+	_, _ = usecase.Narrate(context.Background(), n, domain.Session{ID: "s"}, narrativeUnits())
+
+	if len(n.schemas) != 4 {
+		t.Fatalf("asked with %d schemas, want 1 whole-session + 3 per-chapter", len(n.schemas))
+	}
+	props, _ := n.schemas[1].Schema["properties"].(map[string]any)
+	if _, present := props["prose"]; !present {
+		t.Errorf("per-chapter schema should require prose: %v", n.schemas[1].Schema)
+	}
+	if _, present := props["chapters"]; present {
+		t.Errorf("per-chapter schema should describe one chapter, not many: %v", props)
 	}
 }
 
