@@ -16,6 +16,7 @@ import (
 	gitsnap "github.com/mondial7/mondspace-reviewer/internal/adapter/snapshot/git"
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/store/jsonl"
 	pgstore "github.com/mondial7/mondspace-reviewer/internal/adapter/store/postgres"
+	"github.com/mondial7/mondspace-reviewer/internal/domain"
 	"github.com/mondial7/mondspace-reviewer/internal/port"
 	"github.com/mondial7/mondspace-reviewer/internal/usecase"
 )
@@ -54,7 +55,7 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 		return err
 	}
 	storeRel := storeRelativeTo(*repo, *out)
-	units, diffs, err := usecase.BuildFileUnits(ctx, snap, *session, baseline, func(f string) bool {
+	units, diffs, err := usecase.BuildFileUnits(ctx, snap, *session, baseline, domain.SnapshotRef{}, func(f string) bool {
 		return f == storeRel || strings.HasPrefix(f, storeRel+"/")
 	})
 	if err != nil {

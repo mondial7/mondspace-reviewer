@@ -15,7 +15,7 @@ type fakeDiffer struct {
 	diffs map[string]string
 }
 
-func (f fakeDiffer) ChangedFiles(context.Context, domain.SnapshotRef) ([]string, error) {
+func (f fakeDiffer) ChangedFiles(context.Context, domain.SnapshotRef, domain.SnapshotRef) ([]string, error) {
 	return f.files, nil
 }
 
@@ -33,7 +33,7 @@ func TestBuildFileUnits(t *testing.T) {
 	}
 	baseline := domain.SnapshotRef{Commit: "base"}
 
-	units, diffs, err := usecase.BuildFileUnits(context.Background(), d, "s", baseline,
+	units, diffs, err := usecase.BuildFileUnits(context.Background(), d, "s", baseline, domain.SnapshotRef{},
 		func(f string) bool { return strings.HasPrefix(f, ".mondspace-reviewer/") })
 	if err != nil {
 		t.Fatalf("BuildFileUnits: %v", err)

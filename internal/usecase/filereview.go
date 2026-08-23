@@ -11,21 +11,22 @@ import (
 // declared here, where it is consumed, so the usecase layer depends on no
 // adapter (ADR 0001).
 type RangeDiffer interface {
-	ChangedFiles(ctx context.Context, from domain.SnapshotRef) ([]string, error)
+	ChangedFiles(ctx context.Context, from, to domain.SnapshotRef) ([]string, error)
 	Diff(ctx context.Context, from, to domain.SnapshotRef, paths []string) (domain.Diff, error)
 }
 
 // BuildFileUnits turns a session's net change into one reviewable unit per
-// changed file — the retroactive review model of ADR 0002. Files for which
-// exclude reports true are skipped. It returns the units and their diffs.
+// changed file — the retroactive review model of ADR 0002. An empty `until`
+// diffs against the working tree. Files for which exclude reports true are
+// skipped. It returns the units and their diffs.
 func BuildFileUnits(
 	ctx context.Context,
 	differ RangeDiffer,
 	sessionID string,
-	baseline domain.SnapshotRef,
+	baseline, until domain.SnapshotRef,
 	exclude func(string) bool,
 ) ([]domain.Unit, map[string]domain.Diff, error) {
-	files, err := differ.ChangedFiles(ctx, baseline)
+	files, err := differ.ChangedFiles(ctx, baseline, until)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -36,7 +37,7 @@ func BuildFileUnits(
 		if exclude != nil && exclude(f) {
 			continue
 		}
-		d, err := differ.Diff(ctx, baseline, domain.SnapshotRef{}, []string{f})
+		d, err := differ.Diff(ctx, baseline, until, []string{f})
 		if err != nil {
 			d = domain.Diff{}
 		}

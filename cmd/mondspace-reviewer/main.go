@@ -22,6 +22,7 @@ import (
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/presenter/tui"
 	gitsnap "github.com/mondial7/mondspace-reviewer/internal/adapter/snapshot/git"
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/source/hooks"
+	"github.com/mondial7/mondspace-reviewer/internal/adapter/source/opencode"
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/source/replay"
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/store/jsonl"
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/summarizer/null"
@@ -64,8 +65,8 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout io.Writer) 
 
 func runReview(ctx context.Context, args []string, stdout io.Writer) error {
 	fs := flag.NewFlagSet("review", flag.ContinueOnError)
-	source := fs.String("source", "replay", "event source (replay|hooks)")
-	file := fs.String("file", "", "recorded log to replay; for hooks, the events.jsonl to tail")
+	source := fs.String("source", "replay", "event source (replay|hooks|opencode)")
+	file := fs.String("file", "", "recorded log to replay; for hooks/opencode, the events log to tail")
 	usePlain := fs.Bool("plain", false, "use the plain presenter")
 	useTUI := fs.Bool("tui", false, "review a stored session in the interactive TUI")
 	verbose := fs.Bool("verbose", false, "list each unit's member events and snapshot refs")
@@ -91,12 +92,16 @@ func runReview(ctx context.Context, args []string, stdout io.Writer) error {
 		}
 		snap := gitsnap.New(*repo, *session)
 		sum := chooseSummarizer(*summarizerURL, *model)
-		if *source == "hooks" {
+		if *source == "hooks" || *source == "opencode" {
 			events := *file
 			if events == "" {
 				events = filepath.Join(*out, *session, "events.jsonl")
 			}
-			return runLiveTUI(ctx, jsonl.New(*out), snap, sum, *session, *repo, *out, events, stdout)
+			src, err := liveSource(*source, events)
+			if err != nil {
+				return err
+			}
+			return runLiveTUI(ctx, jsonl.New(*out), snap, sum, *session, *repo, *out, src, stdout)
 		}
 		return runFileReview(ctx, jsonl.New(*out), snap, sum, *session, *repo, *out, stdout)
 	}
@@ -116,18 +121,35 @@ func runReview(ctx context.Context, args []string, stdout io.Writer) error {
 			return fmt.Errorf("--file is required for the replay source")
 		}
 		return usecase.Review(ctx, replay.New(*file), store, pres)
-	case "hooks":
+	case "hooks", "opencode":
 		if *session == "" {
-			return fmt.Errorf("--session is required for the hooks source")
+			return fmt.Errorf("--session is required for the %s source", *source)
 		}
 		events := *file
 		if events == "" {
 			events = filepath.Join(*out, *session, "events.jsonl")
 		}
+		src, err := liveSource(*source, events)
+		if err != nil {
+			return err
+		}
 		snap := gitsnap.New(*repo, *session)
-		return usecase.ReviewLive(ctx, hooks.New(events), snap, store, pres)
+		return usecase.ReviewLive(ctx, src, snap, store, pres)
 	default:
-		return fmt.Errorf("unknown source %q (M1 supports replay|hooks)", *source)
+		return fmt.Errorf("unknown source %q (msr supports replay|hooks|opencode)", *source)
+	}
+}
+
+// liveSource builds the EventSource for a live (non-replay) source name,
+// tailing the same events log format regardless of which agent produced it.
+func liveSource(name, eventsPath string) (port.EventSource, error) {
+	switch name {
+	case "hooks":
+		return hooks.New(eventsPath), nil
+	case "opencode":
+		return opencode.New(eventsPath), nil
+	default:
+		return nil, fmt.Errorf("unknown source %q (msr supports replay|hooks|opencode)", name)
 	}
 }
 
@@ -275,7 +297,7 @@ func (t teaPresenter) Present(u domain.Unit, _ []domain.Event) error {
 // a background pipeline tails the hook log, clusters, snapshots, and flags, and
 // hands each sealed unit to the TUI. Units are a deterministic cache of events,
 // so they are rebuilt cleanly on attach.
-func runLiveTUI(ctx context.Context, store port.Store, snap port.Snapshotter, sum port.Summarizer, sessionID, repo, out, eventsPath string, stdout io.Writer) error {
+func runLiveTUI(ctx context.Context, store port.Store, snap port.Snapshotter, sum port.Summarizer, sessionID, repo, out string, src port.EventSource, stdout io.Writer) error {
 	_ = os.Remove(filepath.Join(out, sessionID, "units.jsonl"))
 
 	sess, err := store.Load(sessionID)
@@ -294,7 +316,7 @@ func runLiveTUI(ctx context.Context, store port.Store, snap port.Snapshotter, su
 	liveCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	go func() {
-		_ = usecase.ReviewLive(liveCtx, hooks.New(eventsPath), snap, store, teaPresenter{send: p.Send})
+		_ = usecase.ReviewLive(liveCtx, src, snap, store, teaPresenter{send: p.Send})
 	}()
 
 	_, err = p.Run()
