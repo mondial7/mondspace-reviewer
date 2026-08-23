@@ -10,4 +10,5 @@ const (
 	FlagNewDep       Flag = "new-dep"
 	FlagSwallowedErr Flag = "swallowed-err"
 	FlagPublicAPI    Flag = "public-api"
+	FlagFailed       Flag = "failed"
 )
