@@ -278,6 +278,30 @@ mechanically, and says so.
 The page is served immediately and the story is upgraded in the background, one
 chapter at a time — it never waits on a model.
 
+## The cockpit
+
+`msr web` opens on the review queue, but `/cockpit` is the page to leave on a
+second screen while an agent is still working. One desktop screen, three panes,
+and only the feed scrolls:
+
+- an **isometric grid** — one block per changed file — that breathes while the
+  session is live and settles when it goes quiet;
+- the session **in numbers**: time open, files, lines, commits, pull requests;
+- a **newest-first feed** of every change: one line of description and its diff.
+
+Every number there comes from git or the event log. **Nothing on the cockpit is
+model-derived** — that is the point of putting it beside a narration feature.
+
+Long diffs are *compacted*, never silently truncated: hunk headers all survive,
+so the shape of the change does, and the elision says how many lines it dropped
+(`… 37 more lines`).
+
+**Pull requests, honestly.** `msr` talks to no forge. PRs are counted by matching
+commit subjects against GitHub's merge-commit and squash-merge shapes, counting
+distinct references. That means it counts pull requests that **landed** — an open
+PR is not a commit and cannot be seen, and a forge with another subject
+convention will report zero. See [ADR 0015](ADR/0015-cockpit-view.md).
+
 ## Where the model calls go
 
 `msr web` shows every model call at **`/activity`**: what was asked, which model
