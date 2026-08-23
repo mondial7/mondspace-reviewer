@@ -1,8 +1,11 @@
 package usecase
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -166,4 +169,24 @@ func countHunks(lines []string) int {
 		}
 	}
 	return n
+}
+
+// ReviewFingerprint identifies what a review currently contains, cheaply enough
+// to poll every few seconds.
+//
+// It fingerprints churn per file rather than snapshot refs. A live review diffs
+// against the working tree, so a unit's "to" ref is empty and never moves —
+// fingerprinting units would miss every edit that did not add or remove a file,
+// which is most of them.
+//
+// Order does not affect it: git may list files in any order.
+func ReviewFingerprint(files []domain.FileStat) string {
+	lines := make([]string, 0, len(files))
+	for _, f := range files {
+		lines = append(lines, fmt.Sprintf("%s\x00%d\x00%d", f.Path, f.Added, f.Removed))
+	}
+	sort.Strings(lines)
+
+	sum := sha256.Sum256([]byte(strings.Join(lines, "\n")))
+	return hex.EncodeToString(sum[:16])
 }

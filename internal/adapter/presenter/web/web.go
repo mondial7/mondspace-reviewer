@@ -199,6 +199,16 @@ func (s *Server) WithNarrate(fn NarrateFunc) *Server {
 	return s
 }
 
+// SetSession replaces the units and diffs on a running server, so a review of a
+// session that is still being worked on keeps up with it.
+func (s *Server) SetSession(sess Session, histories map[string]domain.FileHistory) {
+	s.mu.Lock()
+	s.sess = sess
+	s.histories = histories
+	s.mu.Unlock()
+	s.broadcast("units")
+}
+
 // WithHistories supplies each file's edit history, so a unit can show how many
 // times it was touched and when, not only where it ended up.
 func (s *Server) WithHistories(h map[string]domain.FileHistory) *Server {

@@ -203,13 +203,16 @@ async function start() {
 start();
 
 
-// ── Magnet scrolling ────────────────────────────────────────────────────────
+// ── Linking the two columns ─────────────────────────────────────────────────
 //
-// The story and the changes are two views of the same session, so they are kept
-// in register: scrolling either one brings the other alongside. Each chapter
-// knows the first unit it covers, which is what makes the correspondence real
-// rather than a proportional guess — a three-line chapter and a 400-line diff
-// are the same chapter, and proportional scrolling would drift immediately.
+// The story and the changes are two views of the same session. An earlier
+// version scrolled each one to follow the other; two smooth-scrolling panes
+// driving each other fight the reader, and it was unusable.
+//
+// So the link is one-way and never moves anything the reader did not ask to
+// move: scrolling the changes lights the chapter that covers what you are
+// looking at, and clicking a chapter jumps the changes to it. Nothing scrolls
+// on its own.
 function linkColumns() {
   const story = document.getElementById('story-col');
   const changes = document.getElementById('changes-col');
@@ -218,79 +221,43 @@ function linkColumns() {
   const chapters = [...story.querySelectorAll('.chron__chapter[data-anchor]')];
   if (!chapters.length) return;
 
-  // A scroll we caused must not bounce back and drive the other column again.
-  let settling = 0;
-  const nudge = (container, target) => {
-    if (!target) return;
-    settling = Date.now() + 500;
-    container.scrollTo({
-      top: target.offsetTop - container.offsetTop - 12,
-      behavior: 'smooth',
-    });
-  };
-  const quiet = () => Date.now() < settling;
-
-  function markActive(active) {
-    for (const c of chapters) {
-      c.dataset.active = String(c === active);
-    }
-    const anchor = active && active.dataset.anchor;
-    for (const p of changes.querySelectorAll('.post')) {
-      p.dataset.active = String(!!anchor && p.id === 'unit-' + anchor);
-    }
+  function light(active) {
+    for (const c of chapters) c.dataset.active = String(c === active);
   }
 
-  // Whichever chapter sits nearest the top of the story column is the one whose
-  // files should be showing.
-  function nearestChapter() {
-    let best = chapters[0];
-    let bestGap = Infinity;
-    for (const c of chapters) {
-      const gap = Math.abs(c.offsetTop - story.offsetTop - story.scrollTop);
-      if (gap < bestGap) { bestGap = gap; best = c; }
-    }
-    return best;
+  // Click a chapter to bring its files up. This is the only thing that scrolls.
+  for (const c of chapters) {
+    c.addEventListener('click', () => {
+      const target = document.getElementById('unit-' + c.dataset.anchor);
+      if (!target) return;
+      light(c);
+      changes.scrollTo({ top: target.offsetTop - changes.offsetTop - 12, behavior: 'smooth' });
+    });
   }
 
-  let pending = 0;
-  story.addEventListener('scroll', () => {
-    if (quiet()) return;
-    cancelAnimationFrame(pending);
-    pending = requestAnimationFrame(() => {
-      const active = nearestChapter();
-      markActive(active);
-      nudge(changes, document.getElementById('unit-' + active.dataset.anchor));
-    });
-  });
-
-  // The reverse direction: scrolling the changes lights the chapter that covers
-  // whatever file you have reached.
+  // Scrolling the changes only *highlights* — it never moves the story column.
   const byAnchor = new Map(chapters.map((c) => ['unit-' + c.dataset.anchor, c]));
+  let pending = 0;
   changes.addEventListener('scroll', () => {
-    if (quiet()) return;
     cancelAnimationFrame(pending);
     pending = requestAnimationFrame(() => {
-      let active = null;
+      let active = chapters[0];
       for (const p of changes.querySelectorAll('.post')) {
-        if (p.offsetTop - changes.offsetTop <= changes.scrollTop + 24 && byAnchor.has(p.id)) {
+        if (p.offsetTop - changes.offsetTop <= changes.scrollTop + 40 && byAnchor.has(p.id)) {
           active = byAnchor.get(p.id);
         }
       }
-      if (active) {
-        markActive(active);
-        nudge(story, active);
-      }
+      light(active);
     });
-  });
+  }, { passive: true });
 
-  markActive(chapters[0]);
+  light(chapters[0]);
 }
 
 linkColumns();
 // live.js swaps whole columns in; re-link whatever replaced them.
 const storyCol = document.getElementById('story-col');
 if (storyCol) new MutationObserver(linkColumns).observe(storyCol, { childList: true });
-
 
 // ── Full diffs, on demand ───────────────────────────────────────────────────
 //

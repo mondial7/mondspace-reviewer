@@ -453,3 +453,52 @@ func TestCommitsSinceIsEmptyNotAnErrorInARepoWithNoCommits(t *testing.T) {
 		t.Errorf("got %d commits, want none", len(got))
 	}
 }
+
+func TestNumstatReportsPerFileChurnIncludingUntracked(t *testing.T) {
+	// The cockpit polls this every few seconds, so it must be one cheap call —
+	// and it must see brand-new files, which are exactly what an agent creates.
+	dir := newRepo(t)
+	s := gitsnap.New(dir, "sess-1")
+
+	base, err := s.ResolveRef(context.Background(), "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("v1\nv2\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "new.txt"), []byte("x\ny\nz\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := s.Numstat(context.Background(), base, domain.SnapshotRef{})
+	if err != nil {
+		t.Fatalf("Numstat: %v", err)
+	}
+
+	byPath := map[string]domain.FileStat{}
+	for _, f := range got {
+		byPath[f.Path] = f
+	}
+	if a := byPath["a.txt"]; a.Added != 1 {
+		t.Errorf("a.txt = +%d -%d, want the one added line", a.Added, a.Removed)
+	}
+	if n, ok := byPath["new.txt"]; !ok || n.Added != 3 {
+		t.Errorf("untracked new.txt = %+v, want +3 — an agent's new files must count", n)
+	}
+}
+
+func TestNumstatIsEmptyNotAnErrorWithNoChanges(t *testing.T) {
+	dir := newRepo(t)
+	s := gitsnap.New(dir, "sess-1")
+	base, _ := s.ResolveRef(context.Background(), "HEAD")
+
+	got, err := s.Numstat(context.Background(), base, domain.SnapshotRef{})
+
+	if err != nil {
+		t.Fatalf("Numstat on a clean tree should not error: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("got %+v, want nothing changed", got)
+	}
+}

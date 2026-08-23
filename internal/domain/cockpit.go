@@ -45,3 +45,12 @@ type FileHistory struct {
 	Last  time.Time
 	Edits []Edit
 }
+
+// FileStat is one file's churn against a baseline. It is what `git diff
+// --numstat` reports: cheap enough to poll, and sensitive to content, which a
+// snapshot ref is not while a review diffs against the working tree.
+type FileStat struct {
+	Path    string `json:"path"`
+	Added   int    `json:"added"`
+	Removed int    `json:"removed"`
+}

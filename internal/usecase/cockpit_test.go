@@ -162,3 +162,40 @@ func TestCompactDiffLeavesAShortDiffAlone(t *testing.T) {
 		t.Errorf("a short diff must be returned unchanged, got %q", got.Text)
 	}
 }
+
+func TestReviewFingerprintTracksContentNotJustTheFileSet(t *testing.T) {
+	// A live review diffs against the working tree, so a unit's "to" snapshot is
+	// empty and never moves. Fingerprinting units alone would therefore miss
+	// every edit that did not add or remove a file — which is most of them.
+	before := []domain.FileStat{
+		{Path: "auth/token.go", Added: 10, Removed: 2},
+		{Path: "http/mw.go", Added: 4, Removed: 0},
+	}
+	after := []domain.FileStat{
+		{Path: "auth/token.go", Added: 18, Removed: 2}, // same file, more work
+		{Path: "http/mw.go", Added: 4, Removed: 0},
+	}
+
+	if usecase.ReviewFingerprint(before) == usecase.ReviewFingerprint(after) {
+		t.Error("more lines in the same file must change the fingerprint")
+	}
+	if usecase.ReviewFingerprint(before) != usecase.ReviewFingerprint(before) {
+		t.Error("the fingerprint must be stable for identical input")
+	}
+}
+
+func TestReviewFingerprintIgnoresOrderAndNoticesNewFiles(t *testing.T) {
+	a := []domain.FileStat{{Path: "a.go", Added: 1}, {Path: "b.go", Added: 2}}
+	shuffled := []domain.FileStat{{Path: "b.go", Added: 2}, {Path: "a.go", Added: 1}}
+	grown := append(append([]domain.FileStat(nil), a...), domain.FileStat{Path: "c.go", Added: 3})
+
+	if usecase.ReviewFingerprint(a) != usecase.ReviewFingerprint(shuffled) {
+		t.Error("git may list files in any order; the fingerprint must not care")
+	}
+	if usecase.ReviewFingerprint(a) == usecase.ReviewFingerprint(grown) {
+		t.Error("a new file must change the fingerprint")
+	}
+	if usecase.ReviewFingerprint(nil) == "" {
+		t.Error("an empty review still has a fingerprint")
+	}
+}

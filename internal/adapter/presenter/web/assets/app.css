@@ -45,7 +45,7 @@
 
 .page {
   margin: 0;
-  padding: 2rem clamp(1rem, 4vw, 3rem);
+  padding: 0;
   background: var(--bg);
   color: var(--fg);
   font-family: var(--mono);
@@ -53,8 +53,18 @@
   line-height: 1.55;
 }
 
+/* Content blocks carry the gutter; the nav rail spans the full width above them
+   so it looks identical on every page. */
+.page > .masthead,
+.page > .queue,
+.page > .activity,
+.page > .ask { padding-left: var(--gutter); padding-right: var(--gutter); }
+.page > .masthead { padding-top: 1.1rem; }
+.page > .queue,
+.page > .activity { padding-bottom: var(--gutter); }
+
 /* Masthead */
-.masthead { border-bottom: 1px solid var(--rule); padding-bottom: 1rem; margin-bottom: 1.5rem; }
+.masthead { border-bottom: 1px solid var(--rule); padding-bottom: 1rem; margin-bottom: 1.1rem; }
 .masthead__title { margin: 0; font-size: 1.1rem; font-weight: 700; letter-spacing: 0.02em; }
 .masthead__meta { margin: 0.35rem 0 0; color: var(--fg-dim); display: flex; gap: 1rem; flex-wrap: wrap; }
 .masthead__prompt { margin: 0.6rem 0 0; color: var(--fg); }
@@ -328,6 +338,7 @@
   border-bottom: 1px solid var(--rule);
   padding: 0.55rem var(--gutter);
   margin: 0 0 var(--gutter);
+  min-height: 2.6rem;
   display: flex; align-items: center; gap: 1.25rem; flex-wrap: wrap;
   font-size: 0.82rem; letter-spacing: 0.06em; text-transform: uppercase;
   position: relative;
@@ -539,12 +550,17 @@
 }
 
 .chron__chapter {
-  padding: 0.8rem 0; border-bottom: 1px solid var(--rule);
-  transition: opacity 0.25s ease;
+  padding: 0.8rem 0.6rem; border-bottom: 1px solid var(--rule);
+  border-left: 2px solid transparent; border-radius: 4px;
+  cursor: pointer;                       /* clicking brings its files up */
+  transition: opacity 0.2s ease, border-color 0.2s ease, background 0.2s ease;
 }
+.chron__chapter:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
 .chron__chapter:last-of-type { border-bottom: none; }
-/* The chapter whose files are alongside is the one lit; the rest recede. */
-.chron__chapter[data-active="false"] { opacity: 0.42; }
+/* The chapter covering whatever you have scrolled to is lit; the rest recede
+   a little — not so far that the story becomes unreadable. */
+.chron__chapter[data-active="false"] { opacity: 0.55; }
+.chron__chapter[data-active="true"] { border-left-color: var(--accent); }
 .chron__index { font-size: 0.68rem; color: var(--accent); letter-spacing: 0.15em; }
 .chron__chaptertitle { margin: 0.15rem 0 0.35rem; font-size: 0.98rem; color: var(--fg); }
 .chron__prose { margin: 0; color: var(--fg-dim); font-size: 0.87rem; line-height: 1.6; }

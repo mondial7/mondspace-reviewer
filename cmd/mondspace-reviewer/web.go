@@ -76,6 +76,11 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 		Diffs:  diffs,
 	}
 
+	firstStats, err := snap.Numstat(ctx, baseline, domain.SnapshotRef{})
+	if err != nil {
+		firstStats = nil // a review that cannot be measured still renders
+	}
+
 	sum := chooseSummarizer(*summarizerURL, *model)
 	mechanical := domain.Narrative{
 		SessionID:   *session,
@@ -164,7 +169,12 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 	// watching may still be running, so the numbers are recomputed on a tick and
 	// pushed to open pages. Reading git every 15s is cheap; a model is never
 	// involved.
-	go refreshStats(ctx, handler, snap, store, *session, units, diffs)
+	go refreshReview(ctx, reviewRefresher{
+		handler: handler, snap: snap, store: store, sum: sum,
+		sessionID: *session, repo: *repo, storeRel: storeRel,
+		baseline: baseline, model: *model,
+		fingerprint: usecase.ReviewFingerprint(firstStats), narrate: narrateOnce,
+	})
 	go refreshAgent(ctx, handler, sum, *summarizerURL, *model)
 
 	ln, err := net.Listen("tcp", *addr)
@@ -377,26 +387,107 @@ var (
 	_ narrativeCache = (*pgstore.Store)(nil)
 )
 
-// refreshStats keeps the cockpit's numbers current while a session is still
-// being worked on. It reads git and the event log only — never a model — so it
-// is cheap enough to run on a timer, and it stops with the server.
-func refreshStats(ctx context.Context, handler *web.Server, snap *gitsnap.Snapshotter, store port.Store, sessionID string, units []domain.Unit, diffs map[string]domain.Diff) {
-	ticker := time.NewTicker(15 * time.Second)
+// reviewRefresher is everything the background refresh needs. It is a struct
+// because the alternative is a nine-argument function nobody can call correctly.
+type reviewRefresher struct {
+	handler     *web.Server
+	snap        *gitsnap.Snapshotter
+	store       port.Store
+	sum         port.Summarizer
+	sessionID   string
+	repo        string
+	storeRel    string
+	baseline    domain.SnapshotRef
+	model       string
+	fingerprint string
+	narrate     func(context.Context)
+}
+
+// reviewTick is how often the review is checked for movement. One `git diff
+// --numstat` per tick is cheap; nothing else runs unless something changed.
+const reviewTick = 15 * time.Second
+
+// renarrateEvery bounds how often the model is asked to re-read a session that
+// is still moving. Without it an active agent would trigger a narration every
+// tick, which is exactly the overload ADR 0014 set out to stop. Stats, units and
+// history still refresh every tick — those cost git, not a model.
+const renarrateEvery = 5 * time.Minute
+
+// refreshReview keeps a cockpit current while the session it watches is still
+// being worked on. Each tick asks git one cheap question — has anything changed?
+// — and does the expensive work only when the answer is yes.
+func refreshReview(ctx context.Context, r reviewRefresher) {
+	ticker := time.NewTicker(reviewTick)
 	defer ticker.Stop()
+
+	lastNarration := time.Now()
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			sess, err := store.Load(sessionID)
+			stats, err := r.snap.Numstat(ctx, r.baseline, domain.SnapshotRef{})
 			if err != nil {
-				continue // a transient read must not kill the ticker
+				continue // a transient git failure must not kill the ticker
 			}
-			commits, _ := snap.CommitsSince(ctx, firstEventTime(sess))
-			handler.SetStats(usecase.ComputeStats(sess, units, diffs, commits, time.Now()))
+			print := usecase.ReviewFingerprint(stats)
+			changed := print != r.fingerprint
+
+			sess, err := r.store.Load(r.sessionID)
+			if err != nil {
+				continue
+			}
+
+			units, diffs, err := usecase.BuildFileUnits(ctx, r.snap, r.sessionID,
+				r.baseline, domain.SnapshotRef{}, func(f string) bool {
+					return f == r.storeRel || strings.HasPrefix(f, r.storeRel+"/")
+				})
+			if err != nil {
+				continue
+			}
+
+			if changed {
+				// The review moved. Say so in the log: a page that redraws itself
+				// with different content and no record of why is impossible to
+				// reason about afterwards.
+				r.handler.Record(web.AuditEntry{
+					SessionID: r.sessionID, Action: "review-changed",
+					Detail: fmt.Sprintf("%d files now changed (%s → %s)",
+						len(units), short(r.fingerprint), short(print)),
+				})
+				r.fingerprint = print
+
+				r.handler.SetSession(web.Session{
+					ID: r.sessionID, Prompt: sess.Prompt, Repo: r.repo,
+					Units: units, Notes: usecase.MarkSuperseded(units, sess.Notes),
+					Diffs: diffs,
+				}, usecase.FileHistories(sess.Events, units))
+			}
+
+			commits, _ := r.snap.CommitsSince(ctx, firstEventTime(sess))
+			r.handler.SetStats(usecase.ComputeStats(sess, units, diffs, commits, time.Now()))
+
+			// Re-reading the session costs several model calls, so it is bounded
+			// however fast the agent works.
+			if changed && time.Since(lastNarration) >= renarrateEvery {
+				lastNarration = time.Now()
+				r.handler.Record(web.AuditEntry{
+					SessionID: r.sessionID, Action: "renarrate-queued",
+					Detail: "the review changed; asking the model to re-read it",
+				})
+				r.handler.NarrateNow(ctx)
+			}
 		}
 	}
+}
+
+// short abbreviates a fingerprint for a log line.
+func short(fingerprint string) string {
+	if len(fingerprint) <= 8 {
+		return fingerprint
+	}
+	return fingerprint[:8]
 }
 
 // agentStatus reports the reviewer's own model: which one, where, whether it

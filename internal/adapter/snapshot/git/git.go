@@ -9,7 +9,9 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -269,4 +271,76 @@ func (s *Snapshotter) CommitsSince(ctx context.Context, since time.Time) ([]doma
 		})
 	}
 	return commits, nil
+}
+
+// Numstat reports per-file churn against a baseline in one call, which is what
+// makes it cheap enough for the cockpit to poll. Untracked files are included:
+// a brand-new file is exactly what an agent creates, and `git diff` alone cannot
+// see one.
+//
+// An empty `to` compares against the working tree, matching ChangedFiles.
+func (s *Snapshotter) Numstat(ctx context.Context, from, to domain.SnapshotRef) ([]domain.FileStat, error) {
+	args := []string{"diff", "--numstat", from.Commit}
+	if to.Commit != "" {
+		args = append(args, to.Commit)
+	}
+	out, err := s.run(ctx, os.Environ(), args...)
+	if err != nil {
+		return nil, err
+	}
+
+	var stats []domain.FileStat
+	for _, line := range strings.Split(out, "\n") {
+		if f, ok := parseNumstat(line); ok {
+			stats = append(stats, f)
+		}
+	}
+
+	// Untracked files never appear in `git diff`. They only exist against the
+	// working tree, so there is nothing to add when `to` names a commit.
+	if to.Commit == "" {
+		others, err := s.run(ctx, os.Environ(), "ls-files", "--others", "--exclude-standard")
+		if err == nil {
+			for _, path := range strings.Split(others, "\n") {
+				path = strings.TrimSpace(path)
+				if path == "" {
+					continue
+				}
+				stats = append(stats, domain.FileStat{Path: path, Added: countLines(filepath.Join(s.repoDir, path))})
+			}
+		}
+	}
+	return stats, nil
+}
+
+// parseNumstat reads one `added\tremoved\tpath` record. A binary file reports
+// "-" for both counts and is recorded as changed with no line count.
+func parseNumstat(line string) (domain.FileStat, bool) {
+	fields := strings.SplitN(strings.TrimSpace(line), "\t", 3)
+	if len(fields) != 3 || fields[2] == "" {
+		return domain.FileStat{}, false
+	}
+	added, _ := strconv.Atoi(fields[0])
+	removed, _ := strconv.Atoi(fields[1])
+	return domain.FileStat{Path: fields[2], Added: added, Removed: removed}, true
+}
+
+// countLines is how many lines an untracked file adds. It is read rather than
+// diffed because git has nothing to diff it against.
+func countLines(path string) int {
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return 0
+	}
+	if len(body) == 0 {
+		return 0
+	}
+	return bytes.Count(body, []byte("\n")) + boolToInt(!bytes.HasSuffix(body, []byte("\n")))
+}
+
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }
