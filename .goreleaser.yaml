@@ -1,0 +1,46 @@
+version: 2
+
+project_name: mondspace-reviewer
+
+builds:
+  - id: mondspace-reviewer
+    main: ./cmd/mondspace-reviewer
+    binary: mondspace-reviewer
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+
+archives:
+  - id: mondspace-reviewer
+    formats: [tar.gz]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^test:"
+      - "^ci:"
+      - "^docs:"
+
+release:
+  github:
+    owner: mondial7
+    name: mondspace-reviewer
