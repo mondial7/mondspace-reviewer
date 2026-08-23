@@ -21,10 +21,9 @@ async function refresh() {
     const doc = new DOMParser().parseFromString(await res.text(), 'text/html');
 
     // Remember what the reader has open, then restore it after the swap.
+    // The post *is* the disclosure now, so its own id identifies it.
     const open = new Set(
-      Array.from(document.querySelectorAll('.unit__disclosure[open]'))
-        .map((d) => d.closest('.unit')?.id)
-        .filter(Boolean),
+      Array.from(document.querySelectorAll('.post[open]')).map((d) => d.id).filter(Boolean),
     );
     const typing = document.activeElement;
     const typingID = /^(INPUT|TEXTAREA)$/.test(typing?.tagName ?? '') ? typing.id : null;
@@ -39,7 +38,7 @@ async function refresh() {
     }
 
     for (const id of open) {
-      document.querySelector(`#${CSS.escape(id)} .unit__disclosure`)?.setAttribute('open', '');
+      document.getElementById(id)?.setAttribute('open', '');
     }
     if (typingID) {
       const restored = document.getElementById(typingID);

@@ -179,19 +179,24 @@
         {{ end }}
 
         {{ range .Files }}
-        <div class="post" id="unit-{{ .ID }}" data-file="{{ .File }}" data-added="{{ .Added }}"
-             data-removed="{{ .Removed }}" data-flags="{{ len .Flags }}">
-          <header class="post__head">
+        <!-- Folded by default: a hundred open diffs is not a review. Clicking
+             the file opens it. Native <details>, so it needs no JavaScript. -->
+        <details class="post" id="unit-{{ .ID }}" data-file="{{ .File }}" data-added="{{ .Added }}"
+                 data-removed="{{ .Removed }}" data-flags="{{ len .Flags }}">
+          <summary class="post__head">
             <span class="post__file">{{ .File }}</span>
             <span class="post__stats">
               <span class="unit__stat unit__stat--add">+{{ .Added }}</span>
               <span class="unit__stat unit__stat--del">-{{ .Removed }}</span>
             </span>
             {{ range .Flags }}<span class="flag">{{ . }}</span>{{ end }}
+            <!-- A note count survives the fold: an annotated file must still be
+                 findable without opening every one. -->
+            {{ with .Notes }}<span class="post__notecount">{{ len . }} note(s)</span>{{ end }}
             {{ if .Edits }}
             <span class="post__when">{{ .Edits }} edit(s) · last {{ .LastEdited }}</span>
             {{ end }}
-          </header>
+          </summary>
 
           <!-- A headline is shown only when a model wrote it. The mechanical
                one ("edited token.go") just repeats the filename above it. -->
@@ -222,27 +227,32 @@
           <p class="diff diff--empty">No textual changes.</p>
           {{ end }}
 
-          <div class="post__actions">
-            <button class="post__open" type="button"
-                    data-versions="/units/{{ .ID }}/versions" data-file="{{ .File }}">
-              open full history
-            </button>
-            <form class="annotate" method="post" action="/units/{{ .ID }}/notes">
-              <input class="annotate__text" name="text" type="text"
-                     placeholder="optional note…" autocomplete="off">
+          <!-- Three rows: write the note, choose what kind it is, then the
+               tools that act on the file itself. -->
+          <form class="annotate" method="post" action="/units/{{ .ID }}/notes">
+            <input class="annotate__text" name="text" type="text"
+                   placeholder="optional note…" autocomplete="off">
+            <div class="annotate__kinds">
               <button class="annotate__btn annotate__btn--ok" name="kind" value="ok">ok</button>
               <button class="annotate__btn annotate__btn--question" name="kind" value="question">question</button>
               <button class="annotate__btn annotate__btn--objection" name="kind" value="objection">objection</button>
               <button class="annotate__btn annotate__btn--debt" name="kind" value="debt">debt</button>
               <button class="annotate__btn annotate__btn--note" name="kind" value="note">note</button>
-            </form>
+            </div>
+          </form>
+
+          <div class="post__tools">
+            <button class="post__open" type="button"
+                    data-versions="/units/{{ .ID }}/versions" data-file="{{ .File }}">
+              open full history
+            </button>
             {{ if $.HasReanal }}
             <form class="reanalyse" method="post" action="/units/{{ .ID }}/reanalyse">
               <button class="reanalyse__btn" type="submit">re-analyse</button>
             </form>
             {{ end }}
           </div>
-        </div>
+        </details>
         {{ end }}
       </article>
       {{ else }}

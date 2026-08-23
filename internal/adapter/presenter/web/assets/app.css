@@ -822,14 +822,15 @@
 .post:target, .post[data-active="true"] { border-left-color: var(--accent); }
 .post__when { color: var(--fg-dim); font-size: 0.72rem; }
 
-/* Annotation stays on one line; it wraps as a unit, not button by button. */
-.post__actions { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin-top: 0.55rem; }
-.annotate {
-  display: flex; gap: 0.3rem; align-items: center; flex: 1 1 22rem; min-width: 0;
-  flex-wrap: nowrap; overflow-x: auto;
-}
-.annotate__text { flex: 1 1 8rem; min-width: 6rem; }
+/* Three rows: the note, the kinds, then the tools. Each row wraps as a unit
+   rather than one button at a time. */
+.annotate { display: flex; flex-direction: column; gap: 0.35rem; margin-top: 0.55rem; min-width: 0; }
+.annotate__text { width: 100%; min-width: 0; }
+.annotate__kinds { display: flex; gap: 0.3rem; flex-wrap: wrap; }
 .annotate__btn { white-space: nowrap; flex: 0 0 auto; }
+
+.post__tools { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin-top: 0.4rem; }
+.post__tools .reanalyse { margin: 0; }
 .post__open {
   font: inherit; font-size: 0.72rem; cursor: pointer; white-space: nowrap;
   color: var(--fg-dim); background: transparent;
@@ -908,3 +909,18 @@
   border: none; border-radius: 6px; padding: 0.4rem 0.8rem;
 }
 .addrepo__err { margin: 0.5rem 0 0; color: var(--del); font-size: 0.78rem; }
+
+/* A folded change: the summary is the whole row, and clicking it opens the diff. */
+.post > .post__head {
+  cursor: pointer; list-style: none;
+  display: flex; gap: 0.55rem; align-items: baseline; flex-wrap: wrap;
+  padding: 0.15rem 0;
+}
+.post > .post__head::-webkit-details-marker { display: none; }
+.post > .post__head::before {
+  content: "▸"; color: var(--fg-dim); flex: 0 0 auto;
+  transition: transform 0.15s ease;
+}
+.post[open] > .post__head::before { content: "▾"; color: var(--accent); }
+.post > .post__head:hover .post__file { text-decoration: underline; }
+.post__notecount { color: var(--inferred); font-size: 0.72rem; }

@@ -322,9 +322,14 @@ if (storyCol) new MutationObserver(linkColumns).observe(storyCol, { childList: t
     body.innerHTML = '';
   }
 
-  for (const btn of document.querySelectorAll('.post__open[data-versions]')) {
-    btn.addEventListener('click', () => open(btn.dataset.versions, btn.dataset.file));
-  }
+  // Delegated from the document, not bound to each button: live.js replaces the
+  // whole changes column whenever the session moves, and listeners attached to
+  // the elements it replaced are silently lost. On an active session that was
+  // every fifteen seconds, so the button worked only until the first update.
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest?.('.post__open[data-versions]');
+    if (btn) open(btn.dataset.versions, btn.dataset.file);
+  });
   document.getElementById('overlay-close').addEventListener('click', close);
   prev.addEventListener('click', () => step(1));   // older
   next.addEventListener('click', () => step(-1));  // newer
@@ -346,30 +351,45 @@ if (storyCol) new MutationObserver(linkColumns).observe(storyCol, { childList: t
 // it is a working preference rather than a one-off.
 (function viewSwitch() {
   const KEY = 'msr:changes-view';
-  const detail = document.getElementById('detail-view');
-  const tree = document.getElementById('tree-view');
-  const buttons = [...document.querySelectorAll('.viewswitch__btn')];
-  if (!detail || !tree || !buttons.length) return;
 
+  // Looked up on every call rather than captured: the changes column is
+  // replaced wholesale when the session moves, and a cached element reference
+  // would keep pointing at markup that is no longer on the page.
   function apply(view) {
+    const detail = document.getElementById('detail-view');
+    const tree = document.getElementById('tree-view');
+    if (!detail || !tree) return;
     detail.hidden = view === 'tree';
     tree.hidden = view !== 'tree';
-    for (const b of buttons) b.setAttribute('aria-pressed', String(b.dataset.view === view));
+    for (const b of document.querySelectorAll('.viewswitch__btn')) {
+      b.setAttribute('aria-pressed', String(b.dataset.view === view));
+    }
     try { localStorage.setItem(KEY, view); } catch { /* preference will not persist */ }
   }
 
-  let stored = 'detail';
-  try { stored = localStorage.getItem(KEY) || 'detail'; } catch { /* ignore */ }
-  apply(stored);
-
-  for (const b of buttons) b.addEventListener('click', () => apply(b.dataset.view));
-
-  // Clicking a file in the tree takes you to it in the detail view.
-  for (const link of tree.querySelectorAll('.tree__file')) {
-    link.addEventListener('click', () => {
-      apply('detail');
-      const target = document.querySelector(link.getAttribute('href'));
-      if (target) setTimeout(() => target.scrollIntoView({ block: 'start' }), 0);
-    });
+  function current() {
+    try { return localStorage.getItem(KEY) || 'detail'; } catch { return 'detail'; }
   }
+  apply(current());
+
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest?.('.viewswitch__btn');
+    if (b) apply(b.dataset.view);
+  });
+
+  // A swapped-in column renders with the detail view visible; re-apply the
+  // remembered choice so a live update cannot silently flip it back.
+  const changes = document.getElementById('changes-col');
+  if (changes) {
+    new MutationObserver(() => apply(current())).observe(changes, { childList: true });
+  }
+
+  // Delegated for the same reason the overlay is: this column gets replaced.
+  document.addEventListener('click', (e) => {
+    const link = e.target.closest?.('.tree__file');
+    if (!link) return;
+    apply('detail');
+    const target = document.querySelector(link.getAttribute('href'));
+    if (target) setTimeout(() => target.scrollIntoView({ block: 'start' }), 0);
+  });
 })();
