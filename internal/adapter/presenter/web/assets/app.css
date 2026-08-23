@@ -111,3 +111,21 @@
 .diff__line--del { color: var(--del); }
 .diff__line--hunk { color: var(--hunk); }
 .diff__line--meta { color: var(--fg-dim); }
+
+/* Annotate */
+.annotate { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; margin-top: 0.9rem; }
+.annotate__label { color: var(--fg-dim); }
+.annotate__text {
+  flex: 1 1 16rem; min-width: 10rem; padding: 0.3rem 0.5rem;
+  background: var(--bg); color: var(--fg);
+  border: 1px solid var(--rule); border-radius: 4px; font: inherit;
+}
+.annotate__btn {
+  padding: 0.3rem 0.6rem; cursor: pointer; font: inherit;
+  background: var(--bg); color: var(--fg);
+  border: 1px solid var(--rule); border-radius: 4px;
+}
+.annotate__btn:hover { border-color: var(--accent); }
+.annotate__btn--ok { color: var(--add); }
+.annotate__btn--objection { color: var(--del); }
+.annotate__btn--question, .annotate__btn--debt { color: var(--inferred); }

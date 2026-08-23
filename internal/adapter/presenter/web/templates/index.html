@@ -61,6 +61,17 @@
           <p class="diff diff--empty">No textual changes.</p>
           {{ end }}
 
+          <form class="annotate" method="post" action="/units/{{ .ID }}/notes">
+            <label class="annotate__label" for="text-{{ .ID }}">annotate</label>
+            <input class="annotate__text" id="text-{{ .ID }}" name="text" type="text"
+                   placeholder="optional note…" autocomplete="off">
+            <button class="annotate__btn annotate__btn--ok" name="kind" value="ok">ok</button>
+            <button class="annotate__btn annotate__btn--question" name="kind" value="question">question</button>
+            <button class="annotate__btn annotate__btn--objection" name="kind" value="objection">objection</button>
+            <button class="annotate__btn annotate__btn--debt" name="kind" value="debt">debt</button>
+            <button class="annotate__btn annotate__btn--note" name="kind" value="note">note</button>
+          </form>
+
           <p class="unit__id">{{ .ID }}</p>
         </div>
       </details>

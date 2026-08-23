@@ -13,6 +13,10 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
+
+	"github.com/oklog/ulid/v2"
 
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
 	"github.com/mondial7/mondspace-reviewer/internal/usecase"
@@ -40,24 +44,38 @@ type Annotator interface {
 	AppendNote(domain.Note) error
 }
 
-// Server renders and serves one review session.
+// Server renders and serves one review session. Handlers run concurrently, so
+// session state is guarded.
 type Server struct {
 	mux   *http.ServeMux
 	tmpl  *template.Template
-	sess  Session
 	notes Annotator
+
+	mu   sync.RWMutex
+	sess Session
+
+	newID func() string
+	now   func() time.Time
 }
 
 // NewServer builds the HTTP handler for a session. notes may be nil, in which
-// case annotations are not persisted.
+// case annotations are held in memory only.
 func NewServer(sess Session, notes Annotator) *Server {
 	s := &Server{
 		mux:   http.NewServeMux(),
 		tmpl:  template.Must(template.New("").Funcs(funcs()).ParseFS(templates, "templates/*.html")),
 		sess:  sess,
 		notes: notes,
+		newID: func() string { return ulid.Make().String() },
+		now:   func() time.Time { return time.Now().UTC() },
 	}
 	s.routes()
+	return s
+}
+
+// WithClock overrides id and time generation for deterministic tests.
+func (s *Server) WithClock(newID func() string, now func() time.Time) *Server {
+	s.newID, s.now = newID, now
 	return s
 }
 
@@ -70,6 +88,66 @@ func (s *Server) routes() {
 	}
 	s.mux.Handle("GET /assets/", http.StripPrefix("/assets/", http.FileServer(http.FS(static))))
 	s.mux.HandleFunc("GET /{$}", s.handleIndex)
+	s.mux.HandleFunc("POST /units/{id}/notes", s.handleAnnotate)
+}
+
+// noteKinds are the annotations a reviewer may attach (SPEC §11).
+var noteKinds = map[string]domain.NoteKind{
+	"ok":        domain.NoteOK,
+	"question":  domain.NoteQuestion,
+	"objection": domain.NoteObjection,
+	"debt":      domain.NoteDebt,
+	"note":      domain.NoteNote,
+}
+
+// handleAnnotate attaches a note to a unit and persists it. Annotations anchor
+// to unit ids, never file/line — the working tree moves, unit ids do not.
+func (s *Server) handleAnnotate(w http.ResponseWriter, r *http.Request) {
+	unit, ok := s.unit(r.PathValue("id"))
+	if !ok {
+		http.Error(w, "unknown unit", http.StatusNotFound)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	kind, ok := noteKinds[r.FormValue("kind")]
+	if !ok {
+		http.Error(w, "unknown note kind", http.StatusBadRequest)
+		return
+	}
+
+	note := domain.Note{
+		ID:        s.newID(),
+		SessionID: unit.SessionID,
+		UnitID:    unit.ID,
+		Kind:      kind,
+		Text:      strings.TrimSpace(r.FormValue("text")),
+		TS:        s.now(),
+	}
+	if s.notes != nil {
+		if err := s.notes.AppendNote(note); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+	s.mu.Lock()
+	s.sess.Notes = append(s.sess.Notes, note)
+	s.mu.Unlock()
+
+	http.Redirect(w, r, "/#unit-"+unit.ID, http.StatusSeeOther)
+}
+
+func (s *Server) unit(id string) (domain.Unit, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, u := range s.sess.Units {
+		if u.ID == id {
+			return u, true
+		}
+	}
+	return domain.Unit{}, false
 }
 
 // unitView is the presentation shape of a unit: everything the template needs,
@@ -94,10 +172,12 @@ type diffLine struct {
 }
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
+	s.mu.RLock()
 	data := struct {
 		Session Session
 		Units   []unitView
 	}{Session: s.sess, Units: s.views()}
+	s.mu.RUnlock()
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := s.tmpl.ExecuteTemplate(w, "index.html", data); err != nil {
