@@ -1,27 +1,48 @@
-// cockpit.js — the isometric pulse (ADR 0012, ADR 0015).
+// cockpit.js — the instrument panel (ADR 0012, ADR 0015).
 //
-// An isometric grid of blocks, one per changed file, that breathes while the
-// agent is working and settles when it stops. Like storyline.js it is decoration
-// only: it reads the DOM and never feeds it. If WebGL is missing, Three.js fails
-// to load, or the reviewer prefers reduced motion or focus mode, the module bows
-// out and the cockpit's numbers and feed remain exactly as they were.
+// An isometric bar field where every block IS a changed file, not decoration:
+//
+//   height  = how many lines that file changed (log-scaled, so one generated
+//             file cannot flatten everything else into the floor)
+//   colour  = what kind of change it was — growth, deletion, or flagged
+//   depth   = recency; the newest change stands at the front
+//   motion  = only while the session is live, and strongest at the front
+//
+// The point is that the shape is readable. A row of short green blocks is steady
+// additive work; one tall red block is a big deletion; an amber block is
+// something the flags want you to look at. Watch it for a session and the
+// patterns start to mean something before you have read a word.
+//
+// Like storyline.js it reads the DOM and never feeds it. No WebGL, no Three.js,
+// reduced motion or the panel hidden, and it bows out; the numbers and the feed
+// are untouched.
 
 const canvas = document.getElementById('cockpit-scene');
 const body = document.body;
 
 const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-// isLive is read fresh each frame: live.js swaps regions of the page as the
-// session moves, so this must not be captured once at start-up.
+const MAX_BLOCKS = 24;   // a 400-file session must stay a readable shape
+const SPACING = 1.45;    // gap between block centres, in block widths
+
 function isLive() {
   return body.dataset.live === 'true';
 }
 
-// blockCount is one block per changed file, bounded so a 400-file session does
-// not turn the pulse into a wall of geometry.
-function blockCount() {
-  const files = document.querySelectorAll('.post').length;
-  return Math.max(4, Math.min(files || 4, 25));
+// readChanges turns the feed into the data the field draws. Newest first, which
+// is the order the feed is already in.
+function readChanges() {
+  const posts = [...document.querySelectorAll('.post')].slice(0, MAX_BLOCKS);
+  return posts.map((el) => {
+    const added = Number(el.dataset.added || 0);
+    const removed = Number(el.dataset.removed || 0);
+    const flags = Number(el.dataset.flags || 0);
+    let kind = 'ctx';
+    if (flags > 0) kind = 'flag';
+    else if (removed > added) kind = 'del';
+    else if (added > 0) kind = 'add';
+    return { file: el.dataset.file || '', added, removed, flags, kind };
+  });
 }
 
 async function start() {
@@ -31,14 +52,14 @@ async function start() {
   try {
     THREE = await import('/assets/vendor/three.module.min.js');
   } catch {
-    return; // no Three.js, no animation — the page is already complete without it
+    return; // no Three.js, no panel — the page is already complete without it
   }
 
   let renderer;
   try {
     renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
   } catch {
-    return; // no WebGL context (headless, blocked, or software-render disabled)
+    return; // no WebGL context (headless, blocked, software-render disabled)
   }
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
@@ -46,46 +67,68 @@ async function start() {
 
   // A true isometric look needs an orthographic camera on the (1,1,1) diagonal;
   // a perspective camera would give a 3/4 view, not an isometric one.
-  const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 100);
-  camera.position.set(12, 10, 12);
-  // Aim at the middle of the blocks, not the floor they stand on: looking at the
-  // origin pushes the whole grid into the top half of the pane.
-  camera.lookAt(0, 0.75, 0);
+  const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 200);
+  camera.position.set(14, 11, 14);
 
-  scene.add(new THREE.AmbientLight(0xffffff, 0.55));
-  const key = new THREE.DirectionalLight(0xffffff, 0.9);
-  key.position.set(6, 12, 4);
+  scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+  const key = new THREE.DirectionalLight(0xffffff, 0.85);
+  key.position.set(8, 14, 5);
   scene.add(key);
 
-  // Colours come from the stylesheet, so the scene follows the light/dark theme
-  // instead of hard-coding a palette that only works in one of them.
+  // Colours come from the stylesheet, so the field follows the light/dark theme
+  // and matches the legend printed beneath it.
   const css = getComputedStyle(document.documentElement);
-  const accent = new THREE.Color(css.getPropertyValue('--accent').trim() || '#cba6f7');
-  const added = new THREE.Color(css.getPropertyValue('--add').trim() || '#a6e3a1');
-
-  // SPACING is the gap between block centres, in block widths.
-  const SPACING = 1.4;
-
-  const group = new THREE.Group();
-  scene.add(group);
+  const colour = (name, fallback) =>
+    new THREE.Color(css.getPropertyValue(name).trim() || fallback);
+  const palette = {
+    add: colour('--add', '#a6e3a1'),
+    del: colour('--del', '#f38ba8'),
+    flag: colour('--inferred', '#f9e2af'),
+    ctx: colour('--accent', '#cba6f7'),
+  };
 
   const geometry = new THREE.BoxGeometry(1, 1, 1);
-  const blocks = [];
-  const n = blockCount();
-  const side = Math.ceil(Math.sqrt(n));
+  let group = new THREE.Group();
+  scene.add(group);
+  let blocks = [];
+  let side = 1;
 
-  for (let i = 0; i < n; i++) {
-    const material = new THREE.MeshLambertMaterial({
-      color: i % 3 === 0 ? added : accent,
+  // build lays the field out from the feed. It runs again whenever the feed
+  // changes, so a new file appearing in the session appears here too.
+  function build() {
+    scene.remove(group);
+    for (const b of blocks) b.material.dispose();
+    group = new THREE.Group();
+    scene.add(group);
+    blocks = [];
+
+    const changes = readChanges();
+    const n = Math.max(changes.length, 1);
+    side = Math.ceil(Math.sqrt(n));
+
+    changes.forEach((c, i) => {
+      const cube = new THREE.Mesh(
+        geometry,
+        new THREE.MeshLambertMaterial({ color: palette[c.kind] }),
+      );
+      // Log scale: a 4,000-line generated file is taller than a 40-line one, but
+      // not a hundred times taller, or every real change becomes invisible.
+      const churn = c.added + c.removed;
+      cube.userData.height = 0.25 + Math.log2(1 + churn) * 0.42;
+      // Recency: index 0 is the newest change, drawn at the front of the field.
+      cube.userData.recency = 1 - i / Math.max(n - 1, 1);
+      cube.userData.phase = i * 0.35;
+
+      const x = (i % side) - (side - 1) / 2;
+      const z = Math.floor(i / side) - (side - 1) / 2;
+      cube.position.set(x * SPACING, 0, z * SPACING);
+      cube.scale.y = cube.userData.height;
+      cube.position.y = cube.scale.y / 2;
+
+      group.add(cube);
+      blocks.push(cube);
     });
-    const cube = new THREE.Mesh(geometry, material);
-    const x = (i % side) - (side - 1) / 2;
-    const z = Math.floor(i / side) - (side - 1) / 2;
-    cube.position.set(x * SPACING, 0, z * SPACING);
-    // A staggered phase makes the grid ripple rather than pulse as one slab.
-    cube.userData.phase = (x + z) * 0.6 + i * 0.15;
-    group.add(cube);
-    blocks.push(cube);
+    resize();
   }
 
   function resize() {
@@ -93,10 +136,11 @@ async function start() {
     if (!w || !h) return;
     renderer.setSize(w, h, false);
 
-    // Fit the grid to the shorter axis so it fills the pane without cropping,
-    // whatever shape the pane happens to be. An isometric grid is as wide as its
-    // diagonal, hence the sqrt(2).
-    const extent = (side - 1) * SPACING * Math.SQRT2 * 0.5 + 1.6;
+    // Fit the field to the pane whatever shape it is. An isometric grid is as
+    // wide as its diagonal, hence the sqrt(2). The tallest block sets how much
+    // headroom the top of the frustum needs.
+    const tallest = blocks.reduce((m, b) => Math.max(m, b.userData.height), 1);
+    const extent = (side - 1) * SPACING * Math.SQRT2 * 0.5 + tallest * 0.6 + 1.4;
     const aspect = w / h;
     const [halfW, halfH] = aspect >= 1
       ? [extent * aspect, extent]
@@ -105,13 +149,20 @@ async function start() {
     camera.right = halfW;
     camera.top = halfH;
     camera.bottom = -halfH;
+    camera.lookAt(0, tallest * 0.35, 0); // aim at the mass, not the floor
     camera.updateProjectionMatrix();
   }
-  resize();
+
+  build();
   window.addEventListener('resize', resize);
 
-  // Height and spin both ease toward a target rather than switching, so the
-  // moment a session goes quiet reads as settling, not as a cut.
+  // Rebuild when live.js swaps the feed in: a change landing in the session is
+  // exactly the moment the field should change shape.
+  const feed = document.querySelector('.cockpit__feed');
+  if (feed) new MutationObserver(build).observe(feed, { childList: true, subtree: false });
+
+  // energy eases rather than switching, so a session going quiet reads as
+  // settling rather than as a cut.
   let energy = isLive() ? 1 : 0;
   let t = 0;
   let raf = 0;
@@ -121,12 +172,18 @@ async function start() {
     t += 0.016;
     energy += ((isLive() ? 1 : 0) - energy) * 0.02;
 
-    group.rotation.y += 0.0015 + energy * 0.004;
+    // A slow drift always; the field turns a little faster while work is landing.
+    group.rotation.y += 0.0009 + energy * 0.0022;
+
     for (const cube of blocks) {
-      const wave = Math.sin(t * 1.6 + cube.userData.phase);
-      const height = 0.4 + energy * (0.6 + wave * 0.55);
-      cube.scale.y = Math.max(0.12, height);
+      // Only the recent end of the field breathes, and only while the session is
+      // live — so motion itself means "this is where work is happening now",
+      // rather than being ambient decoration.
+      const attention = energy * cube.userData.recency;
+      const breath = Math.sin(t * 2 + cube.userData.phase) * 0.09 * attention;
+      cube.scale.y = Math.max(0.1, cube.userData.height * (1 + breath));
       cube.position.y = cube.scale.y / 2;
+      cube.material.emissive.setScalar(attention * 0.16);
     }
     renderer.render(scene, camera);
   }

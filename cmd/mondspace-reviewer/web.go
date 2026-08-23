@@ -104,6 +104,7 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 
 	handler := web.NewServer(view, store).
 		WithStats(usecase.ComputeStats(sess, units, diffs, commits, time.Now())).
+		WithAgent(agentStatus(ctx, sum, *summarizerURL, *model)).
 		WithNarrative(shown).
 		WithWorkspace(discoverSessions(*out, *repo)).
 		WithAsk(webAskFunc(sess, snap, sum)).
@@ -162,6 +163,7 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 	// pushed to open pages. Reading git every 15s is cheap; a model is never
 	// involved.
 	go refreshStats(ctx, handler, snap, store, *session, units, diffs)
+	go refreshAgent(ctx, handler, sum, *summarizerURL, *model)
 
 	ln, err := net.Listen("tcp", *addr)
 	if err != nil {
@@ -391,6 +393,41 @@ func refreshStats(ctx context.Context, handler *web.Server, snap *gitsnap.Snapsh
 			}
 			commits, _ := snap.CommitsSince(ctx, firstEventTime(sess))
 			handler.SetStats(usecase.ComputeStats(sess, units, diffs, commits, time.Now()))
+		}
+	}
+}
+
+// agentStatus reports the reviewer's own model: which one, where, whether it
+// answers right now, and what it has spent. Liveness and usage are optional
+// capabilities — a summarizer without them still yields a complete panel, just
+// a quieter one.
+func agentStatus(ctx context.Context, sum port.Summarizer, endpoint, model string) web.AgentStatus {
+	status := web.AgentStatus{Model: model, Endpoint: endpoint, Checked: time.Now()}
+
+	if p, ok := sum.(port.Pinger); ok {
+		probe, cancel := context.WithTimeout(ctx, 2*time.Second)
+		defer cancel()
+		status.Online = p.Ping(probe) == nil
+	}
+	if u, ok := sum.(port.UsageReporter); ok {
+		status.Usage = u.Usage()
+	}
+	return status
+}
+
+// refreshAgent re-probes the model while the page is open. "Is it online" is a
+// live question: an endpoint that answered at start-up says nothing about the
+// one that died five minutes later.
+func refreshAgent(ctx context.Context, handler *web.Server, sum port.Summarizer, endpoint, model string) {
+	ticker := time.NewTicker(20 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			handler.SetAgent(agentStatus(ctx, sum, endpoint, model))
 		}
 	}
 }

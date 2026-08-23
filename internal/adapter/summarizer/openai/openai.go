@@ -11,6 +11,8 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
 	"github.com/mondial7/mondspace-reviewer/internal/port"
@@ -23,6 +25,39 @@ type Summarizer struct {
 	noThinking bool
 	maxTokens  int
 	client     *http.Client
+
+	mu    sync.Mutex
+	usage port.TokenUsage
+}
+
+// Usage reports what this summarizer has spent since it was created, satisfying
+// port.UsageReporter.
+func (s *Summarizer) Usage() port.TokenUsage {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.usage
+}
+
+// Ping reports whether the endpoint is reachable, satisfying port.Pinger. It
+// asks for the model list, which every OpenAI-compatible server serves and no
+// model has to wake up to answer.
+func (s *Summarizer) Ping(ctx context.Context) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.baseURL+"/models", nil)
+	if err != nil {
+		return err
+	}
+	if s.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+s.apiKey)
+	}
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 500 {
+		return fmt.Errorf("summarizer endpoint returned status %d", resp.StatusCode)
+	}
+	return nil
 }
 
 // defaultMaxTokens caps every reply. LM Studio's own guidance for a model that
@@ -102,7 +137,18 @@ type chatMessage struct {
 	Content string `json:"content"`
 }
 
+type tokenDetails struct {
+	ReasoningTokens int `json:"reasoning_tokens"`
+}
+
+type chatUsage struct {
+	PromptTokens     int          `json:"prompt_tokens"`
+	CompletionTokens int          `json:"completion_tokens"`
+	Details          tokenDetails `json:"completion_tokens_details"`
+}
+
 type chatReply struct {
+	Usage   chatUsage `json:"usage"`
 	Choices []struct {
 		Message struct {
 			Content string `json:"content"`
@@ -170,6 +216,22 @@ var errRejected = errors.New("request rejected")
 
 // chat runs one chat completion and returns the assistant's message content.
 func (s *Summarizer) chat(ctx context.Context, system, user string, format *responseFormat) (string, error) {
+	started := time.Now()
+	failed := true
+	var spent chatUsage
+	defer func() {
+		s.mu.Lock()
+		s.usage.Calls++
+		s.usage.Millis += time.Since(started).Milliseconds()
+		if failed {
+			s.usage.Failures++
+		}
+		s.usage.Prompt += spent.PromptTokens
+		s.usage.Completion += spent.CompletionTokens
+		s.usage.Reasoning += spent.Details.ReasoningTokens
+		s.mu.Unlock()
+	}()
+
 	body := chatRequest{
 		ResponseFormat: format,
 		Model:          s.model,
@@ -217,6 +279,9 @@ func (s *Summarizer) chat(ctx context.Context, system, user string, format *resp
 	if len(reply.Choices) == 0 {
 		return "", fmt.Errorf("summarizer returned no choices")
 	}
+
+	spent = reply.Usage
+	failed = false
 
 	msg := reply.Choices[0].Message
 	if strings.TrimSpace(msg.Content) == "" {

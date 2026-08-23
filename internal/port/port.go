@@ -44,6 +44,31 @@ type SchemaAnswerer interface {
 	AnswerSchema(ctx context.Context, question string, c domain.AskContext, schema JSONSchema) (string, error)
 }
 
+// TokenUsage is what a summarizer has spent since the process started. Reasoning
+// is broken out because on a thinking model it is most of the bill, and it is
+// the number that decides whether a context window is big enough.
+type TokenUsage struct {
+	Calls      int
+	Failures   int
+	Prompt     int
+	Completion int
+	Reasoning  int
+	Millis     int64
+}
+
+// UsageReporter is an optional capability of a Summarizer: reporting what it has
+// spent. A summarizer without it simply has nothing to show.
+type UsageReporter interface {
+	Usage() TokenUsage
+}
+
+// Pinger is an optional capability of a Summarizer: answering, right now,
+// whether its endpoint is reachable. Liveness is a live question — a probe at
+// start-up says nothing about the model five minutes later.
+type Pinger interface {
+	Ping(ctx context.Context) error
+}
+
 // Store persists the append-only session log.
 type Store interface {
 	AppendEvent(domain.Event) error

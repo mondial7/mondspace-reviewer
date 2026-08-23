@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Status — mondspace-reviewer</title>
+  <link rel="stylesheet" href="/assets/app.css">
+  <script type="module" src="/assets/storyline.js" defer></script>
+  <script type="module" src="/assets/live.js" defer></script>
+</head>
+<body class="page">
+  <canvas class="starfield" id="starfield" aria-hidden="true"></canvas>
+
+  <nav class="storynav">
+    <a class="storynav__brand" href="/">msr</a>
+    <a class="storynav__link" href="/">cockpit</a>
+    <a class="storynav__link" href="/review">review</a>
+    <a class="storynav__link" href="/story">story</a>
+    <a class="storynav__link" href="/activity">activity</a>
+    <a class="storynav__link" href="/status" aria-current="page">status</a>
+    <a class="storynav__link" href="/sessions">sessions</a>
+    <span class="storynav__spacer"></span>
+    <button class="masthead__focus" id="focus-toggle" type="button"
+            aria-pressed="false" data-label-off="focus mode" data-label-on="full view"
+            title="Toggle focus mode (f)">focus mode</button>
+  </nav>
+
+  <main class="board">
+
+    <!-- The reviewer's own model: the one thing no other page reports. -->
+    <section class="board__panel">
+      <h2 class="board__title">reviewer agent</h2>
+      <div class="board__row">
+        <span class="board__key">state</span>
+        <span class="board__val {{ if .Agent.Online }}board__val--up{{ else }}board__val--down{{ end }}">
+          {{ if .Agent.Online }}online{{ else }}offline{{ end }}
+        </span>
+      </div>
+      <div class="board__row">
+        <span class="board__key">model</span>
+        <span class="board__val">{{ if .Agent.Model }}{{ .Agent.Model }}{{ else }}—{{ end }}</span>
+      </div>
+      <div class="board__row">
+        <span class="board__key">endpoint</span>
+        <span class="board__val">{{ if .Agent.Endpoint }}{{ .Agent.Endpoint }}{{ else }}—{{ end }}</span>
+      </div>
+      <div class="board__row">
+        <span class="board__key">last checked</span>
+        <span class="board__val">{{ .Checked }}</span>
+      </div>
+    </section>
+
+    <!-- What it has spent. Reasoning is broken out because on a thinking model
+         it is most of the bill, and it is what exhausts a context window. -->
+    <section class="board__panel">
+      <h2 class="board__title">agent usage</h2>
+      <div class="board__row">
+        <span class="board__key">calls</span><span class="board__val">{{ .Calls }}</span>
+      </div>
+      <div class="board__row">
+        <span class="board__key">failed</span>
+        <span class="board__val {{ if ne .Failures "0" }}board__val--down{{ end }}">{{ .Failures }}</span>
+      </div>
+      <div class="board__row">
+        <span class="board__key">avg latency</span><span class="board__val">{{ .Average }}</span>
+      </div>
+      <div class="board__row">
+        <span class="board__key">prompt tokens</span><span class="board__val">{{ .Prompt }}</span>
+      </div>
+      <div class="board__row">
+        <span class="board__key">completion tokens</span><span class="board__val">{{ .Completion }}</span>
+      </div>
+      <div class="board__row">
+        <span class="board__key">of which reasoning</span><span class="board__val">{{ .Reasoning }}</span>
+      </div>
+      <div class="board__row">
+        <span class="board__key">total tokens</span><span class="board__val">{{ .Total }}</span>
+      </div>
+    </section>
+
+    <!-- Every session known for this project. -->
+    <section class="board__panel">
+      <h2 class="board__title">sessions · {{ .Repo }}</h2>
+      {{ range .Sessions }}
+      <div class="board__session">
+        <a class="board__id" href="/?session={{ .ID }}">{{ .ID }}</a>
+        <span class="board__key">{{ .Agent }}</span>
+        <span class="board__prompt">{{ .Prompt }}</span>
+        <span class="board__val">{{ .Files }}f</span>
+        {{ if .Open }}<span class="flag">{{ .Open }} open</span>{{ end }}
+      </div>
+      {{ else }}
+      <p class="queue__empty">No sessions recorded for this project yet.</p>
+      {{ end }}
+    </section>
+  </main>
+</body>
+</html>

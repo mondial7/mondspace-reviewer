@@ -24,13 +24,32 @@ at, and the queue is one click away. Annotating or re-analysing still returns to
 `/review#unit-…`: a reviewer working through the queue must not be thrown back
 to the cockpit and lose their place.
 
-- **Pulse (top left).** An isometric grid of blocks, one per changed file,
-  that breathes while the session is live and settles when it goes quiet.
-  Liveness is `data-live` on `<body>`, read fresh each frame, so live.js
-  swapping regions cannot leave the animation stale.
-- **Stats (top right).** Time open, files, lines, commits, pull requests.
-- **Feed (bottom).** Every change, newest first, as a one-line description plus
-  its diff. The only scrolling region on the page.
+- **Instrument panel (fixed left column).** The isometric field and the numbers,
+  which never scroll away.
+- **Feed (right column).** Every change, newest first, as a one-line description
+  plus its diff. The only scrolling region on the page.
+
+### The field is an instrument, not decoration
+
+An animation that loops regardless of what is happening teaches the viewer to
+ignore it. Every property of the field is bound to real data, so its shape can
+be read:
+
+| property | means |
+| --- | --- |
+| a block | one changed file |
+| height | lines changed, log-scaled so one generated file cannot flatten the rest |
+| colour | growth, deletion, or flagged — matching the printed legend |
+| depth | recency; the newest change stands at the front |
+| motion | only while the session is live, and strongest at the front |
+
+Motion carries information rather than filling silence: a still field means
+nothing is happening, and movement concentrated at the front means *this* is
+where work is landing. A `MutationObserver` on the feed rebuilds the field when
+live.js swaps in a change, so a new file appearing in the session appears here.
+
+Liveness is `data-live` on `<body>`, read fresh each frame — live.js replaces
+regions of the page, so a value captured once at start-up would go stale.
 
 Three rules keep it honest:
 
@@ -59,6 +78,22 @@ The limits are real and worth stating: a forge with a different merge subject
 convention will report zero, a rebase-merge that drops the reference is
 invisible, and an *open* PR is not a commit and cannot be seen at all. This is a
 count of pull requests that **landed**, not of pull requests that exist.
+
+## A status page
+
+`/status` answers the question nothing else does: **is the thing that writes my
+summaries actually working?** Which model, at which endpoint, reachable right
+now (re-probed every 20s — an endpoint that answered at start-up says nothing
+about the one that died since), how many calls, how many failed, average
+latency, and tokens split into prompt, completion, and *of which reasoning*.
+
+Reasoning is broken out deliberately: on a thinking model it is most of the bill
+and it is what exhausts a context window. Measured on this repo the moment the
+page existed: **1,250 of 1,251 completion tokens were reasoning** — the ADR 0014
+problem, finally visible as a number instead of a symptom.
+
+Usage and liveness are optional capabilities (`port.UsageReporter`,
+`port.Pinger`). A summarizer without them yields a quieter panel, not an error.
 
 ## Consequences
 

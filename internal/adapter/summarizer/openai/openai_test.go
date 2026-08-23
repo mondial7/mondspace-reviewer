@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/summarizer/openai"
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
@@ -410,5 +411,95 @@ func TestHeadlinePostsChatCompletionAndParsesReply(t *testing.T) {
 	}
 	if got.Why != "to swap the JWT lib" {
 		t.Errorf("Why = %q, want the parsed WHY line", got.Why)
+	}
+}
+
+func usageResponse(content string, prompt, completion, reasoning int) string {
+	b, _ := json.Marshal(map[string]any{
+		"choices": []map[string]any{
+			{"message": map[string]any{"role": "assistant", "content": content}},
+		},
+		"usage": map[string]any{
+			"prompt_tokens":     prompt,
+			"completion_tokens": completion,
+			"total_tokens":      prompt + completion,
+			"completion_tokens_details": map[string]any{
+				"reasoning_tokens": reasoning,
+			},
+		},
+	})
+	return string(b)
+}
+
+func TestSummarizerAccumulatesTokenUsage(t *testing.T) {
+	// The server reports what every call cost and msr was throwing it away, so
+	// the one number a local-model user most wants — how much thinking is being
+	// spent — was invisible.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(2 * time.Millisecond) // a local call is otherwise sub-millisecond
+		io.WriteString(w, usageResponse("WHAT: x\nWHY: unknown", 100, 50, 40))
+	}))
+	defer srv.Close()
+
+	sum := openai.New(srv.URL, "m")
+	for i := 0; i < 3; i++ {
+		if _, err := sum.Headline(context.Background(), domain.Unit{}, domain.Diff{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	got := sum.Usage()
+	if got.Calls != 3 {
+		t.Errorf("Calls = %d, want 3", got.Calls)
+	}
+	if got.Prompt != 300 || got.Completion != 150 {
+		t.Errorf("tokens = %d prompt / %d completion, want 300/150", got.Prompt, got.Completion)
+	}
+	// Reasoning is the interesting half on a thinking model: it is what exhausts
+	// a small context, and it is reported separately from the answer.
+	if got.Reasoning != 120 {
+		t.Errorf("Reasoning = %d, want 120", got.Reasoning)
+	}
+	if got.Millis <= 0 {
+		t.Errorf("Millis = %d, want the accumulated call time", got.Millis)
+	}
+}
+
+func TestUsageCountsFailuresSeparatelyFromCalls(t *testing.T) {
+	// A failing endpoint costs no tokens but is exactly what a status page needs
+	// to show, so failures are counted rather than dropped.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "boom", http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	sum := openai.New(srv.URL, "m")
+	_, _ = sum.Answer(context.Background(), "q", domain.AskContext{})
+
+	got := sum.Usage()
+	if got.Failures != 1 {
+		t.Errorf("Failures = %d, want 1", got.Failures)
+	}
+	if got.Calls != 1 {
+		t.Errorf("Calls = %d, want the attempt to be counted", got.Calls)
+	}
+}
+
+func TestPingReportsWhetherTheEndpointIsReachable(t *testing.T) {
+	// The status page asks "is the reviewer's model online?" — which is a live
+	// question, not one answered once at start-up.
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/models" {
+			t.Errorf("Ping should ask /models, got %s", r.URL.Path)
+		}
+		io.WriteString(w, `{"data":[{"id":"m"}]}`)
+	}))
+	defer up.Close()
+
+	if err := openai.New(up.URL, "m").Ping(context.Background()); err != nil {
+		t.Errorf("Ping against a healthy server: %v", err)
+	}
+	if err := openai.New("http://127.0.0.1:1", "m").Ping(context.Background()); err == nil {
+		t.Error("Ping should fail when nothing is listening")
 	}
 }

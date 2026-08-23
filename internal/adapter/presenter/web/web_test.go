@@ -14,6 +14,7 @@ import (
 
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/presenter/web"
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
+	"github.com/mondial7/mondspace-reviewer/internal/port"
 )
 
 func testSession() web.Session {
@@ -703,5 +704,69 @@ func TestAnnotatingReturnsToTheReviewQueueNotTheCockpit(t *testing.T) {
 
 	if got := rec.Header().Get("Location"); got != "/review#unit-s-f001" {
 		t.Errorf("Location = %q, want /review#unit-s-f001", got)
+	}
+}
+
+func TestStatusPageReportsTheReviewerAgentAndOpenSessions(t *testing.T) {
+	h := web.NewServer(testSession(), nil).
+		WithWorkspace([]web.SessionSummary{
+			{ID: "s", Repo: "mondspace-reviewer", Agent: "claude-code", Prompt: "add token validation", Files: 2},
+			{ID: "other", Repo: "mondspace-reviewer", Agent: "opencode", Prompt: "fix the retry", Files: 5},
+		}).
+		WithAgent(web.AgentStatus{
+			Model: "qwen/qwen3.5-9b", Endpoint: "http://localhost:1234/v1", Online: true,
+			Usage: port.TokenUsage{Calls: 12, Failures: 1, Prompt: 4000, Completion: 900, Reasoning: 700, Millis: 36000},
+		})
+
+	rec := get(t, h, "/status")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /status = %d, want 200", rec.Code)
+	}
+	body := rec.Body.String()
+
+	// The reviewer's own agent: which model, where, and is it up right now.
+	for _, want := range []string{"qwen/qwen3.5-9b", "http://localhost:1234/v1", "online"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("status page is missing %q", want)
+		}
+	}
+	// What it has spent. Reasoning is broken out: on a thinking model it is the
+	// number that decides whether the context window is big enough.
+	for _, want := range []string{"12", "4,000", "700"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("status page is missing the usage figure %q", want)
+		}
+	}
+	// Every session known for this project.
+	if !strings.Contains(body, "claude-code") || !strings.Contains(body, "fix the retry") {
+		t.Errorf("status page should list the project's sessions:\n%s", body)
+	}
+}
+
+func TestStatusPageSaysWhenTheModelIsOffline(t *testing.T) {
+	h := web.NewServer(testSession(), nil).
+		WithAgent(web.AgentStatus{Model: "m", Endpoint: "http://127.0.0.1:1/v1", Online: false})
+
+	body := get(t, h, "/status").Body.String()
+
+	if !strings.Contains(body, "offline") {
+		t.Errorf("an unreachable endpoint must be reported as offline:\n%s", body)
+	}
+}
+
+func TestCockpitShowsTokensWhenThereAreSome(t *testing.T) {
+	// "if we have them" — a session that has made no model call shows no token
+	// tile rather than a misleading zero.
+	quiet := get(t, web.NewServer(testSession(), nil), "/")
+	if strings.Contains(quiet.Body.String(), "tokens") {
+		t.Error("with no model calls there is no token stat to show")
+	}
+
+	h := web.NewServer(testSession(), nil).
+		WithAgent(web.AgentStatus{Usage: port.TokenUsage{Calls: 3, Prompt: 1200, Completion: 800}})
+
+	body := get(t, h, "/").Body.String()
+	if !strings.Contains(body, "tokens") || !strings.Contains(body, "2,000") {
+		t.Errorf("the cockpit should total the tokens spent:\n%s", body)
 	}
 }

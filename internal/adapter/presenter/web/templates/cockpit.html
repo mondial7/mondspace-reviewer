@@ -11,18 +11,25 @@
 <body class="page page--cockpit" data-live="{{ .Stats.Live }}">
 
   <nav class="storynav">
+    <a class="storynav__brand" href="/">msr</a>
+    <a class="storynav__link" href="/" aria-current="page">cockpit</a>
     <a class="storynav__link" href="/review">review</a>
     <a class="storynav__link" href="/story">story</a>
     <a class="storynav__link" href="/activity">activity</a>
-    <a class="storynav__link" href="/sessions">all sessions</a>
+    <a class="storynav__link" href="/status">status</a>
+    <a class="storynav__link" href="/sessions">sessions</a>
+    <span class="storynav__spacer"></span>
     <button class="masthead__focus" id="focus-toggle" type="button"
-            aria-pressed="false" title="Toggle focus mode (f)">focus mode <kbd>f</kbd></button>
+            aria-pressed="false" data-label-off="hide panel" data-label-on="show panel"
+            title="Show or hide the isometric panel (f)">hide panel</button>
   </nav>
 
-  <!-- Three panes on one desktop screen: nothing here scrolls but the feed. -->
+  <!-- Two columns: a fixed instrument panel, and the feed beside it. Only the
+       feed scrolls. -->
   <main class="cockpit">
 
-    <!-- Left: is anything still happening? -->
+    <!-- Left: the instrument panel — what is happening, and the numbers. -->
+    <aside class="cockpit__panel">
     <section class="cockpit__pulse">
       <canvas class="cockpit__scene" id="cockpit-scene" aria-hidden="true"></canvas>
       <p class="cockpit__status cockpit__status--{{ if .Stats.Live }}live{{ else }}idle{{ end }}">
@@ -30,6 +37,12 @@
         {{ else }}<span class="cockpit__dot"></span>idle — nothing for a while{{ end }}
       </p>
       <p class="cockpit__task">{{ .Session.Prompt }}</p>
+      <p class="cockpit__legend">
+        <span class="cockpit__key cockpit__key--add">growth</span>
+        <span class="cockpit__key cockpit__key--del">deletion</span>
+        <span class="cockpit__key cockpit__key--flag">flagged</span>
+        <span class="cockpit__keynote">height = lines changed · newest at the front</span>
+      </p>
     </section>
 
     <!-- Right: the session in numbers. Every one of these comes from git or
@@ -58,13 +71,20 @@
         <span class="stat__value">{{ .Stats.PullRequests }}</span>
         <span class="stat__label" title="Counted from commit subjects — msr talks to no forge">PRs</span>
       </div>
+      {{ with .Stats.Tokens }}
+      <div class="stat">
+        <span class="stat__value">{{ . }}</span>
+        <span class="stat__label">tokens</span>
+      </div>
+      {{ end }}
     </section>
+    </aside>
 
-    <!-- Bottom: what changed, newest first. The only scrolling region. -->
+    <!-- Right: what changed, newest first. The only scrolling region. -->
     <section class="cockpit__feed">
-      <h2 class="cockpit__feedtitle">what changed</h2>
       {{ range .Feed }}
-      <article class="post">
+      <article class="post" data-file="{{ .File }}" data-added="{{ .Added }}"
+               data-removed="{{ .Removed }}" data-flags="{{ len .Flags }}">
         <header class="post__head">
           <a class="post__file" href="/review#unit-{{ .ID }}">{{ .File }}</a>
           <span class="post__stats">

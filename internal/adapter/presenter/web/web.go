@@ -14,6 +14,7 @@ import (
 	"io/fs"
 	"net/http"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -21,6 +22,7 @@ import (
 	"github.com/oklog/ulid/v2"
 
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
+	"github.com/mondial7/mondspace-reviewer/internal/port"
 	"github.com/mondial7/mondspace-reviewer/internal/usecase"
 )
 
@@ -99,6 +101,17 @@ type AuditReader interface {
 	Entries() ([]AuditEntry, error)
 }
 
+// AgentStatus is the reviewer's own model: which one, where, whether it is up
+// right now, and what it has spent. It is the answer to "is the thing that
+// writes my summaries actually working", which nothing else on the site shows.
+type AgentStatus struct {
+	Model    string
+	Endpoint string
+	Online   bool
+	Checked  time.Time
+	Usage    port.TokenUsage
+}
+
 // Annotator persists a reviewer's annotation. It is declared where it is
 // consumed so this adapter depends on no other adapter.
 type Annotator interface {
@@ -124,6 +137,7 @@ type Server struct {
 	narrate   NarrateFunc
 	narrating bool
 	stats     domain.SessionStats
+	agent     AgentStatus
 
 	// subs are live subscribers (server-sent events). Each gets a buffered
 	// channel so a slow reader can never block a request handler.
@@ -183,6 +197,22 @@ func (s *Server) WithNarrate(fn NarrateFunc) *Server {
 	return s
 }
 
+// WithAgent supplies the reviewer model's status, shown at /status and totalled
+// on the cockpit.
+func (s *Server) WithAgent(a AgentStatus) *Server {
+	s.agent = a
+	return s
+}
+
+// SetAgent replaces the reviewer model's status while the server is running, so
+// an endpoint going down is visible without a reload.
+func (s *Server) SetAgent(a AgentStatus) {
+	s.mu.Lock()
+	s.agent = a
+	s.mu.Unlock()
+	s.broadcast("agent")
+}
+
 // WithStats supplies the session's numbers, shown on the cockpit. They are
 // recomputed by the caller as the session moves, not cached here.
 func (s *Server) WithStats(st domain.SessionStats) *Server {
@@ -239,6 +269,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /story", s.handleStory)
 	s.mux.HandleFunc("GET /cockpit", s.handleCockpit)
 	s.mux.HandleFunc("GET /activity", s.handleActivity)
+	s.mux.HandleFunc("GET /status", s.handleStatus)
 	s.mux.HandleFunc("POST /story/narrate", s.handleNarrate)
 	s.mux.HandleFunc("GET /events", s.handleEvents)
 }
@@ -581,6 +612,9 @@ type cockpitStats struct {
 	Removed      int
 	Commits      int
 	PullRequests int
+	// Tokens is blank when no model call has been made, so a session that never
+	// touched a model shows no tile rather than a misleading zero.
+	Tokens string
 }
 
 // feedItem is one change in the cockpit stream: a sentence and its diff, with
@@ -598,6 +632,7 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 	views := s.views()
 	stats := s.stats
 	sess := s.sess
+	usage := s.agent.Usage
 	s.mu.RUnlock()
 
 	// Newest first: a cockpit answers "what just happened".
@@ -623,6 +658,7 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 			Live:  stats.Live,
 			Files: stats.Files, Added: stats.Added, Removed: stats.Removed,
 			Commits: stats.Commits, PullRequests: stats.PullRequests,
+			Tokens: tokenTotal(usage),
 		},
 		Feed: items,
 	}
@@ -631,6 +667,14 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 	if err := s.tmpl.ExecuteTemplate(w, "cockpit.html", data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
+}
+
+// tokenTotal is the tokens spent so far, or blank if no model call has happened.
+func tokenTotal(u port.TokenUsage) string {
+	if u.Calls == 0 {
+		return ""
+	}
+	return thousands(u.Prompt + u.Completion)
 }
 
 // cockpitDiffLines is how much of one diff the feed shows before compacting. It
@@ -649,6 +693,66 @@ func humanDuration(d time.Duration) string {
 		return fmt.Sprintf("%dm", m)
 	}
 	return fmt.Sprintf("%dh %dm", h, m)
+}
+
+// handleStatus answers "is everything working": the reviewer's own model, what
+// it has cost, and every session known for this project.
+func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
+	s.mu.RLock()
+	agent := s.agent
+	sessions := s.workspace
+	sessionID := s.sess.ID
+	repo := s.sess.Repo
+	s.mu.RUnlock()
+
+	u := agent.Usage
+	avg := "—"
+	if u.Calls > 0 {
+		avg = fmt.Sprintf("%.1fs", float64(u.Millis)/float64(u.Calls)/1000)
+	}
+	checked := "—"
+	if !agent.Checked.IsZero() {
+		checked = agent.Checked.Local().Format("15:04:05")
+	}
+
+	data := struct {
+		SessionID          string
+		Repo               string
+		Agent              AgentStatus
+		Calls, Failures    string
+		Prompt, Completion string
+		Reasoning, Total   string
+		Average, Checked   string
+		Sessions           []SessionSummary
+	}{
+		SessionID: sessionID, Repo: repo, Agent: agent,
+		Calls: thousands(u.Calls), Failures: thousands(u.Failures),
+		Prompt: thousands(u.Prompt), Completion: thousands(u.Completion),
+		Reasoning: thousands(u.Reasoning), Total: thousands(u.Prompt + u.Completion),
+		Average: avg, Checked: checked,
+		Sessions: sessions,
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := s.tmpl.ExecuteTemplate(w, "status.html", data); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+// thousands groups a count so a six-figure token total stays readable.
+func thousands(n int) string {
+	s := strconv.Itoa(n)
+	if n < 0 {
+		return s
+	}
+	var b strings.Builder
+	for i, c := range s {
+		if i > 0 && (len(s)-i)%3 == 0 {
+			b.WriteByte(',')
+		}
+		b.WriteRune(c)
+	}
+	return b.String()
 }
 
 // activityView is one audit entry prepared for display.
