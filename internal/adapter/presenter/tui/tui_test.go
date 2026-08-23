@@ -50,6 +50,52 @@ func TestCtrlCAlwaysQuits(t *testing.T) {
 	quitsOnCtrlC(t, tui.New(nil, nil, nil), "with an empty session")
 }
 
+func TestExpandFetchesAndShowsDiff(t *testing.T) {
+	units := []domain.Unit{{ID: "s-u001", Files: []string{"a.go"},
+		From: domain.SnapshotRef{Commit: "aaa"}, To: domain.SnapshotRef{Commit: "bbb"}}}
+	m := tui.New(units, nil, nil).WithDiff(func(u domain.Unit) tea.Msg {
+		return tui.DiffReadyMsg{UnitID: u.ID, Diff: domain.Diff{Text: "@@ -1 +1 @@\n-old body\n+new validated body\n"}}
+	})
+
+	// Expanding fires a command to fetch the unit's diff.
+	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = next.(tui.Model)
+	if cmd == nil {
+		t.Fatal("expanding should fetch the diff")
+	}
+	ready, ok := cmd().(tui.DiffReadyMsg)
+	if !ok || ready.UnitID != "s-u001" {
+		t.Fatalf("expand cmd yielded %#v, want a DiffReadyMsg for s-u001", cmd())
+	}
+
+	// Once the diff arrives it is shown in the expanded unit.
+	after, _ := m.Update(ready)
+	m = after.(tui.Model)
+	view := m.View()
+	if !strings.Contains(view, "new validated body") || !strings.Contains(view, "old body") {
+		t.Errorf("expanded unit should show the diff:\n%s", view)
+	}
+}
+
+func TestCollapsedLineShowsHeadlineOnceSummarized(t *testing.T) {
+	units := []domain.Unit{{ID: "s-u001", Files: []string{"auth/token.go"},
+		Headline: domain.Headline{Text: "1 edit across 1 file"}}}
+	m := tui.New(units, nil, nil)
+
+	// Offline: the collapsed line anchors on the file.
+	if !strings.Contains(m.View(), "auth/token.go") {
+		t.Errorf("should show the file before a summary arrives:\n%s", m.View())
+	}
+
+	// After the model summarizes, the queue reads as a storyline.
+	next, _ := m.Update(tui.HeadlineReadyMsg{UnitID: "s-u001",
+		Headline: domain.Headline{Text: "extracted validation behind a TokenValidator interface", WhySrc: domain.WhyInferred}})
+	m = next.(tui.Model)
+	if !strings.Contains(m.View(), "extracted validation behind a TokenValidator interface") {
+		t.Errorf("collapsed line should show the model headline once summarized:\n%s", m.View())
+	}
+}
+
 func TestUnitAddedStreamsIntoQueueWithoutMovingCursor(t *testing.T) {
 	m := tui.New(nil, nil, nil)
 	if m.VisibleCount() != 0 {

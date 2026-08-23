@@ -18,12 +18,14 @@ import (
 )
 
 type Model struct {
-	units    []domain.Unit
-	notes    []domain.Note
-	store    port.Store
-	cursor   int             // index into the visible units
-	expanded map[string]bool // unit ID -> expanded
-	read     map[string]bool // unit ID -> reviewed (ok)
+	units      []domain.Unit
+	notes      []domain.Note
+	store      port.Store
+	cursor     int                    // index into the visible units
+	expanded   map[string]bool        // unit ID -> expanded
+	read       map[string]bool        // unit ID -> reviewed (ok)
+	summarized map[string]bool        // unit ID -> model headline filled in
+	diffs      map[string]domain.Diff // unit ID -> fetched diff
 
 	unreadOnly bool
 	filtering  bool
@@ -44,6 +46,8 @@ type Model struct {
 	summarize func(domain.Unit) tea.Msg
 	// ask, when set, answers a question asynchronously.
 	ask func(scope domain.AskScope, unit domain.Unit, question string) tea.Msg
+	// fetchDiff, when set, loads a unit's diff on expand (a DiffReadyMsg).
+	fetchDiff func(domain.Unit) tea.Msg
 }
 
 // AnswerReadyMsg carries an interrogation answer back into the queue.
@@ -52,15 +56,23 @@ type AnswerReadyMsg struct{ Text string }
 // UnitAddedMsg streams a newly-sealed unit into a live queue.
 type UnitAddedMsg struct{ Unit domain.Unit }
 
+// DiffReadyMsg carries a unit's fetched diff back into the queue.
+type DiffReadyMsg struct {
+	UnitID string
+	Diff   domain.Diff
+}
+
 func New(units []domain.Unit, notes []domain.Note, store port.Store) Model {
 	return Model{
-		units:    units,
-		notes:    notes,
-		store:    store,
-		expanded: map[string]bool{},
-		read:     map[string]bool{},
-		newID:    func() string { return ulid.Make().String() },
-		now:      func() time.Time { return time.Now().UTC() },
+		units:      units,
+		notes:      notes,
+		store:      store,
+		expanded:   map[string]bool{},
+		read:       map[string]bool{},
+		summarized: map[string]bool{},
+		diffs:      map[string]domain.Diff{},
+		newID:      func() string { return ulid.Make().String() },
+		now:        func() time.Time { return time.Now().UTC() },
 	}
 }
 
@@ -93,6 +105,12 @@ func (m Model) WithAsk(fn func(domain.AskScope, domain.Unit, string) tea.Msg) Mo
 	return m
 }
 
+// WithDiff wires an async diff loader; a unit's diff is fetched when it expands.
+func (m Model) WithDiff(fn func(domain.Unit) tea.Msg) Model {
+	m.fetchDiff = fn
+	return m
+}
+
 // Read reports whether a unit has been reviewed and accepted (an ok note).
 func (m Model) Read(unitID string) bool { return m.read[unitID] }
 
@@ -121,6 +139,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	if ans, ok := msg.(AnswerReadyMsg); ok {
 		m.answer = ans.Text
+		return m, nil
+	}
+	if dr, ok := msg.(DiffReadyMsg); ok {
+		m.diffs[dr.UnitID] = dr.Diff
 		return m, nil
 	}
 	if added, ok := msg.(UnitAddedMsg); ok {
@@ -165,6 +187,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case "enter":
 		if u, ok := m.current(); ok {
 			m.expanded[u.ID] = !m.expanded[u.ID]
+			if m.expanded[u.ID] && m.fetchDiff != nil {
+				if _, loaded := m.diffs[u.ID]; !loaded {
+					uu := u
+					return m, func() tea.Msg { return m.fetchDiff(uu) }
+				}
+			}
 		}
 	case "o":
 		m = m.annotate(domain.NoteOK)
@@ -262,6 +290,7 @@ func (m Model) fillHeadline(ready HeadlineReadyMsg) Model {
 		}
 	}
 	m.units = units
+	m.summarized[ready.UnitID] = true
 	return m
 }
 
@@ -361,7 +390,13 @@ func (m Model) unitLine(u domain.Unit, selected bool) string {
 	if m.read[u.ID] {
 		mark = okStyle.Render("✓ ")
 	}
-	line := cursor + mark + handleStyle.Render(shortHandle(u.ID)) + "  " + m.relFiles(u.Files)
+	// Once the model has summarized a unit, the collapsed line reads as a
+	// storyline sentence; until then it anchors on the changed files.
+	primary := m.relFiles(u.Files)
+	if m.summarized[u.ID] && u.Headline.Text != "" {
+		primary = u.Headline.Text
+	}
+	line := cursor + mark + handleStyle.Render(shortHandle(u.ID)) + "  " + primary
 	if len(u.Flags) > 0 {
 		line += "  " + renderFlags(u.Flags)
 	}
@@ -371,16 +406,59 @@ func (m Model) unitLine(u domain.Unit, selected bool) string {
 func (m Model) details(u domain.Unit) string {
 	const ind = "      "
 	var b strings.Builder
-	b.WriteString(ind + labelStyle.Render("what") + "  " + u.Headline.Text + "\n")
-	b.WriteString(ind + labelStyle.Render("why ") + "  " + renderWhy(u.Headline) + "\n")
+	b.WriteString(ind + labelStyle.Render("what ") + " " + u.Headline.Text + "\n")
+	b.WriteString(ind + labelStyle.Render("why  ") + " " + renderWhy(u.Headline) + "\n")
+	b.WriteString(ind + labelStyle.Render("files") + " " + m.relFiles(u.Files) + "\n")
 	for _, n := range m.notes {
 		if n.UnitID != u.ID {
 			continue
 		}
-		b.WriteString(ind + labelStyle.Render("note") + "  " + renderNote(n) + "\n")
+		b.WriteString(ind + labelStyle.Render("note ") + " " + renderNote(n) + "\n")
 	}
-	b.WriteString(ind + dimStyle.Render("id    "+u.ID) + "\n")
+	b.WriteString(ind + m.renderDiff(u) + "\n")
+	b.WriteString(ind + dimStyle.Render("id     "+u.ID) + "\n")
 	return b.String()
+}
+
+// renderDiff shows the unit's code change (fetched on expand), coloured and
+// capped so a large change stays scannable.
+func (m Model) renderDiff(u domain.Unit) string {
+	d, ok := m.diffs[u.ID]
+	if !ok {
+		if m.fetchDiff != nil {
+			return labelStyle.Render("diff ") + " " + dimStyle.Render("loading…")
+		}
+		return labelStyle.Render("diff ") + " " + dimStyle.Render("—")
+	}
+	lines := strings.Split(strings.TrimRight(d.Text, "\n"), "\n")
+	if len(lines) == 1 && lines[0] == "" {
+		return labelStyle.Render("diff ") + " " + dimStyle.Render("(no changes)")
+	}
+
+	var b strings.Builder
+	b.WriteString(labelStyle.Render("diff ") + "\n")
+	const maxLines = 40
+	for i, ln := range lines {
+		if i >= maxLines {
+			b.WriteString("        " + dimStyle.Render(fmt.Sprintf("… %d more lines", len(lines)-maxLines)) + "\n")
+			break
+		}
+		b.WriteString("        " + diffLineStyle(ln).Render(ln) + "\n")
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+func diffLineStyle(line string) lipgloss.Style {
+	switch {
+	case strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++"):
+		return statedStyle // green
+	case strings.HasPrefix(line, "-") && !strings.HasPrefix(line, "---"):
+		return flagStyle // red
+	case strings.HasPrefix(line, "@@"):
+		return handleStyle // cyan
+	default:
+		return dimStyle
+	}
 }
 
 func renderNote(n domain.Note) string {

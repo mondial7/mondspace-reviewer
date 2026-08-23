@@ -123,9 +123,10 @@ func runReview(ctx context.Context, args []string, stdout io.Writer) error {
 	}
 }
 
-// Default summarizer endpoint (SPEC §3): a local LM Studio server.
+// Default summarizer endpoint: a local LM Studio server. Set MSR_API_KEY if the
+// endpoint requires a bearer token.
 const (
-	defaultSummarizerURL = "http://192.168.101.99:1234/v1"
+	defaultSummarizerURL = "http://localhost:1234/v1"
 	defaultModel         = "qwen/qwen3.5-9b"
 )
 
@@ -277,6 +278,7 @@ func runLiveTUI(ctx context.Context, store port.Store, snap port.Snapshotter, su
 	model := tui.New(nil, notes, store).
 		RelativeTo(repo).
 		WithSummarize(summarizeFunc(snap, sum)).
+		WithDiff(diffFunc(snap)).
 		WithAsk(askFunc(sess, snap, sum))
 
 	p := tea.NewProgram(model, tea.WithInput(os.Stdin), tea.WithOutput(stdout))
@@ -301,6 +303,7 @@ func runTUIReview(store port.Store, snap port.Snapshotter, sum port.Summarizer, 
 	model := tui.New(sess.Units, notes, store).
 		RelativeTo(repo).
 		WithSummarize(summarizeFunc(snap, sum)).
+		WithDiff(diffFunc(snap)).
 		WithAsk(askFunc(sess, snap, sum))
 	_, err = tea.NewProgram(model, tea.WithInput(os.Stdin), tea.WithOutput(stdout)).Run()
 	return err
@@ -326,6 +329,19 @@ func askFunc(sess domain.Session, snap port.Snapshotter, sum port.Summarizer) fu
 			answer = "(" + err.Error() + ")"
 		}
 		return tui.AnswerReadyMsg{Text: answer}
+	}
+}
+
+// diffFunc builds the async diff loader used when a unit is expanded.
+func diffFunc(snap port.Snapshotter) func(domain.Unit) tea.Msg {
+	return func(u domain.Unit) tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		diff, err := snap.Diff(ctx, u.From, u.To, u.Files)
+		if err != nil {
+			diff = domain.Diff{}
+		}
+		return tui.DiffReadyMsg{UnitID: u.ID, Diff: diff}
 	}
 }
 

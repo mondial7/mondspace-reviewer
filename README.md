@@ -40,6 +40,10 @@ Three ideas do most of the work:
 - **Deterministic flags first.** `no-test`, `new-dep`, `swallowed-err`, and friends
   are what make you stop and look. They run with no model, offline, instantly.
 
+Expand a unit and you get the **story of that change** — a concise headline, the
+`stated`/`inferred` rationale, and the **actual diff** — so you can review and
+annotate even when a change is too big for line-by-line reading.
+
 ## Screenshots
 
 | Ask the log (`a` / `A`) | Export a review report |
@@ -185,7 +189,10 @@ so every unit's diff stays stable even after the file is rewritten.
 
 ## Summarizer configuration
 
-Headlines and interrogation use any OpenAI-compatible chat endpoint:
+Headlines and interrogation use any OpenAI-compatible chat endpoint, defaulting
+to a local LM Studio server at `http://localhost:1234/v1`. The model turns each
+unit into a one-line storyline and infers the *why*; expanding a unit still shows
+the real diff regardless.
 
 ```sh
 msr review --tui --session=<id> \
