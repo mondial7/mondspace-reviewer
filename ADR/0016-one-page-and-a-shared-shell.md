@@ -80,6 +80,30 @@ now live on `Session`, so what is displayed cannot disagree with what is being
 read. Only the tracked session can re-narrate; opening another never triggers a
 model call.
 
+## Reading the changes
+
+**Files that changed together are shown together.** Five files added under one
+package is one act of work; reviewing them as five entries buries what happened.
+Changes are grouped by directory, with combined churn, and a file with no
+companions stands alone rather than being forced into a group of one.
+
+**A mechanical headline is not shown at all.** "edited jsonl.go" above a row
+already labelled `jsonl.go` is noise. Each *group* instead gets one
+model-written sentence saying what the change is **for** — the behaviour, not
+the filenames — capped at 160 characters and schema-enforced. A group the model
+cannot describe says so rather than falling back to a mechanical sentence
+dressed up as meaning. A per-file headline reappears only when a model wrote it,
+which is what `re-analyse` produces.
+
+**The full diff opens as an overlay over the page**, not inline, and steps
+through that file's git history with `←`/`→` — each version showing its commit,
+date, author and subject. `--follow` is deliberately not used: it guesses at
+renames, and a guess presented as history is worse than a short history.
+
+**A tree toggle** shows the same changes as an indented folder listing with only
+churn and flags — the shape of the change when the diffs are not what you want.
+The choice is remembered; it is a working preference, not a one-off.
+
 ## Consequences
 
 - One address to share, one place to work, and the story finally sits beside the

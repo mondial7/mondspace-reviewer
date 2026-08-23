@@ -421,7 +421,9 @@ func TestCommitsSinceListsOnlyWorkDoneInTheWindow(t *testing.T) {
 // a test can place a commit before or after a window without waiting for one.
 func commitAt(t *testing.T, dir string, when time.Time, name, subject string) {
 	t.Helper()
-	if err := os.WriteFile(filepath.Join(dir, name), []byte("x\n"), 0o644); err != nil {
+	// Content must differ per commit, or git has nothing to record and the
+	// commit fails — which would make the test pass for the wrong reason.
+	if err := os.WriteFile(filepath.Join(dir, name), []byte("x\n"+subject+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	stamp := when.Format(time.RFC3339)
@@ -500,5 +502,53 @@ func TestNumstatIsEmptyNotAnErrorWithNoChanges(t *testing.T) {
 	}
 	if len(got) != 0 {
 		t.Errorf("got %+v, want nothing changed", got)
+	}
+}
+
+func TestFileVersionsWalksACommitHistory(t *testing.T) {
+	// The overlay steps through a file's versions, so it needs the commits that
+	// touched that file and nothing else.
+	dir := newRepo(t)
+	base := time.Now()
+	commitAt(t, dir, base.Add(-3*time.Hour), "other.txt", "Unrelated work")
+	commitAt(t, dir, base.Add(-2*time.Hour), "tracked.go", "First version")
+	commitAt(t, dir, base.Add(-1*time.Hour), "tracked.go", "Second version")
+
+	got, err := gitsnap.New(dir, "s").FileVersions(context.Background(), "tracked.go", 10)
+	if err != nil {
+		t.Fatalf("FileVersions: %v", err)
+	}
+
+	if len(got) != 2 {
+		t.Fatalf("got %d versions, want only the commits touching that file: %+v", len(got), got)
+	}
+	// Newest first: stepping "back" from the current state is the natural motion.
+	if got[0].Subject != "Second version" || got[1].Subject != "First version" {
+		t.Errorf("versions = %+v, want newest first", got)
+	}
+	if got[0].Hash == "" || got[0].TS.IsZero() {
+		t.Errorf("a version needs a commit and a date: %+v", got[0])
+	}
+}
+
+func TestDiffAtShowsWhatOneCommitDidToOneFile(t *testing.T) {
+	dir := newRepo(t)
+	base := time.Now()
+	commitAt(t, dir, base.Add(-time.Hour), "tracked.go", "Add tracked.go")
+
+	versions, err := gitsnap.New(dir, "s").FileVersions(context.Background(), "tracked.go", 10)
+	if err != nil || len(versions) == 0 {
+		t.Fatalf("FileVersions: %v %+v", err, versions)
+	}
+
+	diff, err := gitsnap.New(dir, "s").DiffAt(context.Background(), versions[0].Hash, "tracked.go")
+	if err != nil {
+		t.Fatalf("DiffAt: %v", err)
+	}
+	if !strings.Contains(diff.Text, "tracked.go") {
+		t.Errorf("diff should name the file:\n%s", diff.Text)
+	}
+	if !strings.Contains(diff.Text, "+x") {
+		t.Errorf("diff should show the added content:\n%s", diff.Text)
 	}
 }

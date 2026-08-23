@@ -123,6 +123,7 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 		WithNarrative(shown).
 		WithWorkspace(workspace).
 		WithLoader(sessionLoader(workspace, *out)).
+		WithVersions(snap.FileVersions, snap.DiffAt).
 		WithAsk(webAskFunc(sess, snap, sum)).
 		WithReanalyse(webReanalyseFunc(snap, sum, *model)).
 		WithAudit(auditFile(filepath.Join(*out, *session, "audit.jsonl")))
@@ -153,6 +154,18 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 			entry.Detail = err.Error()
 			fmt.Fprintln(os.Stderr, "msr: story fell back to mechanical grouping:", err)
 		}
+		// What each group of changes is FOR. Same budget rules as narration:
+		// bounded, cached with the story, never triggered by navigation.
+		groups := usecase.GroupChanges(units, diffs)
+		narrative.Meanings = usecase.DescribeGroups(narrateCtx, sum, sess, groups,
+			func(partial map[string]string) {
+				live := narrative
+				live.Meanings = partial
+				handler.SetNarrative(live)
+			})
+		entry.Detail += fmt.Sprintf(", %d/%d groups described",
+			len(narrative.Meanings), len(groups))
+
 		handler.Record(entry)
 		handler.SetNarrative(narrative)
 

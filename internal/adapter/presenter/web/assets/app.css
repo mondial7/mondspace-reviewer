@@ -772,3 +772,92 @@
   color: var(--fg-dim); font-size: 0.85rem;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1;
 }
+
+/* ── Grouped changes ────────────────────────────────────────────────────────
+   Files that changed together read as one act of work. */
+.group { border-bottom: 1px solid var(--rule); padding: 0.9rem 0 1rem; }
+.group:last-child { border-bottom: none; }
+.group__head { display: flex; gap: 0.6rem; align-items: baseline; flex-wrap: wrap; min-width: 0; }
+.group__dir { color: var(--accent); font-weight: 700; overflow-wrap: anywhere; }
+.group__count { color: var(--fg-dim); font-size: 0.75rem; }
+.group__meaning {
+  margin: 0.35rem 0 0.6rem; color: var(--fg); font-size: 0.88rem; line-height: 1.55;
+  display: flex; gap: 0.5rem; align-items: baseline; flex-wrap: wrap;
+}
+.group__meaning--none { color: var(--fg-dim); font-style: italic; font-size: 0.78rem; }
+
+.post { border-left: 2px solid var(--rule); padding: 0.5rem 0 0.5rem 0.7rem; margin-top: 0.5rem; }
+.post:target, .post[data-active="true"] { border-left-color: var(--accent); }
+.post__when { color: var(--fg-dim); font-size: 0.72rem; }
+
+/* Annotation stays on one line; it wraps as a unit, not button by button. */
+.post__actions { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin-top: 0.55rem; }
+.annotate {
+  display: flex; gap: 0.3rem; align-items: center; flex: 1 1 22rem; min-width: 0;
+  flex-wrap: nowrap; overflow-x: auto;
+}
+.annotate__text { flex: 1 1 8rem; min-width: 6rem; }
+.annotate__btn { white-space: nowrap; flex: 0 0 auto; }
+.post__open {
+  font: inherit; font-size: 0.72rem; cursor: pointer; white-space: nowrap;
+  color: var(--fg-dim); background: transparent;
+  border: 1px solid var(--rule); border-radius: 6px; padding: 0.3rem 0.6rem;
+}
+.post__open:hover { color: var(--accent); border-color: var(--accent); }
+
+/* ── Detail / tree switch ───────────────────────────────────────────────────*/
+.viewswitch { display: flex; gap: 0.3rem; margin-bottom: 0.6rem; }
+.viewswitch__btn {
+  font: inherit; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em;
+  cursor: pointer; color: var(--fg-dim); background: transparent;
+  border: 1px solid var(--rule); border-radius: 999px; padding: 0.2rem 0.7rem;
+}
+.viewswitch__btn[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
+
+.tree { list-style: none; margin: 0; padding: 0; font-size: 0.82rem; }
+.tree__row { display: flex; gap: 0.5rem; align-items: baseline; padding: 0.12rem 0; min-width: 0; }
+.tree__dir { color: var(--fg-dim); }
+.tree__file { color: var(--hunk); text-decoration: none; overflow-wrap: anywhere; }
+.tree__file:hover { text-decoration: underline; }
+
+/* ── History overlay ────────────────────────────────────────────────────────*/
+.overlay {
+  position: fixed; inset: 0; z-index: 40;
+  background: color-mix(in srgb, var(--bg) 78%, transparent);
+  backdrop-filter: blur(3px);
+  display: flex; align-items: center; justify-content: center; padding: 3vh 3vw;
+}
+.overlay[hidden] { display: none; }
+.overlay__sheet {
+  width: min(1100px, 94vw); height: min(88vh, 900px);
+  background: var(--panel); border: 1px solid var(--accent); border-radius: 10px;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.5);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.overlay__bar {
+  display: flex; align-items: center; gap: 0.6rem;
+  padding: 0.6rem 0.9rem; border-bottom: 1px solid var(--rule); background: var(--hull);
+}
+.overlay__file { color: var(--fg); font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.overlay__spacer { flex: 1 1 auto; }
+.overlay__pos { color: var(--fg-dim); font-size: 0.78rem; font-variant-numeric: tabular-nums; }
+.overlay__nav, .overlay__close {
+  font: inherit; cursor: pointer; color: var(--fg-dim); background: transparent;
+  border: 1px solid var(--rule); border-radius: 6px; padding: 0.15rem 0.55rem;
+}
+.overlay__nav:hover:not(:disabled), .overlay__close:hover { color: var(--accent); border-color: var(--accent); }
+.overlay__nav:disabled { opacity: 0.35; cursor: default; }
+.overlay__body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 0.8rem 1rem; }
+.overlay__loading { color: var(--fg-dim); }
+
+.versions__list { list-style: none; margin: 0 0 0.8rem; padding: 0; font-size: 0.78rem; }
+.versions__item {
+  display: flex; gap: 0.7rem; align-items: baseline; flex-wrap: wrap;
+  padding: 0.3rem 0.5rem; border-radius: 5px; cursor: pointer; min-width: 0;
+}
+.versions__item:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.versions__item--current { background: color-mix(in srgb, var(--accent) 20%, transparent); }
+.versions__when { color: var(--fg); font-variant-numeric: tabular-nums; }
+.versions__hash { color: var(--accent); }
+.versions__subject { color: var(--fg-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+.versions__author { color: var(--fg-dim); opacity: 0.7; }

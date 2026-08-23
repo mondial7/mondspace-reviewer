@@ -259,22 +259,117 @@ linkColumns();
 const storyCol = document.getElementById('story-col');
 if (storyCol) new MutationObserver(linkColumns).observe(storyCol, { childList: true });
 
-// ── Full diffs, on demand ───────────────────────────────────────────────────
+// ── The history overlay ─────────────────────────────────────────────────────
 //
-// The cockpit shows a compacted diff for every file. The whole diff is fetched
-// only when asked: inlining all of them would multiply a large session's page
-// several times over for content almost nobody opens.
-for (const box of document.querySelectorAll('details[data-diff]')) {
-  box.addEventListener('toggle', async () => {
-    if (!box.open || box.dataset.loaded) return;
-    box.dataset.loaded = 'yes';
-    const slot = box.querySelector('.post__fulldiff');
+// A file's whole story, over the page rather than in the column: the diff, and
+// the commits that touched it, steppable with the arrow keys. Fetched on open —
+// this page already carries every file, and inlining every history would
+// multiply it many times over.
+(function historyOverlay() {
+  const overlay = document.getElementById('overlay');
+  if (!overlay) return;
+
+  const body = document.getElementById('overlay-body');
+  const label = document.getElementById('overlay-file');
+  const pos = document.getElementById('overlay-pos');
+  const prev = document.getElementById('overlay-prev');
+  const next = document.getElementById('overlay-next');
+
+  let base = '';          // the versions endpoint for the open file
+  let hashes = [];        // every commit that touched it, newest first
+  let index = 0;
+
+  async function show(at) {
+    const url = at ? `${base}?at=${encodeURIComponent(at)}` : base;
+    body.innerHTML = '<p class="overlay__loading">loading…</p>';
     try {
-      const res = await fetch(box.dataset.diff);
-      slot.innerHTML = res.ok ? await res.text() : 'could not load this diff';
+      body.innerHTML = await (await fetch(url)).text();
     } catch {
-      slot.textContent = 'could not load this diff';
-      box.dataset.loaded = '';   // let a retry happen on the next open
+      body.innerHTML = '<p class="overlay__loading">could not load this history</p>';
+      return;
     }
+    hashes = [...body.querySelectorAll('.versions__item[data-at]')].map((el) => el.dataset.at);
+    if (at) index = Math.max(0, hashes.indexOf(at));
+    pos.textContent = hashes.length ? `${index + 1} / ${hashes.length}` : '';
+    prev.disabled = index >= hashes.length - 1;
+    next.disabled = index <= 0;
+
+    // Clicking a version in the list jumps straight to it.
+    for (const [i, el] of [...body.querySelectorAll('.versions__item[data-at]')].entries()) {
+      el.addEventListener('click', () => { index = i; show(el.dataset.at); });
+    }
+  }
+
+  // index 0 is the newest, so "older" walks forward through the list.
+  function step(by) {
+    if (!hashes.length) return;
+    const wanted = index + by;
+    if (wanted < 0 || wanted >= hashes.length) return;
+    index = wanted;
+    show(hashes[index]);
+  }
+
+  function open(url, file) {
+    base = url;
+    index = 0;
+    label.textContent = file;
+    overlay.hidden = false;
+    show('');
+  }
+
+  function close() {
+    overlay.hidden = true;
+    body.innerHTML = '';
+  }
+
+  for (const btn of document.querySelectorAll('.post__open[data-versions]')) {
+    btn.addEventListener('click', () => open(btn.dataset.versions, btn.dataset.file));
+  }
+  document.getElementById('overlay-close').addEventListener('click', close);
+  prev.addEventListener('click', () => step(1));   // older
+  next.addEventListener('click', () => step(-1));  // newer
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+
+  document.addEventListener('keydown', (e) => {
+    if (overlay.hidden) return;
+    if (e.key === 'Escape') { e.preventDefault(); close(); }
+    else if (e.key === 'ArrowLeft') { e.preventDefault(); step(1); }
+    else if (e.key === 'ArrowRight') { e.preventDefault(); step(-1); }
   });
-}
+})();
+
+
+// ── Detail / tree ───────────────────────────────────────────────────────────
+//
+// The same changes, two ways: grouped with their diffs, or the folder structure
+// alone when you want the shape at a glance. The choice is remembered, because
+// it is a working preference rather than a one-off.
+(function viewSwitch() {
+  const KEY = 'msr:changes-view';
+  const detail = document.getElementById('detail-view');
+  const tree = document.getElementById('tree-view');
+  const buttons = [...document.querySelectorAll('.viewswitch__btn')];
+  if (!detail || !tree || !buttons.length) return;
+
+  function apply(view) {
+    detail.hidden = view === 'tree';
+    tree.hidden = view !== 'tree';
+    for (const b of buttons) b.setAttribute('aria-pressed', String(b.dataset.view === view));
+    try { localStorage.setItem(KEY, view); } catch { /* preference will not persist */ }
+  }
+
+  let stored = 'detail';
+  try { stored = localStorage.getItem(KEY) || 'detail'; } catch { /* ignore */ }
+  apply(stored);
+
+  for (const b of buttons) b.addEventListener('click', () => apply(b.dataset.view));
+
+  // Clicking a file in the tree takes you to it in the detail view.
+  for (const link of tree.querySelectorAll('.tree__file')) {
+    link.addEventListener('click', () => {
+      apply('detail');
+      const target = document.querySelector(link.getAttribute('href'));
+      if (target) setTimeout(() => target.scrollIntoView({ block: 'start' }), 0);
+    });
+  }
+})();

@@ -14,6 +14,9 @@ type Narrative struct {
 	// Model names which model wrote the title and prose, so a reader can tell
 	// whose reading of the session they are looking at.
 	Model string `json:"model,omitempty"`
+	// Meanings is what each group of changes is for, keyed by group id. Written
+	// by a model and therefore inferred, like the prose.
+	Meanings map[string]string `json:"meanings,omitempty"`
 	// Fingerprint identifies the review this story was written for. A stored
 	// story is reused while it matches, so opening the page again costs nothing.
 	Fingerprint string `json:"fingerprint,omitempty"`

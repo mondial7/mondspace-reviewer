@@ -77,7 +77,6 @@
           <span class="cockpit__key cockpit__key--add">growth</span>
           <span class="cockpit__key cockpit__key--del">deletion</span>
           <span class="cockpit__key cockpit__key--flag">flagged</span>
-          <span class="cockpit__keynote">height = lines changed · newest at front</span>
         </p>
       </section>
 
@@ -137,101 +136,135 @@
     <!-- Right: the changes themselves, newest first, with everything needed to
          review and annotate them without leaving the page. -->
     <section class="cockpit__changes" id="changes-col">
-      {{ range .Feed }}
-      <article class="post" id="unit-{{ .ID }}" data-file="{{ .File }}" data-added="{{ .Added }}"
-               data-removed="{{ .Removed }}" data-flags="{{ len .Flags }}">
-        <header class="post__head">
-          <span class="post__file">{{ .File }}</span>
-          <span class="post__stats">
-            <span class="unit__stat unit__stat--add">+{{ .Added }}</span>
-            <span class="unit__stat unit__stat--del">-{{ .Removed }}</span>
-          </span>
+      <!-- Two ways to read the same changes: grouped with their diffs, or the
+           folder structure alone when you want the shape at a glance. -->
+      <div class="viewswitch">
+        <button class="viewswitch__btn" type="button" data-view="detail" aria-pressed="true">detail</button>
+        <button class="viewswitch__btn" type="button" data-view="tree" aria-pressed="false">tree</button>
+      </div>
+
+      <ol class="tree" id="tree-view" hidden>
+        {{ range .Tree }}
+        <li class="tree__row tree__row--{{ if .IsDir }}dir{{ else }}file{{ end }}"
+            style="padding-left: {{ .Depth }}rem">
+          {{ if .IsDir }}
+          <span class="tree__dir">{{ .Name }}/</span>
+          {{ else }}
+          <a class="tree__file" href="#unit-{{ .UnitID }}">{{ .Name }}</a>
+          <span class="unit__stat unit__stat--add">+{{ .Added }}</span>
+          <span class="unit__stat unit__stat--del">-{{ .Removed }}</span>
           {{ range .Flags }}<span class="flag">{{ . }}</span>{{ end }}
+          {{ end }}
+        </li>
+        {{ end }}
+      </ol>
+
+      <div id="detail-view">
+      {{ range .Groups }}
+      <article class="group" id="group-{{ .ID }}">
+        <header class="group__head">
+          <span class="group__dir">{{ .Dir }}</span>
+          <span class="group__count">{{ len .Files }} file(s)</span>
+          <span class="unit__stat unit__stat--add">+{{ .Added }}</span>
+          <span class="unit__stat unit__stat--del">-{{ .Removed }}</span>
         </header>
 
-        <!-- When, and how many times. A net-change review collapses the agent's
-             back-and-forth; this says how much was collapsed. -->
-        <p class="post__when">
-          {{ if .Edits }}
-          <span class="post__edits">{{ .Edits }} edit(s)</span>
-          <span class="post__last">last {{ .LastEdited }}</span>
-          {{ if gt .Edits 1 }}<span class="post__first">first {{ .FirstEdit }}</span>{{ end }}
-          {{ else }}
-          <span class="post__last">not recorded in this session's log</span>
-          {{ end }}
-        </p>
-
-        <p class="post__line">{{ .Headline }}</p>
-        <p class="post__why">
-          <span class="why why--{{ .WhySrc }}">{{ .WhySrc }}</span>
-          <span class="why__text">{{ .Why }}</span>
-          {{ with .Model }}<span class="detail__model">{{ . }}</span>{{ end }}
-        </p>
-
-        {{ with .Notes }}
-        <ul class="notes">
-          {{ range . }}
-          <li class="notes__item notes__item--{{ .Kind }}">
-            <span class="notes__kind">{{ .Kind }}</span>
-            <span class="notes__text">{{ .Text }}</span>
-            {{ with .SupersededBy }}<span class="notes__superseded">superseded by {{ . }}</span>{{ end }}
-          </li>
-          {{ end }}
-        </ul>
-        {{ end }}
-
-        {{ if .Diff }}
-        <pre class="post__diff{{ if .Compacted }} post__diff--compact{{ end }}"><code>{{ range .Diff }}<span class="diff__line diff__line--{{ .Kind }}">{{ .Text }}</span>
-{{ end }}</code></pre>
-        {{ if .Compacted }}
-        <!-- Fetched on open: this page already carries every file, so inlining
-             every full diff would multiply it several times over. -->
-        <details class="post__more" data-diff="/units/{{ .ID }}/diff">
-          <summary class="post__moresummary">show the whole diff</summary>
-          <div class="post__fulldiff">loading…</div>
-        </details>
-        {{ end }}
+        <!-- What this change is for. Model-written, so labelled inferred; the
+             files and churn above it come from git. -->
+        {{ if .Meaning }}
+        <p class="group__meaning"><span class="why why--inferred">inferred</span>{{ .Meaning }}</p>
         {{ else }}
-        <p class="diff diff--empty">No textual changes.</p>
+        <p class="group__meaning group__meaning--none">not yet described</p>
         {{ end }}
 
-        {{ with .History }}
-        <details class="post__more">
-          <summary class="post__moresummary">history of this file</summary>
-          <ol class="history">
+        {{ range .Files }}
+        <div class="post" id="unit-{{ .ID }}" data-file="{{ .File }}" data-added="{{ .Added }}"
+             data-removed="{{ .Removed }}" data-flags="{{ len .Flags }}">
+          <header class="post__head">
+            <span class="post__file">{{ .File }}</span>
+            <span class="post__stats">
+              <span class="unit__stat unit__stat--add">+{{ .Added }}</span>
+              <span class="unit__stat unit__stat--del">-{{ .Removed }}</span>
+            </span>
+            {{ range .Flags }}<span class="flag">{{ . }}</span>{{ end }}
+            {{ if .Edits }}
+            <span class="post__when">{{ .Edits }} edit(s) · last {{ .LastEdited }}</span>
+            {{ end }}
+          </header>
+
+          <!-- A headline is shown only when a model wrote it. The mechanical
+               one ("edited token.go") just repeats the filename above it. -->
+          {{ if .Model }}
+          <p class="post__line">{{ .Headline }}
+            <span class="detail__model">{{ .Model }}</span></p>
+          {{ end }}
+          {{ if and .Why (ne .WhySrc "") }}
+          <p class="post__why"><span class="why why--{{ .WhySrc }}">{{ .WhySrc }}</span>{{ .Why }}</p>
+          {{ end }}
+
+          {{ with .Notes }}
+          <ul class="notes">
             {{ range . }}
-            <li class="history__item{{ if .Failed }} history__item--failed{{ end }}">
-              <span class="history__when">{{ .When }}</span>
-              <span class="history__tool">{{ .Tool }}</span>
-              {{ with .Intent }}<span class="history__intent">{{ . }}</span>{{ end }}
-              {{ if .Failed }}<span class="flag">failed</span>{{ end }}
+            <li class="notes__item notes__item--{{ .Kind }}">
+              <span class="notes__kind">{{ .Kind }}</span>
+              <span class="notes__text">{{ .Text }}</span>
+              {{ with .SupersededBy }}<span class="notes__superseded">superseded by {{ . }}</span>{{ end }}
             </li>
             {{ end }}
-          </ol>
-        </details>
-        {{ end }}
-
-        <div class="post__actions">
-          <form class="annotate" method="post" action="/units/{{ .ID }}/notes">
-            <input class="annotate__text" name="text" type="text"
-                   placeholder="optional note…" autocomplete="off">
-            <button class="annotate__btn annotate__btn--ok" name="kind" value="ok">ok</button>
-            <button class="annotate__btn annotate__btn--question" name="kind" value="question">question</button>
-            <button class="annotate__btn annotate__btn--objection" name="kind" value="objection">objection</button>
-            <button class="annotate__btn annotate__btn--debt" name="kind" value="debt">debt</button>
-            <button class="annotate__btn annotate__btn--note" name="kind" value="note">note</button>
-          </form>
-          {{ if $.HasReanal }}
-          <form class="reanalyse" method="post" action="/units/{{ .ID }}/reanalyse">
-            <button class="reanalyse__btn" type="submit" title="Re-run the AI analysis for this file">re-analyse</button>
-          </form>
+          </ul>
           {{ end }}
+
+          {{ if .Diff }}
+          <pre class="post__diff{{ if .Compacted }} post__diff--compact{{ end }}"><code>{{ range .Diff }}<span class="diff__line diff__line--{{ .Kind }}">{{ .Text }}</span>
+{{ end }}</code></pre>
+          {{ else }}
+          <p class="diff diff--empty">No textual changes.</p>
+          {{ end }}
+
+          <div class="post__actions">
+            <button class="post__open" type="button"
+                    data-versions="/units/{{ .ID }}/versions" data-file="{{ .File }}">
+              open full history
+            </button>
+            <form class="annotate" method="post" action="/units/{{ .ID }}/notes">
+              <input class="annotate__text" name="text" type="text"
+                     placeholder="optional note…" autocomplete="off">
+              <button class="annotate__btn annotate__btn--ok" name="kind" value="ok">ok</button>
+              <button class="annotate__btn annotate__btn--question" name="kind" value="question">question</button>
+              <button class="annotate__btn annotate__btn--objection" name="kind" value="objection">objection</button>
+              <button class="annotate__btn annotate__btn--debt" name="kind" value="debt">debt</button>
+              <button class="annotate__btn annotate__btn--note" name="kind" value="note">note</button>
+            </form>
+            {{ if $.HasReanal }}
+            <form class="reanalyse" method="post" action="/units/{{ .ID }}/reanalyse">
+              <button class="reanalyse__btn" type="submit">re-analyse</button>
+            </form>
+            {{ end }}
+          </div>
         </div>
+        {{ end }}
       </article>
       {{ else }}
       <p class="queue__empty">No changed files to review.</p>
       {{ end }}
+      </div>
     </section>
+
+    <!-- The full-history overlay. Filled on demand; empty until asked for. -->
+    <div class="overlay" id="overlay" hidden>
+      <div class="overlay__sheet" role="dialog" aria-modal="true" aria-label="File history">
+        <header class="overlay__bar">
+          <span class="overlay__file" id="overlay-file"></span>
+          <span class="overlay__spacer"></span>
+          <button class="overlay__nav" id="overlay-prev" type="button" title="Older version (←)">←</button>
+          <span class="overlay__pos" id="overlay-pos"></span>
+          <button class="overlay__nav" id="overlay-next" type="button" title="Newer version (→)">→</button>
+          <button class="overlay__close" id="overlay-close" type="button" title="Close (esc)">✕</button>
+        </header>
+        <div class="overlay__body" id="overlay-body"></div>
+      </div>
+    </div>
+
   </main>
 </body>
 </html>

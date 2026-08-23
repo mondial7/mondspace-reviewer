@@ -118,6 +118,13 @@ type AgentStatus struct {
 	Usage    port.TokenUsage
 }
 
+// VersionLister and VersionDiffer let the overlay step through a file's history.
+// Declared where they are consumed, so this adapter depends on no other.
+type VersionLister func(ctx context.Context, path string, limit int) ([]domain.Commit, error)
+
+// VersionDiffer is what one commit did to one file.
+type VersionDiffer func(ctx context.Context, commit, path string) (domain.Diff, error)
+
 // Loader materialises one session's review on demand. A workspace may span
 // several repositories and many sessions; building every one at start-up would
 // mean a git diff per file per session, so they are loaded when first opened.
@@ -136,9 +143,11 @@ type Server struct {
 	tmpl  *template.Template
 	notes Annotator
 
-	mu     sync.RWMutex
-	sess   Session
-	loader Loader
+	mu        sync.RWMutex
+	sess      Session
+	loader    Loader
+	versions  VersionLister
+	versionOf VersionDiffer
 	// loaded caches sessions opened during this run, so switching back and forth
 	// costs nothing after the first visit.
 	loaded    map[string]Session
@@ -208,6 +217,14 @@ func (s *Server) WithAudit(a AuditLog) *Server {
 // reviewer asks for it, or it does not happen.
 func (s *Server) WithNarrate(fn NarrateFunc) *Server {
 	s.narrate = fn
+	return s
+}
+
+// WithVersions wires the file-history overlay: the commits that touched a file,
+// and what each did to it. Without them the overlay shows the session's diff
+// only, which is still useful.
+func (s *Server) WithVersions(list VersionLister, at VersionDiffer) *Server {
+	s.versions, s.versionOf = list, at
 	return s
 }
 
@@ -364,6 +381,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /ask", s.handleAsk)
 	s.mux.HandleFunc("POST /units/{id}/reanalyse", s.handleReanalyse)
 	s.mux.HandleFunc("GET /units/{id}/diff", s.handleUnitDiff)
+	s.mux.HandleFunc("GET /units/{id}/versions", s.handleVersions)
 	s.mux.HandleFunc("GET /cockpit", s.handleCockpit)
 	s.mux.HandleFunc("GET /activity", s.handleActivity)
 	s.mux.HandleFunc("GET /status", s.handleStatus)
@@ -396,6 +414,85 @@ func (s *Server) handleUnitDiff(w http.ResponseWriter, r *http.Request) {
 	if err := s.tmpl.ExecuteTemplate(w, "diff.html", splitDiff(diff.Text)); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
+}
+
+// handleVersions serves a file's history as the overlay's navigation: the
+// commits that touched it, newest first, and the diff of whichever one is
+// asked for.
+func (s *Server) handleVersions(w http.ResponseWriter, r *http.Request) {
+	sess := s.openSession(r)
+
+	var path string
+	for _, u := range sess.Units {
+		if u.ID == r.PathValue("id") && len(u.Files) > 0 {
+			path = u.Files[0]
+			break
+		}
+	}
+	if path == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	s.mu.RLock()
+	list, at := s.versions, s.versionOf
+	s.mu.RUnlock()
+	if list == nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	commits, err := list(r.Context(), path, 25)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Which version to show: the one asked for, else the newest.
+	want := r.URL.Query().Get("at")
+	if want == "" && len(commits) > 0 {
+		want = commits[0].Hash
+	}
+
+	type versionView struct {
+		Hash, Short, When, Subject, Author string
+		Current                            bool
+	}
+	views := make([]versionView, 0, len(commits))
+	for _, c := range commits {
+		views = append(views, versionView{
+			Hash: c.Hash, Short: short(c.Hash), When: c.TS.Local().Format("2006-01-02 15:04"),
+			Subject: c.Subject, Author: c.Author, Current: c.Hash == want,
+		})
+	}
+
+	var lines []diffLine
+	if want != "" && at != nil {
+		if d, err := at(r.Context(), want, path); err == nil {
+			lines = splitDiff(d.Text)
+		}
+	}
+	if len(lines) == 0 {
+		lines = splitDiff(sess.Diffs[r.PathValue("id")].Text)
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := s.tmpl.ExecuteTemplate(w, "versions.html", struct {
+		UnitID   string
+		Path     string
+		Versions []versionView
+		Diff     []diffLine
+	}{r.PathValue("id"), path, views, lines}); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+// short abbreviates a commit hash for display.
+func short(hash string) string {
+	if len(hash) <= 8 {
+		return hash
+	}
+	return hash[:8]
 }
 
 func redirectHome(w http.ResponseWriter, r *http.Request) {
@@ -747,6 +844,17 @@ type feedItem struct {
 	Compacted bool
 }
 
+// groupView is a set of files that changed together, with one model-written
+// sentence about what they are for.
+type groupView struct {
+	ID      string
+	Dir     string
+	Meaning string
+	Added   int
+	Removed int
+	Files   []feedItem
+}
+
 // handleCockpit renders the session at a glance: whether it is still moving, a
 // stream of what changed, and the numbers behind it. It is the one page meant
 // to be left open on a second screen while an agent works.
@@ -792,14 +900,32 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Newest first: a cockpit answers "what just happened".
-	items := make([]feedItem, 0, len(views))
-	for i := len(views) - 1; i >= 0; i-- {
-		v := views[i]
-		compact, wasCompacted := usecase.CompactDiff(sess.Diffs[v.ID], cockpitDiffLines)
-		if wasCompacted {
-			v.Diff = splitDiff(compact.Text)
+	ordered := make([]domain.Unit, 0, len(sess.Units))
+	for i := len(sess.Units) - 1; i >= 0; i-- {
+		ordered = append(ordered, sess.Units[i])
+	}
+	viewByID := map[string]unitView{}
+	for _, v := range views {
+		viewByID[v.ID] = v
+	}
+
+	// Files that changed together are shown together: five files under one
+	// package is one act of work, not five entries.
+	groups := make([]groupView, 0, 8)
+	for _, g := range usecase.GroupChanges(ordered, sess.Diffs) {
+		gv := groupView{
+			ID: g.ID, Dir: g.Dir, Added: g.Added, Removed: g.Removed,
+			Meaning: narrative.Meanings[g.ID],
 		}
-		items = append(items, feedItem{unitView: v, Compacted: wasCompacted})
+		for _, u := range g.Units {
+			v := viewByID[u.ID]
+			compact, wasCompacted := usecase.CompactDiff(sess.Diffs[u.ID], cockpitDiffLines)
+			if wasCompacted {
+				v.Diff = splitDiff(compact.Text)
+			}
+			gv.Files = append(gv.Files, feedItem{unitView: v, Compacted: wasCompacted})
+		}
+		groups = append(groups, gv)
 	}
 
 	data := struct {
@@ -808,7 +934,8 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 		Stats     cockpitStats
 		Narrative domain.Narrative
 		Chapters  []chapterView
-		Feed      []feedItem
+		Groups    []groupView
+		Tree      []domain.TreeNode
 		Thread    []Exchange
 		HasAsk    bool
 		HasReanal bool
@@ -823,7 +950,8 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 			Commits: stats.Commits, PullRequests: stats.PullRequests,
 			Tokens: tokenTotal(usage),
 		},
-		Narrative: narrative, Chapters: chapters, Feed: items,
+		Narrative: narrative, Chapters: chapters, Groups: groups,
+		Tree:   usecase.FileTree(sess.Units, sess.Diffs),
 		Thread: thread, HasAsk: hasAsk, HasReanal: hasReanal,
 		CanRetry: canRetry, Narrating: narrating,
 	}

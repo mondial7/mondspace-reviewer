@@ -1,0 +1,17 @@
+<div class="versions" data-unit="{{ .UnitID }}" data-path="{{ .Path }}">
+  <ol class="versions__list">
+    {{ range .Versions }}
+    <li class="versions__item{{ if .Current }} versions__item--current{{ end }}"
+        data-at="{{ .Hash }}">
+      <span class="versions__when">{{ .When }}</span>
+      <span class="versions__hash">{{ .Short }}</span>
+      <span class="versions__subject">{{ .Subject }}</span>
+      <span class="versions__author">{{ .Author }}</span>
+    </li>
+    {{ else }}
+    <li class="versions__item">No commit history for this file — showing the session's change.</li>
+    {{ end }}
+  </ol>
+  {{ if .Diff }}<pre class="diff"><code>{{ range .Diff }}<span class="diff__line diff__line--{{ .Kind }}">{{ .Text }}</span>
+{{ end }}</code></pre>{{ else }}<p class="diff diff--empty">No textual changes.</p>{{ end }}
+</div>

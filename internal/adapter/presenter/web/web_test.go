@@ -480,7 +480,7 @@ func TestReviewContentIsInTheDOMNotOnlyTheCanvas(t *testing.T) {
 
 	// The cinematic scene reads from the DOM; nothing may be canvas-only, so the
 	// review stays usable, selectable and searchable without WebGL (ADR 0012).
-	for _, want := range []string{"auth/token.go", "edited token.go", "no-test"} {
+	for _, want := range []string{"auth/token.go", "no-test"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("review content %q must be server-rendered, not canvas-only", want)
 		}
@@ -519,7 +519,7 @@ func TestIndexListsUnits(t *testing.T) {
 	body := rec.Body.String()
 	for _, want := range []string{
 		"auth/token.go",   // the file is the anchor
-		"edited token.go", // the storyline
+		"auth/token.go", // the file itself
 		"http/middleware.go",
 		"no-test",              // flags surface
 		"add token validation", // the task prompt gives context
@@ -622,7 +622,7 @@ func TestCockpitShowsStatsFeedAndLiveness(t *testing.T) {
 		}
 	}
 	// The feed: one line per change, with its diff.
-	if !strings.Contains(body, "auth/token.go") || !strings.Contains(body, "edited token.go") {
+	if !strings.Contains(body, "auth/token.go") || !strings.Contains(body, "http/middleware.go") {
 		t.Errorf("cockpit feed should list the changes:\n%s", body)
 	}
 	// Liveness is exposed to the page so the animation can react to it.
@@ -795,7 +795,7 @@ func TestSwitchingSessionLoadsItOnDemand(t *testing.T) {
 		})
 
 	body := get(t, h, "/?session=other").Body.String()
-	if !strings.Contains(body, "parser/lex.go") || !strings.Contains(body, "rewrote the lexer") {
+	if !strings.Contains(body, "parser/lex.go") {
 		t.Errorf("switching should render the other session:\n%s", body)
 	}
 

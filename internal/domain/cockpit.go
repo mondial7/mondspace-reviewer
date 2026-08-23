@@ -72,3 +72,15 @@ type ChangeGroup struct {
 	// asked for without a second pass over the diffs.
 	Sample string
 }
+
+// TreeNode is one row of the compact folder view: a directory to indent under,
+// or a changed file with its churn and flags.
+type TreeNode struct {
+	Depth   int
+	Name    string
+	IsDir   bool
+	UnitID  string
+	Added   int
+	Removed int
+	Flags   []string
+}

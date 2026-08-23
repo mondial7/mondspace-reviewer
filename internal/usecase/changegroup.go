@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
@@ -146,4 +147,55 @@ In one sentence of at most 160 characters, say what this change is FOR — the
 behaviour or intent, not the file names. Do not restate the filenames. JSON only:
 {"meaning":".."}`)
 	return b.String()
+}
+
+// FileTree lays the changed files out as an indented directory listing — the
+// compact view, where the shape of the change is the folder structure rather
+// than the diffs. Directories are emitted once, before their contents.
+//
+// Paths are sorted so the tree reads like a file browser; the grouped view keeps
+// recency order, and the two answer different questions.
+func FileTree(units []domain.Unit, diffs map[string]domain.Diff) []domain.TreeNode {
+	type entry struct {
+		parts []string
+		unit  domain.Unit
+	}
+	entries := make([]entry, 0, len(units))
+	for _, u := range units {
+		if len(u.Files) == 0 {
+			continue
+		}
+		entries = append(entries, entry{strings.Split(filepath.ToSlash(u.Files[0]), "/"), u})
+	}
+	sort.SliceStable(entries, func(i, j int) bool {
+		return strings.Join(entries[i].parts, "/") < strings.Join(entries[j].parts, "/")
+	})
+
+	var nodes []domain.TreeNode
+	var open []string // the directory path currently emitted
+
+	for _, e := range entries {
+		dirs := e.parts[:len(e.parts)-1]
+
+		// Emit only the directories that differ from the ones already open.
+		shared := 0
+		for shared < len(open) && shared < len(dirs) && open[shared] == dirs[shared] {
+			shared++
+		}
+		for d := shared; d < len(dirs); d++ {
+			nodes = append(nodes, domain.TreeNode{Depth: d, Name: dirs[d], IsDir: true})
+		}
+		open = dirs
+
+		added, removed := countChangedLines(diffs[e.unit.ID])
+		flags := make([]string, 0, len(e.unit.Flags))
+		for _, f := range e.unit.Flags {
+			flags = append(flags, string(f))
+		}
+		nodes = append(nodes, domain.TreeNode{
+			Depth: len(dirs), Name: e.parts[len(e.parts)-1],
+			UnitID: e.unit.ID, Added: added, Removed: removed, Flags: flags,
+		})
+	}
+	return nodes
 }

@@ -344,3 +344,45 @@ func boolToInt(b bool) int {
 	}
 	return 0
 }
+
+// FileVersions lists the commits that touched one file, newest first, so a
+// reviewer can step back through how it got here. `--follow` is deliberately not
+// used: it guesses at renames, and a guess presented as history is worse than a
+// short history.
+func (s *Snapshotter) FileVersions(ctx context.Context, path string, limit int) ([]domain.Commit, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	out, err := s.run(ctx, os.Environ(), "log", fmt.Sprintf("-%d", limit),
+		"--pretty=format:%H"+commitFieldSep+"%an"+commitFieldSep+"%cI"+commitFieldSep+"%s",
+		"--", path)
+	if err != nil {
+		return nil, nil // no HEAD, or a file git has never seen
+	}
+
+	var versions []domain.Commit
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Split(line, commitFieldSep)
+		if len(fields) != 4 {
+			continue
+		}
+		ts, err := time.Parse(time.RFC3339, fields[2])
+		if err != nil {
+			continue
+		}
+		versions = append(versions, domain.Commit{
+			Hash: fields[0], Author: fields[1], TS: ts, Subject: fields[3],
+		})
+	}
+	return versions, nil
+}
+
+// DiffAt is what one commit did to one file — the view the overlay shows when
+// stepping through a file's history.
+func (s *Snapshotter) DiffAt(ctx context.Context, commit, path string) (domain.Diff, error) {
+	out, err := s.run(ctx, os.Environ(), "show", "--format=", "--patch", commit, "--", path)
+	if err != nil {
+		return domain.Diff{}, err
+	}
+	return domain.Diff{Text: out}, nil
+}

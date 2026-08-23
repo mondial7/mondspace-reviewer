@@ -183,3 +183,57 @@ func TestDescribeGroupsIsBounded(t *testing.T) {
 		t.Errorf("made %d calls, want a bounded number", len(d.asked))
 	}
 }
+
+func TestFileTreeIndentsFilesUnderTheirFolders(t *testing.T) {
+	units := []domain.Unit{
+		{ID: "u1", Files: []string{"internal/store/pg.go"}},
+		{ID: "u2", Files: []string{"internal/store/pg_test.go"}},
+		{ID: "u3", Files: []string{"internal/web/web.go"}},
+		{ID: "u4", Files: []string{"README.md"}},
+	}
+	diffs := map[string]domain.Diff{"u1": {Text: "@@\n+a\n-b\n"}}
+
+	got := usecase.FileTree(units, diffs)
+
+	// A directory appears once, before its contents, with the depth to indent by.
+	var lines []string
+	for _, n := range got {
+		kind := "file"
+		if n.IsDir {
+			kind = "dir"
+		}
+		lines = append(lines, fmt.Sprintf("%d:%s:%s", n.Depth, kind, n.Name))
+	}
+	// Paths sort as a file browser lists them, so README.md leads: 'R' sorts
+	// before 'i'. Directories are emitted once, immediately before their contents.
+	want := []string{
+		"0:file:README.md",
+		"0:dir:internal", "1:dir:store", "2:file:pg.go", "2:file:pg_test.go",
+		"1:dir:web", "2:file:web.go",
+	}
+	if len(lines) != len(want) {
+		t.Fatalf("tree =\n  %s\nwant\n  %s", strings.Join(lines, "\n  "), strings.Join(want, "\n  "))
+	}
+	for i := range want {
+		if lines[i] != want[i] {
+			t.Errorf("line %d = %q, want %q", i, lines[i], want[i])
+		}
+	}
+
+	// A file row carries what the compact view shows: churn and its unit.
+	for _, n := range got {
+		if n.Name == "pg.go" {
+			if n.Added != 1 || n.Removed != 1 || n.UnitID != "u1" {
+				t.Errorf("pg.go row = %+v, want +1 -1 on u1", n)
+			}
+		}
+	}
+}
+
+func TestFileTreeHandlesRootOnlyFiles(t *testing.T) {
+	got := usecase.FileTree([]domain.Unit{{ID: "a", Files: []string{"go.mod"}}}, nil)
+
+	if len(got) != 1 || got[0].IsDir || got[0].Depth != 0 || got[0].Name != "go.mod" {
+		t.Errorf("tree = %+v, want a single root-level file", got)
+	}
+}
