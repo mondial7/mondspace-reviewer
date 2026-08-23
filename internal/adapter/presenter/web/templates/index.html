@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Review — {{ .Session.ID }}</title>
+  <link rel="stylesheet" href="/assets/app.css">
+</head>
+<body class="page">
+  <header class="masthead">
+    <h1 class="masthead__title">mondspace-reviewer</h1>
+    <p class="masthead__meta">
+      <span class="masthead__count">{{ len .Units }} changed file(s)</span>
+      <span class="masthead__session">{{ .Session.ID }}</span>
+    </p>
+    {{ with .Session.Prompt }}<p class="masthead__prompt">{{ . }}</p>{{ end }}
+  </header>
+
+  <main class="queue">
+    {{ range .Units }}
+    <article class="unit" id="unit-{{ .ID }}">
+      <details class="unit__disclosure">
+        <summary class="unit__summary">
+          <span class="unit__handle">{{ .Handle }}</span>
+          <span class="unit__file">{{ .File }}</span>
+          {{ with .Headline }}<span class="unit__headline">{{ . }}</span>{{ end }}
+          <span class="unit__stats">
+            <span class="unit__stat unit__stat--add">+{{ .Added }}</span>
+            <span class="unit__stat unit__stat--del">-{{ .Removed }}</span>
+          </span>
+          {{ range .Flags }}<span class="flag">{{ . }}</span>{{ end }}
+        </summary>
+
+        <div class="unit__body">
+          <dl class="detail">
+            <dt class="detail__label">what</dt>
+            <dd class="detail__value">{{ .Headline }}</dd>
+            <dt class="detail__label">why</dt>
+            <dd class="detail__value">
+              <span class="why why--{{ .WhySrc }}">{{ .WhySrc }}</span>
+              <span class="why__text">{{ .Why }}</span>
+            </dd>
+          </dl>
+
+          {{ with .Notes }}
+          <ul class="notes">
+            {{ range . }}
+            <li class="notes__item notes__item--{{ .Kind }}">
+              <span class="notes__kind">{{ .Kind }}</span>
+              <span class="notes__text">{{ .Text }}</span>
+              {{ with .SupersededBy }}<span class="notes__superseded">superseded by {{ . }}</span>{{ end }}
+            </li>
+            {{ end }}
+          </ul>
+          {{ end }}
+
+          {{ if .Diff }}
+          <pre class="diff"><code>{{ range .Diff }}<span class="diff__line diff__line--{{ .Kind }}">{{ .Text }}</span>
+{{ end }}</code></pre>
+          {{ else }}
+          <p class="diff diff--empty">No textual changes.</p>
+          {{ end }}
+
+          <form class="annotate" method="post" action="/units/{{ .ID }}/notes">
+            <label class="annotate__label" for="text-{{ .ID }}">annotate</label>
+            <input class="annotate__text" id="text-{{ .ID }}" name="text" type="text"
+                   placeholder="optional note…" autocomplete="off">
+            <button class="annotate__btn annotate__btn--ok" name="kind" value="ok">ok</button>
+            <button class="annotate__btn annotate__btn--question" name="kind" value="question">question</button>
+            <button class="annotate__btn annotate__btn--objection" name="kind" value="objection">objection</button>
+            <button class="annotate__btn annotate__btn--debt" name="kind" value="debt">debt</button>
+            <button class="annotate__btn annotate__btn--note" name="kind" value="note">note</button>
+          </form>
+
+          <p class="unit__id">{{ .ID }}</p>
+        </div>
+      </details>
+    </article>
+    {{ else }}
+    <p class="queue__empty">No changed files to review.</p>
+    {{ end }}
+  </main>
+</body>
+</html>
