@@ -57,6 +57,14 @@ full end-to-end output with no agent, no TUI, and no network:
 
 ## Install
 
+Prebuilt binaries (darwin/linux, amd64/arm64) are attached to every
+[GitHub Release](https://github.com/mondial7/mondspace-reviewer/releases) —
+download the archive for your platform, extract it, and put
+`mondspace-reviewer` on your `PATH`. Each release also ships a
+`checksums.txt` to verify the download.
+
+Or install with Go:
+
 ```sh
 go install github.com/mondial7/mondspace-reviewer/cmd/mondspace-reviewer@latest
 ```
