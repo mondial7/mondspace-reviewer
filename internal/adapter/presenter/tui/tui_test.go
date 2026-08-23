@@ -339,6 +339,17 @@ func TestViewRendersHeaderFlagsAndWhy(t *testing.T) {
 	}
 }
 
+func TestViewRendersFailedFlag(t *testing.T) {
+	units := []domain.Unit{{
+		ID: "s-u001", SessionID: "s", Files: []string{"a.go"},
+		Flags: []domain.Flag{domain.FlagFailed},
+	}}
+	view := tui.New(units, nil, nil).View()
+	if !strings.Contains(view, "failed") {
+		t.Errorf("view missing the failed flag:\n%s", view)
+	}
+}
+
 func TestViewShowsSupersededMarker(t *testing.T) {
 	units := []domain.Unit{{ID: "s-u001", SessionID: "s", Files: []string{"a.go"}}}
 	notes := []domain.Note{{

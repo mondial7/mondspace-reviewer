@@ -12,8 +12,10 @@ var groupOrder = []domain.NoteKind{
 func BuildReport(sess domain.Session) domain.Report {
 	notes := MarkSuperseded(sess.Units, sess.Notes)
 	headlines := map[string]domain.Headline{}
+	flags := map[string][]domain.Flag{}
 	for _, u := range sess.Units {
 		headlines[u.ID] = u.Headline
+		flags[u.ID] = u.Flags
 	}
 
 	r := domain.Report{SessionID: sess.ID, Prompt: sess.Prompt}
@@ -22,7 +24,7 @@ func BuildReport(sess domain.Session) domain.Report {
 		var items []domain.ReportItem
 		for _, n := range notes {
 			if n.Kind == kind {
-				items = append(items, itemFor(n, headlines[n.UnitID]))
+				items = append(items, itemFor(n, headlines[n.UnitID], flags[n.UnitID]))
 			}
 		}
 		if len(items) > 0 {
@@ -31,7 +33,7 @@ func BuildReport(sess domain.Session) domain.Report {
 	}
 
 	for _, n := range notes {
-		item := itemFor(n, headlines[n.UnitID])
+		item := itemFor(n, headlines[n.UnitID], flags[n.UnitID])
 		switch {
 		case n.Kind == domain.NoteDebt:
 			r.Debt = append(r.Debt, item)
@@ -48,7 +50,7 @@ func BuildReport(sess domain.Session) domain.Report {
 	}
 	for _, u := range sess.Units {
 		if !annotated[u.ID] {
-			r.Unreviewed = append(r.Unreviewed, domain.ReportItem{UnitID: u.ID, Headline: u.Headline})
+			r.Unreviewed = append(r.Unreviewed, domain.ReportItem{UnitID: u.ID, Headline: u.Headline, Flags: u.Flags})
 		}
 	}
 
@@ -60,10 +62,11 @@ func isOpen(kind domain.NoteKind) bool {
 	return kind == domain.NoteQuestion || kind == domain.NoteObjection
 }
 
-func itemFor(n domain.Note, h domain.Headline) domain.ReportItem {
+func itemFor(n domain.Note, h domain.Headline, flags []domain.Flag) domain.ReportItem {
 	return domain.ReportItem{
 		UnitID:       n.UnitID,
 		Headline:     h,
+		Flags:        flags,
 		NoteKind:     n.Kind,
 		NoteText:     n.Text,
 		SupersededBy: n.SupersededBy,

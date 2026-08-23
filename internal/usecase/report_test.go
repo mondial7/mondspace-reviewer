@@ -117,6 +117,21 @@ func TestBuildReportCollectsDebt(t *testing.T) {
 	}
 }
 
+func TestBuildReportCarriesFlags(t *testing.T) {
+	sess := reportSession()
+	sess.Units[1].Flags = []domain.Flag{domain.FlagFailed}
+
+	r := usecase.BuildReport(sess)
+
+	obj, found := groupFor(r, domain.NoteObjection)
+	if !found || len(obj.Items) != 1 {
+		t.Fatalf("objection group = %+v, want one item on s-u002", obj)
+	}
+	if !hasFlag(obj.Items[0].Flags, domain.FlagFailed) {
+		t.Errorf("item flags = %v, want failed carried from the unit", obj.Items[0].Flags)
+	}
+}
+
 func TestBuildReportGroupsByNoteKind(t *testing.T) {
 	r := usecase.BuildReport(reportSession())
 
