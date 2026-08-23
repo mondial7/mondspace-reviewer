@@ -175,6 +175,8 @@ Run before any model call, offline and instantly:
 | `public-api` | an exported declaration is removed or changed |
 | `large` | more than 150 lines change in one unit |
 | `todo` | a `TODO` / `FIXME` / `XXX` is added |
+| `solo-iface` | a new Go interface is declared with no implementing method added in the same diff ([diff-local heuristic](ADR/0011-solo-iface-diff-heuristic.md), can over/under-flag) |
+| `failed` | a member tool call failed (live review only — see [ADR 0010](ADR/0010-failed-tool-calls.md)) |
 
 ## Keybindings (TUI)
 
@@ -294,8 +296,7 @@ MSR_SUMMARIZER_URL=http://localhost:1234/v1 MSR_MODEL=qwen/qwen3.5-9b \
 - Export to Markdown and JSON
 - A second agent event source, `opencode` (ADR 0006), alongside `hooks`
 
-Planned work is tracked in [issues](https://github.com/mondial7/mondspace-reviewer/issues)
-(the `solo-iface` flag, live-streaming into the TUI, and more).
+Planned work is tracked in [issues](https://github.com/mondial7/mondspace-reviewer/issues).
 
 ## Contributing
 
