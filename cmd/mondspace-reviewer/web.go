@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"flag"
@@ -98,11 +100,24 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 		// a time, so the budget is generous; the page never waits on it.
 		narrateCtx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
 		defer cancel()
+
+		started := time.Now()
 		narrative, err := usecase.NarrateProgressively(narrateCtx, sum, sess, units,
 			handler.SetNarrative) // publish each chapter as the model writes it
+
+		// Narration is the one model call the reviewer never triggers, so it is
+		// the one most worth recording: without this it is invisible.
+		entry := web.AuditEntry{
+			SessionID: *session, Action: "narrate", Model: *model,
+			Millis: time.Since(started).Milliseconds(),
+			Detail: fmt.Sprintf("%d chapters, %s", len(narrative.Chapters), narrative.Source),
+		}
 		if err != nil {
+			entry.Failed = true
+			entry.Detail = err.Error()
 			fmt.Fprintln(os.Stderr, "msr: story fell back to mechanical grouping:", err)
 		}
+		handler.Record(entry)
 		handler.SetNarrative(narrative)
 	}()
 
@@ -252,6 +267,35 @@ func webReanalyseFunc(snap port.Snapshotter, sum port.Summarizer, model string) 
 // auditFile appends interactions to an append-only JSONL log beside the session,
 // so a review carries its own provenance (issue #11).
 type auditFile string
+
+// Entries reads the log back for the activity page. A log that has never been
+// written to is not an error — it is an empty history.
+func (a auditFile) Entries() ([]web.AuditEntry, error) {
+	f, err := os.Open(string(a))
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	var entries []web.AuditEntry
+	scan := bufio.NewScanner(f)
+	scan.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
+	for scan.Scan() {
+		line := bytes.TrimSpace(scan.Bytes())
+		if len(line) == 0 {
+			continue
+		}
+		var e web.AuditEntry
+		if err := json.Unmarshal(line, &e); err != nil {
+			continue // a torn line must not hide the rest of the history
+		}
+		entries = append(entries, e)
+	}
+	return entries, scan.Err()
+}
 
 func (a auditFile) Append(e web.AuditEntry) error {
 	if err := os.MkdirAll(filepath.Dir(string(a)), 0o755); err != nil {
