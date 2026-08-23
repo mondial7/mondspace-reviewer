@@ -55,6 +55,8 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout io.Writer) 
 		return runAsk(ctx, args, stdout)
 	case "export":
 		return runExport(args, stdout)
+	case "web":
+		return runWeb(ctx, args, stdout)
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}

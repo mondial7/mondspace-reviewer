@@ -137,6 +137,7 @@ msr review --source=replay --file=testdata/sessions/basic.jsonl --plain
 | `msr review --source=replay\|hooks [--plain\|--tui] [--verbose]` | Cluster and present the session. `--verbose` (`-v`) lists each unit's member events and snapshot refs. |
 | `msr ask --scope=unit\|session --session=… "question"` | Answer a question from the bounded log context. |
 | `msr export --format=md\|json --session=…` | Produce the review report, debt list, and open agenda. |
+| `msr web --session=… --repo=.` | Serve the review as a localhost web app (scrollable diffs, click-to-annotate). |
 
 ## Flags (deterministic, no model)
 
@@ -192,6 +193,29 @@ All state lives under `.mondspace-reviewer/<session-id>/` as three append-only
 JSONL files (`events`, `units`, `notes`) — crash-safe, tail-able, and inspectable
 with `jq`. Snapshots are throwaway commits under `refs/mondspace/review/<session>`,
 so every unit's diff stays stable even after the file is rewritten.
+
+## Web app
+
+```sh
+msr web --session=<session-id> --repo=.        # http://127.0.0.1:7777
+```
+
+A localhost web application (ADR 0004) served by the same binary: the same
+net-change-per-file review, with scrollable diffs and click-to-annotate. It is
+server-rendered Go templates with hand-written BEM CSS — no build step and no
+client framework. It binds to localhost only and holds no credentials.
+
+Annotations persist through the same store as the CLI. By default that is the
+append-only JSONL log; set `MSR_POSTGRES_DSN` to use PostgreSQL instead, which
+creates its tables in a dedicated schema (`--pg-schema`, default
+`mondspace_reviewer`) and never in `public` (ADR 0007).
+
+```sh
+export MSR_POSTGRES_DSN='postgres://user:pass@localhost:5432/db?sslmode=disable'
+msr web --session=<session-id> --repo=. --pg-schema=mondspace_reviewer
+```
+
+The web app is becoming the primary interface; the TUI remains supported.
 
 ## Summarizer configuration
 
