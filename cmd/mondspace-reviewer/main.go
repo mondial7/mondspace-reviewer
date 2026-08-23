@@ -307,32 +307,10 @@ func runFileReview(ctx context.Context, store port.Store, snap *gitsnap.Snapshot
 	if err != nil {
 		return err
 	}
-	files, err := snap.ChangedFiles(ctx, baseline, domain.SnapshotRef{})
+	units, diffs, err := buildFileUnits(ctx, snap, sessionID, repo, out, baseline, domain.SnapshotRef{})
 	if err != nil {
 		return err
 	}
-	files = excludeStore(files, repo, out) // never review msr's own store
-
-	diffs := map[string]domain.Diff{}
-	var units []domain.Unit
-	for i, f := range files {
-		d, err := snap.Diff(ctx, baseline, domain.SnapshotRef{}, []string{f})
-		if err != nil {
-			d = domain.Diff{}
-		}
-		u := domain.Unit{
-			ID:        fmt.Sprintf("%s-f%03d", sessionID, i+1),
-			SessionID: sessionID,
-			Files:     []string{f},
-			From:      baseline,
-			Sealed:    true,
-		}
-		u.Flags = usecase.Flags(u, d)
-		u.Headline = usecase.DiffHeadline(f, d)
-		diffs[u.ID] = d
-		units = append(units, u)
-	}
-	units = usecase.SuppressCoveredNoTest(units)
 	sess.Units = units
 	notes := usecase.MarkSuperseded(units, sess.Notes)
 
@@ -344,6 +322,42 @@ func runFileReview(ctx context.Context, store port.Store, snap *gitsnap.Snapshot
 		WithAsk(askFunc(sess, snap, sum))
 	_, err = tea.NewProgram(model, tea.WithInput(os.Stdin), tea.WithOutput(stdout)).Run()
 	return err
+}
+
+// buildFileUnits is the per-file net-diff engine shared by every retroactive
+// review path: one unit per file changed between baseline and until (an empty
+// until diffs against the current working tree), with its real diff, flags,
+// and mechanical headline. `sessionID` only seeds unit IDs — it need not name
+// a recorded session.
+func buildFileUnits(ctx context.Context, snap *gitsnap.Snapshotter, sessionID, repo, out string, baseline, until domain.SnapshotRef) ([]domain.Unit, map[string]domain.Diff, error) {
+	files, err := snap.ChangedFiles(ctx, baseline, until)
+	if err != nil {
+		return nil, nil, err
+	}
+	files = excludeStore(files, repo, out) // never review msr's own store
+
+	diffs := map[string]domain.Diff{}
+	var units []domain.Unit
+	for i, f := range files {
+		d, err := snap.Diff(ctx, baseline, until, []string{f})
+		if err != nil {
+			d = domain.Diff{}
+		}
+		u := domain.Unit{
+			ID:        fmt.Sprintf("%s-f%03d", sessionID, i+1),
+			SessionID: sessionID,
+			Files:     []string{f},
+			From:      baseline,
+			To:        until,
+			Sealed:    true,
+		}
+		u.Flags = usecase.Flags(u, d)
+		u.Headline = usecase.DiffHeadline(f, d)
+		diffs[u.ID] = d
+		units = append(units, u)
+	}
+	units = usecase.SuppressCoveredNoTest(units)
+	return units, diffs, nil
 }
 
 // excludeStore drops files under msr's own store directory from the review, so
