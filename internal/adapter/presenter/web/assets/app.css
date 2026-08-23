@@ -1027,3 +1027,15 @@
   font-size: 0.8rem; line-height: 1.5;
 }
 .md__code code { background: none; border: none; padding: 0; }
+
+/* What kind of thing is under review. Git supplies most of them. */
+.brief__kind {
+  margin: 0 0 0.25rem; font-size: 0.62rem; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--fg-dim);
+}
+.brief__kind--commit { color: var(--hunk); }
+.brief__kind--tag { color: var(--add); }
+.brief__kind--pull-request { color: var(--accent); }
+.brief__kind--worktree { color: var(--inferred); }
+.brief__kind--session { color: var(--fg-dim); }
+.brief__sub { margin: 0.15rem 0 0; font-size: 0.72rem; color: var(--fg-dim); }

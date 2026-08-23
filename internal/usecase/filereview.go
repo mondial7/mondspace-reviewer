@@ -22,7 +22,10 @@ type RangeDiffer interface {
 func BuildFileUnits(
 	ctx context.Context,
 	differ RangeDiffer,
-	sessionID string,
+	// reviewID seeds the unit ids. It is the id of whatever is being reviewed —
+	// a target, which may be a commit, a tag or a session (ADR 0017) — not a
+	// session id, which is what it used to be and what the name still said.
+	reviewID string,
 	baseline, until domain.SnapshotRef,
 	exclude func(string) bool,
 ) ([]domain.Unit, map[string]domain.Diff, error) {
@@ -42,8 +45,8 @@ func BuildFileUnits(
 			d = domain.Diff{}
 		}
 		u := domain.Unit{
-			ID:        fmt.Sprintf("%s-f%03d", sessionID, len(units)+1),
-			SessionID: sessionID,
+			ID:        fmt.Sprintf("%s-f%03d", reviewID, len(units)+1),
+			SessionID: reviewID,
 			Files:     []string{f},
 			From:      baseline,
 			Sealed:    true,

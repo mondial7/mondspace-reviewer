@@ -830,21 +830,28 @@ func TestUnknownSessionFallsBackRatherThanFailing(t *testing.T) {
 	}
 }
 
-func TestCockpitOffersASessionSwitcher(t *testing.T) {
-	h := web.NewServer(testSession(), nil).WithWorkspace([]web.SessionSummary{
-		{ID: "s", Repo: "mondspace-reviewer", Prompt: "add token validation"},
-		{ID: "other", Repo: "otherrepo", Prompt: "port the parser"},
+func TestCockpitOffersATargetPicker(t *testing.T) {
+	h := web.NewServer(testSession(), nil).WithTargets([]web.TargetSummary{
+		{ID: "t1", Repo: "mondspace-reviewer", Kind: domain.TargetCommit, Title: "Fix the retry"},
+		{ID: "t2", Repo: "api", Kind: domain.TargetTag, Title: "v2.0.0"},
+		{ID: "t3", Repo: "api", Kind: domain.TargetSession, Title: "port the parser"},
 	})
 
 	body := get(t, h, "/").Body.String()
 
 	// Navigable without JavaScript: a plain form the browser can submit.
-	if !strings.Contains(body, `name="session"`) {
-		t.Errorf("the cockpit needs a session switcher:\n%s", body)
+	if !strings.Contains(body, `name="target"`) {
+		t.Errorf("the cockpit needs a target picker:\n%s", body)
 	}
-	// Sessions from other repositories are reachable, and say which repo.
-	if !strings.Contains(body, "otherrepo") || !strings.Contains(body, "port the parser") {
-		t.Errorf("the switcher should span repositories:\n%s", body)
+	// Git supplies most of what is reviewable; a session is one kind among them.
+	for _, want := range []string{"Fix the retry", "v2.0.0", "port the parser", "commit", "tag"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the picker is missing %q", want)
+		}
+	}
+	// Repositories are still distinguished, since a workspace spans them.
+	if !strings.Contains(body, "api") {
+		t.Errorf("the picker should name the repository:\n%s", body)
 	}
 }
 

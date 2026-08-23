@@ -47,6 +47,22 @@ type Session struct {
 	Stats     domain.SessionStats
 	Histories map[string]domain.FileHistory
 	Narrative domain.Narrative
+	// Target is what is being reviewed: a commit, a tag, a pull request, the
+	// working tree, or a recorded run (ADR 0017).
+	Target domain.Target
+}
+
+// TargetSummary is one row of the workspace: something worth reviewing. Most
+// come from git — a commit, a tag, a pull request, the working tree — and a
+// recorded session is one kind among them rather than the index (ADR 0017).
+type TargetSummary struct {
+	ID       string
+	Repo     string
+	Kind     domain.TargetKind
+	Title    string
+	Subtitle string
+	TS       time.Time
+	Sessions int
 }
 
 // SessionSummary is one row of the workspace: a review that exists, wherever it
@@ -174,6 +190,7 @@ type Server struct {
 	// costs nothing after the first visit.
 	loaded    map[string]Session
 	workspace []SessionSummary
+	targets   []TargetSummary
 	repos     []RepoStatus
 	addRepo   AddRepoFunc
 	repoErr   string
@@ -242,6 +259,13 @@ func (s *Server) WithAudit(a AuditLog) *Server {
 // reviewer asks for it, or it does not happen.
 func (s *Server) WithNarrate(fn NarrateFunc) *Server {
 	s.narrate = fn
+	return s
+}
+
+// WithTargets supplies everything worth reviewing across the workspace, newest
+// first. It is what the picker lists and what the palette searches.
+func (s *Server) WithTargets(targets []TargetSummary) *Server {
+	s.targets = targets
 	return s
 }
 
@@ -353,7 +377,12 @@ func (s *Server) WithLoader(fn Loader) *Server {
 // unknown or unloadable id falls back to the one already open: a stale link
 // must not leave the reviewer at an error page with no way back.
 func (s *Server) openSession(r *http.Request) Session {
-	want := r.URL.Query().Get("session")
+	// ?target= is what the picker sends. ?session= is kept because it is what
+	// every link printed before v4 used, and a session is still a target.
+	want := r.URL.Query().Get("target")
+	if want == "" {
+		want = r.URL.Query().Get("session")
+	}
 
 	s.mu.RLock()
 	current := s.sess
@@ -1003,6 +1032,7 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 	narrative := sess.Narrative
 	canDescribe := s.describe != nil
 	workspace := s.workspace
+	targets := s.targets
 	thread := append([]Exchange(nil), s.thread...)
 	hasAsk := s.ask != nil
 	hasReanal := s.reanalyse != nil
@@ -1065,6 +1095,7 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 	data := struct {
 		Session     Session
 		Workspace   []SessionSummary
+		Targets     []TargetSummary
 		Stats       cockpitStats
 		Narrative   domain.Narrative
 		Chapters    []chapterView
@@ -1077,7 +1108,7 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 		CanRetry    bool
 		Narrating   bool
 	}{
-		Session: sess, Workspace: workspace,
+		Session: sess, Workspace: workspace, Targets: targets,
 		Stats: cockpitStats{
 			Open:  humanDuration(stats.Open),
 			Live:  stats.Live,

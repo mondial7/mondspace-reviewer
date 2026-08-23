@@ -37,13 +37,16 @@
            is: the numbers below it are not (ADR 0003). -->
       <!-- Moving between sessions, and between repositories. A plain GET form,
            so it works with no JavaScript. -->
-      {{ if .Workspace }}
+      <!-- What to review. Git supplies most of it — commits, tags, pull
+           requests, the working tree — and a recorded run is one kind among
+           them rather than the index (ADR 0017). -->
+      {{ if .Targets }}
       <form class="switcher" method="get" action="/">
-        <select class="switcher__select" name="session" onchange="this.form.submit()"
-                aria-label="Open another session">
-          {{ range .Workspace }}
+        <select class="switcher__select" name="target" onchange="this.form.submit()"
+                aria-label="Choose what to review">
+          {{ range .Targets }}
           <option value="{{ .ID }}" {{ if eq .ID $.Session.ID }}selected{{ end }}>
-            {{ .Repo }} · {{ if .Prompt }}{{ .Prompt }}{{ else }}{{ .ID }}{{ end }}
+            {{ .Repo }} · {{ .Kind }} · {{ .Title }}
           </option>
           {{ end }}
         </select>
@@ -52,7 +55,9 @@
       {{ end }}
 
       <section class="brief">
+        {{ with .Session.Target.Kind }}<p class="brief__kind brief__kind--{{ . }}">{{ . }}</p>{{ end }}
         <h1 class="brief__title">{{ .Narrative.Title }}</h1>
+        {{ with .Session.Target.Subtitle }}<p class="brief__sub">{{ . }}</p>{{ end }}
         {{ with .Narrative.Intro }}<p class="brief__text">{{ . }}</p>{{ end }}
         {{ with .Session.Prompt }}<p class="brief__task">{{ . }}</p>{{ end }}
         <p class="brief__src brief__src--{{ .Narrative.Source }}">

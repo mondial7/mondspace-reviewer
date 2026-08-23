@@ -275,8 +275,26 @@ msr web --session=<id>                         # a particular review
 msr web --repo=. --repo=../api --repo=../web   # one workspace, several repositories
 ```
 
-`msr web` opens the **cockpit** at `/` — one page, three columns, and only the
-two right-hand ones scroll:
+`msr web` opens the **cockpit** at `/`. What it reviews is a **target** — and
+git supplies most of them:
+
+| kind | the range it reviews |
+| --- | --- |
+| **commit** | `parent..commit` — what that one commit did |
+| **tag** | everything since the previous tag — what shipped in `v3.1.0` |
+| **pull request** | the commits that reference it, together |
+| **working tree** | uncommitted work against `HEAD`, offered first when dirty |
+| **session** | a recorded agent run, from just before it started |
+
+A session is **one kind among them**, not the index (ADR 0017). It still answers
+what an agent run did and still holds the stated intent nothing else has — and
+every other target lists the sessions overlapping it, so the intent behind a
+commit is one click away.
+
+Reviewing a target is what the engine always did: the net change per file
+between two refs. Only what supplies the refs changed.
+
+One page, three columns, and only the two right-hand ones scroll:
 
 | | |
 |---|---|

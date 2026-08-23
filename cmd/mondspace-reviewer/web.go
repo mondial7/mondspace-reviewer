@@ -56,6 +56,7 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 		repos = chosen
 	}
 	workspace := discoverWorkspace(repos, *out)
+	targets := discoverTargets(ctx, repos, *out)
 	if *session == "" {
 		if len(workspace) == 0 {
 			return fmt.Errorf("no reviews found — run `msr review` first, or pass --session")
@@ -147,7 +148,8 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 		WithHistories(usecase.FileHistories(sess.Events, units)).
 		WithNarrative(shown).
 		WithWorkspace(workspace).
-		WithLoader(sessionLoader(workspace, *out)).
+		WithTargets(targets).
+		WithLoader(targetLoader()).
 		WithVersions(snap.FileVersions, snap.DiffAt).
 		WithRepos(openRepos(), addRepo(*out)).
 		WithDescribe(describeGroup(sess, units, diffs, sum, store)).
@@ -648,6 +650,97 @@ type workspaceEntry struct {
 
 var workspaceIndex = map[string]workspaceEntry{}
 
+// targetEntry is something worth reviewing and where it lives. Targets are keyed
+// by an id derived from their range (ADR 0017), so the same commit or tag always
+// resolves to the same review.
+type targetEntry struct {
+	target domain.Target
+	repo   string
+	out    string
+	// session is set only for a session target, which is the one kind that has
+	// a store of its own to read intent and notes from.
+	session string
+}
+
+var targetIndex = map[string]targetEntry{}
+
+// discoverTargets asks each repository what it has worth reviewing — commits,
+// tags, pull requests, the working tree — and folds in the sessions recorded
+// against it. Newest first, across every repository at once.
+func discoverTargets(ctx context.Context, repos []string, out string) []web.TargetSummary {
+	var all []domain.Target
+
+	for _, repo := range repos {
+		root := out
+		if !filepath.IsAbs(out) {
+			root = filepath.Join(repo, out)
+		}
+		snap := gitsnap.New(repo, "targets")
+
+		commits, _ := snap.RecentCommits(ctx, recentCommitLimit)
+		tags, _ := snap.Tags(ctx, tagLimit)
+		dirty, _ := snap.IsDirty(ctx)
+
+		// Recorded sessions become targets in their own right: each is the range
+		// from just before it started to wherever the work reached.
+		var sessions []domain.Target
+		store := jsonl.New(root)
+		for _, sum := range discoverSessions(root, repo) {
+			sess, err := store.Load(sum.ID)
+			if err != nil {
+				continue
+			}
+			baseline, err := snap.Baseline(ctx, firstEventTime(sess))
+			if err != nil {
+				continue
+			}
+			sessions = append(sessions, domain.Target{
+				ID: sum.ID, Repo: repo, Kind: domain.TargetSession,
+				Title:    firstNonEmpty(sess.Prompt, sum.ID),
+				Subtitle: sum.Agent + " · recorded run",
+				From:     baseline, TS: sum.Started,
+			})
+		}
+
+		for _, t := range usecase.BuildTargets(repo, commits, tags, sessions, dirty) {
+			if _, clash := targetIndex[t.ID]; clash {
+				continue
+			}
+			entry := targetEntry{target: t, repo: repo, out: root}
+			if t.Kind == domain.TargetSession {
+				entry.session = t.ID
+			}
+			targetIndex[t.ID] = entry
+			all = append(all, t)
+		}
+	}
+
+	usecase.SortTargets(all)
+
+	summaries := make([]web.TargetSummary, 0, len(all))
+	for _, t := range all {
+		summaries = append(summaries, web.TargetSummary{
+			ID: t.ID, Repo: filepath.Base(mustAbs(t.Repo)), Kind: t.Kind,
+			Title: t.Title, Subtitle: t.Subtitle, TS: t.TS, Sessions: len(t.Sessions),
+		})
+	}
+	return summaries
+}
+
+// How much history to offer. Enough to cover recent work without turning the
+// picker into an unreadable wall or the launch into a git crawl.
+const (
+	recentCommitLimit = 40
+	tagLimit          = 20
+)
+
+func firstNonEmpty(a, b string) string {
+	if strings.TrimSpace(a) != "" {
+		return a
+	}
+	return b
+}
+
 // discoverWorkspace lists every review across every repository given, newest
 // first. Each repository keeps its own store unless --out names an absolute
 // path, so two projects never collide.
@@ -676,6 +769,71 @@ func discoverWorkspace(repos []string, out string) []web.SessionSummary {
 
 	sort.SliceStable(all, func(i, j int) bool { return all[i].Started.After(all[j].Started) })
 	return all
+}
+
+// targetLoader materialises any target — a commit, a tag, a pull request, the
+// working tree, or a recorded session — from whichever repository owns it.
+//
+// Reviewing a target is exactly what the engine always did: the net change per
+// file between two refs. Only the two refs differ, and where the intent comes
+// from: a session has an event log, and nothing else does.
+func targetLoader() web.Loader {
+	return func(ctx context.Context, targetID string) (web.Session, error) {
+		entry, known := targetIndex[targetID]
+		if !known {
+			return web.Session{}, fmt.Errorf("nothing here to review under %q", targetID)
+		}
+		t := entry.target
+
+		// A session target carries its recorded log: the stated intent, the
+		// notes, and the conversation. Every other kind has only git.
+		var sess domain.Session
+		if entry.session != "" {
+			loaded, err := jsonl.New(entry.out).Load(entry.session)
+			if err != nil {
+				return web.Session{}, err
+			}
+			sess = loaded
+		}
+
+		snap := gitsnap.New(entry.repo, targetID)
+		storeRel := storeRelativeTo(entry.repo, entry.out)
+		units, diffs, err := usecase.BuildFileUnits(ctx, snap, targetID, t.From, t.To,
+			func(f string) bool {
+				return f == storeRel || strings.HasPrefix(f, storeRel+"/")
+			})
+		if err != nil {
+			return web.Session{}, err
+		}
+
+		commits, _ := snap.CommitsSince(ctx, t.TS)
+		if t.Kind != domain.TargetSession {
+			// For a range, the commits in it are the ones it spans, which the
+			// target already counted rather than re-deriving here.
+			commits = commits[:min(len(commits), t.Commits)]
+		}
+
+		view := web.Session{
+			ID: targetID, Prompt: t.Title, Repo: filepath.Base(mustAbs(entry.repo)),
+			Units: units, Notes: usecase.MarkSuperseded(units, sess.Notes), Diffs: diffs,
+			Stats:     usecase.ComputeStats(sess, units, diffs, commits, time.Now()),
+			Histories: usecase.FileHistories(sess.Events, units),
+			Target:    t,
+		}
+
+		// A story already written for this range is reused; one never narrated
+		// falls back to deterministic grouping rather than an empty column.
+		// Opening a target must never trigger a model call (ADR 0014).
+		view.Narrative = domain.Narrative{
+			SessionID: targetID, Title: usecase.Brief(t.Title, 70),
+			Chapters: usecase.GroupByPath(units), Source: domain.NarrativeMechanical,
+		}
+		if stored, err := jsonl.New(entry.out).LoadNarrative(targetID); err == nil &&
+			stored.Fingerprint == usecase.Fingerprint(units) && len(stored.Chapters) > 0 {
+			view.Narrative = stored
+		}
+		return view, nil
+	}
 }
 
 // sessionLoader materialises a session from whichever repository owns it. It is
