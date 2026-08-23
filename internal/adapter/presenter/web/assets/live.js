@@ -7,8 +7,8 @@
 const stream = new EventSource('/events');
 
 // Which parts of the page each event can affect.
-const REGIONS = ['.queue', '.story', '.ask', '.activity', '.board',
-  '.cockpit__feed', '.cockpit__stats', '.cockpit__status', '.masthead__meta', '.hero'];
+const REGIONS = ['.cockpit__story', '.cockpit__changes', '.cockpit__stats',
+  '.cockpit__status', '.brief', '.board', '.activity', '.queue'];
 
 let pending = false;
 

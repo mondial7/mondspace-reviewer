@@ -1,0 +1,2 @@
+{{ if . }}<pre class="diff"><code>{{ range . }}<span class="diff__line diff__line--{{ .Kind }}">{{ .Text }}</span>
+{{ end }}</code></pre>{{ else }}<p class="diff diff--empty">No textual changes.</p>{{ end }}

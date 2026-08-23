@@ -127,6 +127,7 @@ type Server struct {
 
 	mu        sync.RWMutex
 	sess      Session
+	histories map[string]domain.FileHistory
 	workspace []SessionSummary
 	thread    []Exchange
 	narrative domain.Narrative
@@ -152,14 +153,15 @@ type Server struct {
 // case annotations are held in memory only.
 func NewServer(sess Session, notes Annotator) *Server {
 	s := &Server{
-		mux:    http.NewServeMux(),
-		tmpl:   template.Must(template.New("").Funcs(funcs()).ParseFS(templates, "templates/*.html")),
-		sess:   sess,
-		notes:  notes,
-		models: map[string]string{},
-		subs:   map[chan string]struct{}{},
-		newID:  func() string { return ulid.Make().String() },
-		now:    func() time.Time { return time.Now().UTC() },
+		mux:       http.NewServeMux(),
+		tmpl:      template.Must(template.New("").Funcs(funcs()).ParseFS(templates, "templates/*.html")),
+		sess:      sess,
+		notes:     notes,
+		models:    map[string]string{},
+		histories: map[string]domain.FileHistory{},
+		subs:      map[chan string]struct{}{},
+		newID:     func() string { return ulid.Make().String() },
+		now:       func() time.Time { return time.Now().UTC() },
 	}
 	s.routes()
 	return s
@@ -195,6 +197,22 @@ func (s *Server) WithAudit(a AuditLog) *Server {
 func (s *Server) WithNarrate(fn NarrateFunc) *Server {
 	s.narrate = fn
 	return s
+}
+
+// WithHistories supplies each file's edit history, so a unit can show how many
+// times it was touched and when, not only where it ended up.
+func (s *Server) WithHistories(h map[string]domain.FileHistory) *Server {
+	s.histories = h
+	return s
+}
+
+// clockOrDash renders a timestamp, or an em dash for a file nothing touched —
+// which happens whenever the review came from a git range rather than a log.
+func clockOrDash(t time.Time) string {
+	if t.IsZero() {
+		return "—"
+	}
+	return t.Local().Format("15:04:05")
 }
 
 // WithAgent supplies the reviewer model's status, shown at /status and totalled
@@ -261,17 +279,51 @@ func (s *Server) routes() {
 	// The cockpit is the landing page: while an agent is still working, the first
 	// question is "is anything still happening", not "what shall I review first".
 	s.mux.HandleFunc("GET /{$}", s.handleCockpit)
-	s.mux.HandleFunc("GET /review", s.handleIndex)
+	// The review queue and the story were folded into the cockpit. Old links,
+	// bookmarks and anchors still work.
+	s.mux.HandleFunc("GET /review", redirectHome)
+	s.mux.HandleFunc("GET /story", redirectHome)
 	s.mux.HandleFunc("POST /units/{id}/notes", s.handleAnnotate)
 	s.mux.HandleFunc("GET /sessions", s.handleWorkspace)
 	s.mux.HandleFunc("POST /ask", s.handleAsk)
 	s.mux.HandleFunc("POST /units/{id}/reanalyse", s.handleReanalyse)
-	s.mux.HandleFunc("GET /story", s.handleStory)
+	s.mux.HandleFunc("GET /units/{id}/diff", s.handleUnitDiff)
 	s.mux.HandleFunc("GET /cockpit", s.handleCockpit)
 	s.mux.HandleFunc("GET /activity", s.handleActivity)
 	s.mux.HandleFunc("GET /status", s.handleStatus)
 	s.mux.HandleFunc("POST /story/narrate", s.handleNarrate)
 	s.mux.HandleFunc("GET /events", s.handleEvents)
+}
+
+// handleUnitDiff serves one unit's full diff as a fragment. The cockpit shows a
+// compacted diff inline and fetches the rest only if asked: a 97-file session
+// with every diff inlined would be megabytes of HTML nobody reads.
+func (s *Server) handleUnitDiff(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	s.mu.RLock()
+	diff, known := s.sess.Diffs[id]
+	if !known {
+		for _, u := range s.sess.Units {
+			if u.ID == id {
+				known = true
+				break
+			}
+		}
+	}
+	s.mu.RUnlock()
+	if !known {
+		http.NotFound(w, r)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := s.tmpl.ExecuteTemplate(w, "diff.html", splitDiff(diff.Text)); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func redirectHome(w http.ResponseWriter, r *http.Request) {
+	http.Redirect(w, r, "/", http.StatusMovedPermanently)
 }
 
 // Subscribers is the number of live event streams currently attached.
@@ -394,7 +446,7 @@ func (s *Server) handleAnnotate(w http.ResponseWriter, r *http.Request) {
 		Action: "annotate", Detail: string(note.Kind) + ": " + note.Text})
 	s.broadcast("note")
 
-	http.Redirect(w, r, "/review#unit-"+unit.ID, http.StatusSeeOther)
+	http.Redirect(w, r, "/#unit-"+unit.ID, http.StatusSeeOther)
 }
 
 func (s *Server) unit(id string) (domain.Unit, bool) {
@@ -423,6 +475,21 @@ type unitView struct {
 	Diff     []diffLine
 	Notes    []domain.Note
 	Model    string
+
+	// Edits is how the file reached this net change: a net-change review
+	// collapses the agent's back-and-forth (ADR 0002), and this opens it back up.
+	Edits      int
+	LastEdited string
+	FirstEdit  string
+	History    []editView
+}
+
+// editView is one recorded touch of a file, prepared for display.
+type editView struct {
+	When   string
+	Tool   string
+	Intent string
+	Failed bool
 }
 
 type diffLine struct {
@@ -430,26 +497,6 @@ type diffLine struct {
 	Text string
 }
 
-func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
-	s.mu.RLock()
-	data := struct {
-		Session   Session
-		Units     []unitView
-		Thread    []Exchange
-		HasAsk    bool
-		HasReanal bool
-	}{Session: s.sess, Units: s.views(), Thread: s.thread,
-		HasAsk: s.ask != nil, HasReanal: s.reanalyse != nil}
-	s.mu.RUnlock()
-
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := s.tmpl.ExecuteTemplate(w, "index.html", data); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
-}
-
-// handleAsk answers a question in the running conversation. An assistant that
-// is offline or failing becomes a visible notice, never a 500.
 func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "bad form", http.StatusBadRequest)
@@ -503,7 +550,7 @@ func (s *Server) handleReanalyse(w http.ResponseWriter, r *http.Request) {
 		// A failing model must not lose the existing headline.
 		s.record(AuditEntry{SessionID: unit.SessionID, UnitID: unit.ID,
 			Action: "reanalyse", Detail: "failed: " + err.Error()})
-		http.Redirect(w, r, "/review#unit-"+unit.ID, http.StatusSeeOther)
+		http.Redirect(w, r, "/#unit-"+unit.ID, http.StatusSeeOther)
 		return
 	}
 
@@ -520,7 +567,7 @@ func (s *Server) handleReanalyse(w http.ResponseWriter, r *http.Request) {
 		Action: "reanalyse", Detail: model})
 	s.broadcast("headline")
 
-	http.Redirect(w, r, "/review#unit-"+unit.ID, http.StatusSeeOther)
+	http.Redirect(w, r, "/#unit-"+unit.ID, http.StatusSeeOther)
 }
 
 // record appends to the audit log. A log that cannot be written must not break
@@ -633,14 +680,41 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 	stats := s.stats
 	sess := s.sess
 	usage := s.agent.Usage
+	narrative := s.narrative
+	thread := append([]Exchange(nil), s.thread...)
+	hasAsk := s.ask != nil
+	hasReanal := s.reanalyse != nil
+	canRetry := s.narrate != nil && narrative.Source != domain.NarrativeModel
+	narrating := s.narrating
 	s.mu.RUnlock()
+
+	byID := map[string]unitView{}
+	for _, v := range views {
+		byID[v.ID] = v
+	}
+
+	// Chapters carry only prose here; the files they cover live in the column
+	// beside them, and the two are linked by unit id so the scrolls can track
+	// each other.
+	chapters := make([]chapterView, 0, len(narrative.Chapters))
+	for _, c := range narrative.Chapters {
+		cv := chapterView{Title: c.Title, Prose: c.Prose}
+		for _, id := range c.UnitIDs {
+			if v, ok := byID[id]; ok {
+				cv.Units = append(cv.Units, v)
+			}
+		}
+		if len(cv.Units) > 0 {
+			cv.Anchor = cv.Units[0].ID
+		}
+		chapters = append(chapters, cv)
+	}
 
 	// Newest first: a cockpit answers "what just happened".
 	items := make([]feedItem, 0, len(views))
 	for i := len(views) - 1; i >= 0; i-- {
 		v := views[i]
-		full := sess.Diffs[v.ID]
-		compact, wasCompacted := usecase.CompactDiff(full, cockpitDiffLines)
+		compact, wasCompacted := usecase.CompactDiff(sess.Diffs[v.ID], cockpitDiffLines)
 		if wasCompacted {
 			v.Diff = splitDiff(compact.Text)
 		}
@@ -648,9 +722,16 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := struct {
-		Session Session
-		Stats   cockpitStats
-		Feed    []feedItem
+		Session   Session
+		Stats     cockpitStats
+		Narrative domain.Narrative
+		Chapters  []chapterView
+		Feed      []feedItem
+		Thread    []Exchange
+		HasAsk    bool
+		HasReanal bool
+		CanRetry  bool
+		Narrating bool
 	}{
 		Session: sess,
 		Stats: cockpitStats{
@@ -660,7 +741,9 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 			Commits: stats.Commits, PullRequests: stats.PullRequests,
 			Tokens: tokenTotal(usage),
 		},
-		Feed: items,
+		Narrative: narrative, Chapters: chapters, Feed: items,
+		Thread: thread, HasAsk: hasAsk, HasReanal: hasReanal,
+		CanRetry: canRetry, Narrating: narrating,
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -816,47 +899,11 @@ type chapterView struct {
 	Title string
 	Prose string
 	Units []unitView
+	// Anchor is the first unit this chapter covers, so scrolling the story can
+	// bring the matching changes alongside it.
+	Anchor string
 }
 
-// handleStory renders the session as a long-form, chaptered read (ADR 0013).
-func (s *Server) handleStory(w http.ResponseWriter, r *http.Request) {
-	s.mu.RLock()
-	byID := map[string]unitView{}
-	for _, v := range s.views() {
-		byID[v.ID] = v
-	}
-	chapters := make([]chapterView, 0, len(s.narrative.Chapters))
-	for _, c := range s.narrative.Chapters {
-		cv := chapterView{Title: c.Title, Prose: c.Prose}
-		for _, id := range c.UnitIDs {
-			if v, ok := byID[id]; ok {
-				cv.Units = append(cv.Units, v)
-			}
-		}
-		chapters = append(chapters, cv)
-	}
-	// A retry is offered only when a model has not already written this story:
-	// re-running costs several calls for no gain, so the page must not invite it.
-	data := struct {
-		Session   Session
-		Narrative domain.Narrative
-		Chapters  []chapterView
-		CanRetry  bool
-		Narrating bool
-	}{
-		Session: s.sess, Narrative: s.narrative, Chapters: chapters,
-		CanRetry:  s.narrate != nil && s.narrative.Source != domain.NarrativeModel,
-		Narrating: s.narrating,
-	}
-	s.mu.RUnlock()
-
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := s.tmpl.ExecuteTemplate(w, "story.html", data); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
-}
-
-// handleWorkspace lists every known review, across repos and agents.
 func (s *Server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 	s.mu.RLock()
 	data := struct{ Sessions []SessionSummary }{Sessions: s.workspace}
@@ -897,19 +944,32 @@ func (s *Server) view(u domain.Unit) unitView {
 		why = "(none stated)"
 	}
 
+	h := s.histories[u.ID]
+	history := make([]editView, 0, len(h.Edits))
+	for _, e := range h.Edits {
+		history = append(history, editView{
+			When: e.TS.Local().Format("15:04:05"), Tool: e.Tool,
+			Intent: e.Intent, Failed: e.Failed,
+		})
+	}
+
 	return unitView{
-		ID:       u.ID,
-		Handle:   shortHandle(u.ID),
-		File:     strings.Join(u.Files, ", "),
-		Headline: u.Headline.Text,
-		Why:      why,
-		WhySrc:   u.Headline.WhySrc,
-		Flags:    flags,
-		Added:    added,
-		Removed:  removed,
-		Diff:     splitDiff(d.Text),
-		Notes:    notes,
-		Model:    s.models[u.ID],
+		Edits:      h.Count,
+		LastEdited: clockOrDash(h.Last),
+		FirstEdit:  clockOrDash(h.First),
+		History:    history,
+		ID:         u.ID,
+		Handle:     shortHandle(u.ID),
+		File:       strings.Join(u.Files, ", "),
+		Headline:   u.Headline.Text,
+		Why:        why,
+		WhySrc:     u.Headline.WhySrc,
+		Flags:      flags,
+		Added:      added,
+		Removed:    removed,
+		Diff:       splitDiff(d.Text),
+		Notes:      notes,
+		Model:      s.models[u.ID],
 	}
 }
 

@@ -220,8 +220,8 @@ func NarrateProgressively(ctx context.Context, n Narrator, sess domain.Session, 
 
 	out := domain.Narrative{
 		SessionID: sess.ID,
-		Title:     firstNonEmpty(parsed.Title, fallback.Title),
-		Intro:     firstNonEmpty(parsed.Intro, fallback.Intro),
+		Title:     Brief(firstNonEmpty(parsed.Title, fallback.Title), briefTitleChars),
+		Intro:     Brief(firstNonEmpty(parsed.Intro, fallback.Intro), briefChars),
 		Chapters:  chapters,
 		Source:    domain.NarrativeModel,
 	}
@@ -443,8 +443,10 @@ func narrativePrompt(sess domain.Session, units []domain.Unit, groups []domain.C
 	}
 
 	b.WriteString(`
-Group these areas into 2-5 chapters and write 1-2 short sentences of prose for
-each. Use only the area names in brackets; do not invent names; cover every area.
+Give the session a short title (under 70 characters) and a one-sentence
+description of under 200 characters. Then group these areas into 2-5 chapters
+and write 1-2 short sentences of prose for each. Use only the area names in
+brackets; do not invent names; cover every area.
 Answer with JSON only, no explanation:
 {"title":"..","intro":"..","chapters":[{"title":"..","prose":"..","groups":["area"]}]}`)
 	return b.String()
@@ -466,7 +468,26 @@ func boundedGroups(groups []domain.Chapter) []domain.Chapter {
 const (
 	promptExamplesPerGroup = 2
 	promptMaxGroups        = 6
+
+	// briefChars is how long the session description may be. It has to read at a
+	// glance in a narrow column, beside the numbers.
+	briefChars      = 200
+	briefTitleChars = 70
 )
+
+// Brief trims a model-written title or description to fit the panel it lives in,
+// cutting at a word boundary so it reads as a sentence rather than a truncation.
+func Brief(text string, max int) string {
+	text = strings.Join(strings.Fields(text), " ")
+	if len(text) <= max {
+		return text
+	}
+	cut := text[:max]
+	if i := strings.LastIndex(cut, " "); i > max/2 {
+		cut = cut[:i]
+	}
+	return strings.TrimRight(cut, " ,.;:") + "…"
+}
 
 func fallbackTitle(sess domain.Session) string {
 	if sess.Prompt != "" {

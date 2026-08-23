@@ -3,104 +3,217 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Cockpit — {{ .Session.ID }}</title>
+  <title>{{ .Narrative.Title }} — msr</title>
   <link rel="stylesheet" href="/assets/app.css">
   <script type="module" src="/assets/cockpit.js" defer></script>
+  <script type="module" src="/assets/chrome.js" defer></script>
   <script type="module" src="/assets/live.js" defer></script>
 </head>
 <body class="page page--cockpit" data-live="{{ .Stats.Live }}">
+  <canvas class="backdrop" id="backdrop" aria-hidden="true"></canvas>
 
   <nav class="storynav">
     <a class="storynav__brand" href="/">msr</a>
     <a class="storynav__link" href="/" aria-current="page">cockpit</a>
-    <a class="storynav__link" href="/review">review</a>
-    <a class="storynav__link" href="/story">story</a>
     <a class="storynav__link" href="/activity">activity</a>
     <a class="storynav__link" href="/status">status</a>
     <a class="storynav__link" href="/sessions">sessions</a>
     <span class="storynav__spacer"></span>
-    <button class="masthead__focus" id="focus-toggle" type="button"
-            aria-pressed="false" data-label-off="hide panel" data-label-on="show panel"
-            title="Show or hide the isometric panel (f)">hide panel</button>
+    <button class="storynav__zen" type="button" data-zen-toggle
+            aria-pressed="false" title="Zen mode (⌘Z) · palette (⌘K)">zen</button>
   </nav>
 
-  <!-- Two columns: a fixed instrument panel, and the feed beside it. Only the
-       feed scrolls. -->
+  <!-- Three columns: a fixed instrument panel, the session's story, and the
+       changes themselves. Only the two right-hand columns scroll, and they
+       track each other. -->
   <main class="cockpit">
 
-    <!-- Left: the instrument panel — what is happening, and the numbers. -->
+    <!-- Left: what this session is, what is happening, and the numbers.
+         Never scrolls away. -->
     <aside class="cockpit__panel">
-    <section class="cockpit__pulse">
-      <canvas class="cockpit__scene" id="cockpit-scene" aria-hidden="true"></canvas>
-      <p class="cockpit__status cockpit__status--{{ if .Stats.Live }}live{{ else }}idle{{ end }}">
-        {{ if .Stats.Live }}<span class="cockpit__dot"></span>working — more is coming
-        {{ else }}<span class="cockpit__dot"></span>idle — nothing for a while{{ end }}
-      </p>
-      <p class="cockpit__task">{{ .Session.Prompt }}</p>
-      <p class="cockpit__legend">
-        <span class="cockpit__key cockpit__key--add">growth</span>
-        <span class="cockpit__key cockpit__key--del">deletion</span>
-        <span class="cockpit__key cockpit__key--flag">flagged</span>
-        <span class="cockpit__keynote">height = lines changed · newest at the front</span>
-      </p>
-    </section>
 
-    <!-- Right: the session in numbers. Every one of these comes from git or
-         the event log, never from a model. -->
-    <section class="cockpit__stats">
-      <div class="stat">
-        <span class="stat__value">{{ .Stats.Open }}</span>
-        <span class="stat__label">open</span>
-      </div>
-      <div class="stat">
-        <span class="stat__value">{{ .Stats.Files }}</span>
-        <span class="stat__label">{{ if eq .Stats.Files 1 }}file{{ else }}files{{ end }}</span>
-      </div>
-      <div class="stat">
-        <span class="stat__value stat__value--lines">
-          <span class="unit__stat--add">+{{ .Stats.Added }}</span>
-          <span class="unit__stat--del">-{{ .Stats.Removed }}</span>
-        </span>
-        <span class="stat__label">lines</span>
-      </div>
-      <div class="stat">
-        <span class="stat__value">{{ .Stats.Commits }}</span>
-        <span class="stat__label">{{ if eq .Stats.Commits 1 }}commit{{ else }}commits{{ end }}</span>
-      </div>
-      <div class="stat">
-        <span class="stat__value">{{ .Stats.PullRequests }}</span>
-        <span class="stat__label" title="Counted from commit subjects — msr talks to no forge">PRs</span>
-      </div>
-      {{ with .Stats.Tokens }}
-      <div class="stat">
-        <span class="stat__value">{{ . }}</span>
-        <span class="stat__label">tokens</span>
-      </div>
-      {{ end }}
-    </section>
+      <!-- The model's own reading of the session. Labelled inferred, because it
+           is: the numbers below it are not (ADR 0003). -->
+      <section class="brief">
+        <h1 class="brief__title">{{ .Narrative.Title }}</h1>
+        {{ with .Narrative.Intro }}<p class="brief__text">{{ . }}</p>{{ end }}
+        {{ with .Session.Prompt }}<p class="brief__task">{{ . }}</p>{{ end }}
+        <p class="brief__src brief__src--{{ .Narrative.Source }}">
+          {{ if eq .Narrative.Source "model" }}<span class="why why--inferred">inferred</span> by {{ .Narrative.Model }}
+          {{ else }}<span class="why why--inferred">mechanical</span> · no model has read this yet{{ end }}
+        </p>
+        {{ if .Narrating }}
+        <p class="brief__busy">re-reading the session…</p>
+        {{ else if .CanRetry }}
+        <form class="brief__retry" method="post" action="/story/narrate">
+          <button class="hero__retrybtn" type="submit">ask the model to read this session</button>
+        </form>
+        {{ end }}
+      </section>
+
+      <section class="cockpit__pulse">
+        <canvas class="cockpit__scene" id="cockpit-scene" aria-hidden="true"></canvas>
+        <p class="cockpit__status cockpit__status--{{ if .Stats.Live }}live{{ else }}idle{{ end }}">
+          {{ if .Stats.Live }}<span class="cockpit__dot"></span>working — more is coming
+          {{ else }}<span class="cockpit__dot"></span>idle — nothing for a while{{ end }}
+        </p>
+        <p class="cockpit__legend">
+          <span class="cockpit__key cockpit__key--add">growth</span>
+          <span class="cockpit__key cockpit__key--del">deletion</span>
+          <span class="cockpit__key cockpit__key--flag">flagged</span>
+          <span class="cockpit__keynote">height = lines changed · newest at front</span>
+        </p>
+      </section>
+
+      <section class="cockpit__stats">
+        <div class="stat"><span class="stat__value">{{ .Stats.Open }}</span><span class="stat__label">open</span></div>
+        <div class="stat"><span class="stat__value">{{ .Stats.Files }}</span><span class="stat__label">files</span></div>
+        <div class="stat">
+          <span class="stat__value stat__value--lines">
+            <span class="unit__stat--add">+{{ .Stats.Added }}</span>
+            <span class="unit__stat--del">-{{ .Stats.Removed }}</span>
+          </span>
+          <span class="stat__label">lines</span>
+        </div>
+        <div class="stat"><span class="stat__value">{{ .Stats.Commits }}</span><span class="stat__label">commits</span></div>
+        <div class="stat">
+          <span class="stat__value">{{ .Stats.PullRequests }}</span>
+          <span class="stat__label" title="Counted from commit subjects — msr talks to no forge">PRs</span>
+        </div>
+        {{ with .Stats.Tokens }}
+        <div class="stat"><span class="stat__value">{{ . }}</span><span class="stat__label">tokens</span></div>
+        {{ end }}
+      </section>
     </aside>
 
-    <!-- Right: what changed, newest first. The only scrolling region. -->
-    <section class="cockpit__feed">
+    <!-- Middle: the session read as prose. Text only — the files each chapter
+         covers are in the column beside it, and the two scroll together. -->
+    <section class="cockpit__story" id="story-col">
+      {{ range $i, $c := .Chapters }}
+      <article class="chron__chapter" data-anchor="{{ $c.Anchor }}">
+        <div class="chron__index" aria-hidden="true">{{ printf "%02d" (add $i 1) }}</div>
+        <h2 class="chron__chaptertitle">{{ $c.Title }}</h2>
+        <p class="chron__prose">{{ $c.Prose }}</p>
+        <p class="chron__files">{{ len $c.Units }} file(s)</p>
+      </article>
+      {{ else }}
+      <p class="queue__empty">Nothing to tell yet — this session changed no files.</p>
+      {{ end }}
+
+      {{ if .HasAsk }}
+      <section class="ask" id="ask">
+        <h2 class="ask__title">reviewer assistant</h2>
+        {{ range .Thread }}
+        <div class="ask__exchange">
+          <p class="ask__q">{{ .Question }}</p>
+          <p class="ask__a">{{ .Answer }}</p>
+        </div>
+        {{ end }}
+        <form class="ask__form" method="post" action="/ask">
+          <input class="ask__input" name="question" type="text" autocomplete="off"
+                 placeholder="ask about this session — answered only from the log, diffs and your notes">
+          <button class="ask__btn" type="submit">ask</button>
+        </form>
+      </section>
+      {{ end }}
+    </section>
+
+    <!-- Right: the changes themselves, newest first, with everything needed to
+         review and annotate them without leaving the page. -->
+    <section class="cockpit__changes" id="changes-col">
       {{ range .Feed }}
-      <article class="post" data-file="{{ .File }}" data-added="{{ .Added }}"
+      <article class="post" id="unit-{{ .ID }}" data-file="{{ .File }}" data-added="{{ .Added }}"
                data-removed="{{ .Removed }}" data-flags="{{ len .Flags }}">
         <header class="post__head">
-          <a class="post__file" href="/review#unit-{{ .ID }}">{{ .File }}</a>
+          <span class="post__file">{{ .File }}</span>
           <span class="post__stats">
             <span class="unit__stat unit__stat--add">+{{ .Added }}</span>
             <span class="unit__stat unit__stat--del">-{{ .Removed }}</span>
           </span>
           {{ range .Flags }}<span class="flag">{{ . }}</span>{{ end }}
         </header>
+
+        <!-- When, and how many times. A net-change review collapses the agent's
+             back-and-forth; this says how much was collapsed. -->
+        <p class="post__when">
+          {{ if .Edits }}
+          <span class="post__edits">{{ .Edits }} edit(s)</span>
+          <span class="post__last">last {{ .LastEdited }}</span>
+          {{ if gt .Edits 1 }}<span class="post__first">first {{ .FirstEdit }}</span>{{ end }}
+          {{ else }}
+          <span class="post__last">not recorded in this session's log</span>
+          {{ end }}
+        </p>
+
         <p class="post__line">{{ .Headline }}</p>
+        <p class="post__why">
+          <span class="why why--{{ .WhySrc }}">{{ .WhySrc }}</span>
+          <span class="why__text">{{ .Why }}</span>
+          {{ with .Model }}<span class="detail__model">{{ . }}</span>{{ end }}
+        </p>
+
+        {{ with .Notes }}
+        <ul class="notes">
+          {{ range . }}
+          <li class="notes__item notes__item--{{ .Kind }}">
+            <span class="notes__kind">{{ .Kind }}</span>
+            <span class="notes__text">{{ .Text }}</span>
+            {{ with .SupersededBy }}<span class="notes__superseded">superseded by {{ . }}</span>{{ end }}
+          </li>
+          {{ end }}
+        </ul>
+        {{ end }}
+
         {{ if .Diff }}
         <pre class="post__diff{{ if .Compacted }} post__diff--compact{{ end }}"><code>{{ range .Diff }}<span class="diff__line diff__line--{{ .Kind }}">{{ .Text }}</span>
 {{ end }}</code></pre>
+        {{ if .Compacted }}
+        <!-- Fetched on open: this page already carries every file, so inlining
+             every full diff would multiply it several times over. -->
+        <details class="post__more" data-diff="/units/{{ .ID }}/diff">
+          <summary class="post__moresummary">show the whole diff</summary>
+          <div class="post__fulldiff">loading…</div>
+        </details>
         {{ end }}
+        {{ else }}
+        <p class="diff diff--empty">No textual changes.</p>
+        {{ end }}
+
+        {{ with .History }}
+        <details class="post__more">
+          <summary class="post__moresummary">history of this file</summary>
+          <ol class="history">
+            {{ range . }}
+            <li class="history__item{{ if .Failed }} history__item--failed{{ end }}">
+              <span class="history__when">{{ .When }}</span>
+              <span class="history__tool">{{ .Tool }}</span>
+              {{ with .Intent }}<span class="history__intent">{{ . }}</span>{{ end }}
+              {{ if .Failed }}<span class="flag">failed</span>{{ end }}
+            </li>
+            {{ end }}
+          </ol>
+        </details>
+        {{ end }}
+
+        <div class="post__actions">
+          <form class="annotate" method="post" action="/units/{{ .ID }}/notes">
+            <input class="annotate__text" name="text" type="text"
+                   placeholder="optional note…" autocomplete="off">
+            <button class="annotate__btn annotate__btn--ok" name="kind" value="ok">ok</button>
+            <button class="annotate__btn annotate__btn--question" name="kind" value="question">question</button>
+            <button class="annotate__btn annotate__btn--objection" name="kind" value="objection">objection</button>
+            <button class="annotate__btn annotate__btn--debt" name="kind" value="debt">debt</button>
+            <button class="annotate__btn annotate__btn--note" name="kind" value="note">note</button>
+          </form>
+          {{ if $.HasReanal }}
+          <form class="reanalyse" method="post" action="/units/{{ .ID }}/reanalyse">
+            <button class="reanalyse__btn" type="submit" title="Re-run the AI analysis for this file">re-analyse</button>
+          </form>
+          {{ end }}
+        </div>
       </article>
       {{ else }}
-      <p class="queue__empty">Nothing has changed yet.</p>
+      <p class="queue__empty">No changed files to review.</p>
       {{ end }}
     </section>
   </main>

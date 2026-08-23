@@ -5,24 +5,21 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Activity — mondspace-reviewer</title>
   <link rel="stylesheet" href="/assets/app.css">
-  <script type="module" src="/assets/storyline.js" defer></script>
+  <script type="module" src="/assets/chrome.js" defer></script>
   <script type="module" src="/assets/live.js" defer></script>
 </head>
 <body class="page">
-  <canvas class="starfield" id="starfield" aria-hidden="true"></canvas>
+  <canvas class="backdrop" id="backdrop" aria-hidden="true"></canvas>
 
   <nav class="storynav">
     <a class="storynav__brand" href="/">msr</a>
     <a class="storynav__link" href="/">cockpit</a>
-    <a class="storynav__link" href="/review">review</a>
-    <a class="storynav__link" href="/story">story</a>
     <a class="storynav__link" href="/activity" aria-current="page">activity</a>
     <a class="storynav__link" href="/status">status</a>
     <a class="storynav__link" href="/sessions">sessions</a>
     <span class="storynav__spacer"></span>
-    <button class="masthead__focus" id="focus-toggle" type="button"
-            aria-pressed="false" data-label-off="focus mode" data-label-on="full view"
-            title="Toggle focus mode (f)">focus mode</button>
+    <button class="storynav__zen" type="button" data-zen-toggle
+            aria-pressed="false" title="Zen mode (⌘Z) · palette (⌘K)">zen</button>
   </nav>
 
   <header class="masthead">
@@ -39,7 +36,7 @@
     <article class="activity__row activity__row--{{ .Action }}{{ if .Failed }} activity__row--failed{{ end }}">
       <time class="activity__when">{{ .When }}</time>
       <span class="activity__action">{{ .Action }}</span>
-      {{ if .Unit }}<a class="activity__unit" href="/review#unit-{{ .Unit }}">{{ .Unit }}</a>{{ end }}
+      {{ if .Unit }}<a class="activity__unit" href="/#unit-{{ .Unit }}">{{ .Unit }}</a>{{ end }}
       <span class="activity__detail">{{ .Detail }}</span>
       {{ if .Model }}<span class="activity__model">{{ .Model }}</span>{{ end }}
       {{ if .Took }}<span class="activity__took">{{ .Took }}</span>{{ end }}

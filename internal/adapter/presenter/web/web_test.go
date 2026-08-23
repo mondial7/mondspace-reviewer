@@ -75,7 +75,7 @@ func TestAnnotatePersistsNoteAndShowsIt(t *testing.T) {
 	}
 
 	// The annotation is visible on the page afterwards.
-	if body := get(t, h, "/review").Body.String(); !strings.Contains(body, "wrong layer") {
+	if body := get(t, h, "/").Body.String(); !strings.Contains(body, "wrong layer") {
 		t.Errorf("index should show the new note:\n%s", body)
 	}
 }
@@ -103,7 +103,7 @@ func TestAnnotateRejectsUnknownUnitAndKind(t *testing.T) {
 	}
 }
 
-func TestStoryPageReadsAsChaptersWithProse(t *testing.T) {
+func TestCockpitReadsAsChaptersWithProse(t *testing.T) {
 	narrative := domain.Narrative{
 		SessionID: "s",
 		Title:     "Locking down authentication",
@@ -118,7 +118,7 @@ func TestStoryPageReadsAsChaptersWithProse(t *testing.T) {
 	}
 	h := web.NewServer(testSession(), nil).WithNarrative(narrative)
 
-	rec := get(t, h, "/story")
+	rec := get(t, h, "/")
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
@@ -140,17 +140,18 @@ func TestStoryPageReadsAsChaptersWithProse(t *testing.T) {
 	if !strings.Contains(body, "inferred") {
 		t.Errorf("model-written narrative must be labelled inferred:\n%s", body)
 	}
-	// Each chapter links into the real review of its units.
-	if !strings.Contains(body, `href="/review#unit-s-f001"`) {
-		t.Errorf("chapters should link into the diff review:\n%s", body)
+	// Each chapter is anchored to the first unit it covers, which is what lets
+	// the two columns scroll in register.
+	if !strings.Contains(body, `data-anchor="s-f001"`) {
+		t.Errorf("chapters should anchor to their units:\n%s", body)
 	}
-	// Focus mode is available here too.
-	if !strings.Contains(body, "focus-toggle") {
-		t.Errorf("story page should offer focus mode:\n%s", body)
+	// Zen mode is reachable from every page.
+	if !strings.Contains(body, "data-zen-toggle") {
+		t.Errorf("every page should offer zen mode:\n%s", body)
 	}
 }
 
-func TestStoryPageLabelsMechanicalFallback(t *testing.T) {
+func TestCockpitLabelsMechanicalFallback(t *testing.T) {
 	narrative := domain.Narrative{
 		SessionID: "s", Title: "Session s", Intro: "2 files changed.",
 		Source:   domain.NarrativeMechanical,
@@ -158,7 +159,7 @@ func TestStoryPageLabelsMechanicalFallback(t *testing.T) {
 	}
 	h := web.NewServer(testSession(), nil).WithNarrative(narrative)
 
-	body := get(t, h, "/story").Body.String()
+	body := get(t, h, "/").Body.String()
 
 	// The reviewer must be able to tell a model story from a mechanical one.
 	if !strings.Contains(body, "mechanical") {
@@ -185,7 +186,7 @@ func TestReanalyseReplacesHeadlineAndRecordsModel(t *testing.T) {
 		t.Fatalf("re-analysed %v, want just s-f001", called)
 	}
 
-	body := get(t, h, "/review").Body.String()
+	body := get(t, h, "/").Body.String()
 	if !strings.Contains(body, "a sharper summary") {
 		t.Errorf("the re-analysed headline should replace the old one:\n%s", body)
 	}
@@ -241,14 +242,14 @@ type readableAudit struct{ recordingAudit }
 
 func (a *readableAudit) Entries() ([]web.AuditEntry, error) { return a.entries, nil }
 
-func TestStoryOffersRetryOnlyWhenTheModelHasNotNarrated(t *testing.T) {
+func TestCockpitOffersRetryOnlyWhenTheModelHasNotNarrated(t *testing.T) {
 	mechanical := domain.Narrative{SessionID: "s", Title: "T", Source: domain.NarrativeMechanical,
 		Chapters: []domain.Chapter{{Title: "auth", Prose: "1 file changed under auth.", UnitIDs: []string{"s-f001"}}}}
 
 	// Fell back to mechanical grouping: offer the reviewer a way to try again.
 	h := web.NewServer(testSession(), nil).WithNarrative(mechanical).
 		WithNarrate(func(context.Context) {})
-	if !strings.Contains(get(t, h, "/story").Body.String(), "/story/narrate") {
+	if !strings.Contains(get(t, h, "/").Body.String(), "/story/narrate") {
 		t.Error("a mechanical story should offer a retry")
 	}
 
@@ -258,13 +259,13 @@ func TestStoryOffersRetryOnlyWhenTheModelHasNotNarrated(t *testing.T) {
 	narrated.Source = domain.NarrativeModel
 	h = web.NewServer(testSession(), nil).WithNarrative(narrated).
 		WithNarrate(func(context.Context) {})
-	if strings.Contains(get(t, h, "/story").Body.String(), "/story/narrate") {
+	if strings.Contains(get(t, h, "/").Body.String(), "/story/narrate") {
 		t.Error("a model-narrated story should not offer a retry")
 	}
 
 	// No narrator wired at all: no button, because pressing it could do nothing.
 	h = web.NewServer(testSession(), nil).WithNarrative(mechanical)
-	if strings.Contains(get(t, h, "/story").Body.String(), "/story/narrate") {
+	if strings.Contains(get(t, h, "/").Body.String(), "/story/narrate") {
 		t.Error("without a narrator there is nothing to retry")
 	}
 }
@@ -415,7 +416,7 @@ func TestAskKeepsConversationHistory(t *testing.T) {
 		t.Fatalf("summarizer called %d times, want 2", len(asked))
 	}
 	// The second question carried the first exchange as context.
-	body := get(t, h, "/review").Body.String()
+	body := get(t, h, "/").Body.String()
 	for _, want := range []string{"what changed", "and why", "answer 1", "answer 2"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("conversation should persist on the page, missing %q", want)
@@ -437,7 +438,7 @@ func TestAskSurfacesErrorWithoutCrashing(t *testing.T) {
 	if rec.Code >= 500 {
 		t.Errorf("an offline summarizer must not 500: status = %d", rec.Code)
 	}
-	if body := get(t, h, "/review").Body.String(); !strings.Contains(body, "offline") {
+	if body := get(t, h, "/").Body.String(); !strings.Contains(body, "offline") {
 		t.Errorf("the offline notice should be shown to the reviewer:\n%s", body)
 	}
 }
@@ -475,7 +476,7 @@ func TestWorkspaceListsSessionsAcrossReposAndAgents(t *testing.T) {
 
 func TestReviewContentIsInTheDOMNotOnlyTheCanvas(t *testing.T) {
 	h := web.NewServer(testSession(), nil)
-	body := get(t, h, "/review").Body.String()
+	body := get(t, h, "/").Body.String()
 
 	// The cinematic scene reads from the DOM; nothing may be canvas-only, so the
 	// review stays usable, selectable and searchable without WebGL (ADR 0012).
@@ -484,9 +485,9 @@ func TestReviewContentIsInTheDOMNotOnlyTheCanvas(t *testing.T) {
 			t.Errorf("review content %q must be server-rendered, not canvas-only", want)
 		}
 	}
-	// Focus mode is reachable without JavaScript deciding it for us.
-	if !strings.Contains(body, "focus") {
-		t.Errorf("page should expose focus mode:\n%s", body)
+	// Zen mode is reachable without JavaScript deciding it for us.
+	if !strings.Contains(body, "data-zen-toggle") {
+		t.Errorf("page should expose zen mode:\n%s", body)
 	}
 	// The scene is progressive enhancement: a vendored module, not a CDN.
 	if strings.Contains(body, "//unpkg.com") || strings.Contains(body, "//cdn.") {
@@ -510,7 +511,7 @@ func TestVendoredThreeIsServedLocally(t *testing.T) {
 func TestIndexListsUnits(t *testing.T) {
 	h := web.NewServer(testSession(), nil)
 
-	rec := get(t, h, "/review")
+	rec := get(t, h, "/")
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
@@ -668,26 +669,26 @@ func TestCockpitFeedIsNewestFirst(t *testing.T) {
 	}
 }
 
-func TestCockpitIsTheLandingPageAndReviewMovesToItsOwnPath(t *testing.T) {
+func TestCockpitIsTheOnlyReviewPage(t *testing.T) {
 	h := web.NewServer(testSession(), nil)
 
-	// "/" is where you arrive while an agent is still working, so it is the
-	// cockpit — the page that answers "is anything still happening".
-	root := get(t, h, "/")
-	if root.Code != http.StatusOK {
-		t.Fatalf("GET / = %d, want 200", root.Code)
-	}
-	if !strings.Contains(root.Body.String(), "cockpit") {
-		t.Errorf("/ should serve the cockpit:\n%s", root.Body.String()[:400])
+	// One page carries the story, the changes, and the ability to annotate.
+	body := get(t, h, "/").Body.String()
+	for _, want := range []string{"cockpit__story", "cockpit__changes", "annotate"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the cockpit should carry %q", want)
+		}
 	}
 
-	// The review queue keeps every capability, at its own address.
-	review := get(t, h, "/review")
-	if review.Code != http.StatusOK {
-		t.Fatalf("GET /review = %d, want 200", review.Code)
-	}
-	if !strings.Contains(review.Body.String(), "queue") {
-		t.Errorf("/review should serve the review queue")
+	// The old addresses still resolve, so links and bookmarks do not rot.
+	for _, old := range []string{"/review", "/story"} {
+		rec := get(t, h, old)
+		if rec.Code != http.StatusMovedPermanently {
+			t.Errorf("GET %s = %d, want a permanent redirect", old, rec.Code)
+		}
+		if got := rec.Header().Get("Location"); got != "/" {
+			t.Errorf("GET %s redirects to %q, want /", old, got)
+		}
 	}
 }
 
@@ -702,8 +703,8 @@ func TestAnnotatingReturnsToTheReviewQueueNotTheCockpit(t *testing.T) {
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
-	if got := rec.Header().Get("Location"); got != "/review#unit-s-f001" {
-		t.Errorf("Location = %q, want /review#unit-s-f001", got)
+	if got := rec.Header().Get("Location"); got != "/#unit-s-f001" {
+		t.Errorf("Location = %q, want /#unit-s-f001", got)
 	}
 }
 

@@ -13,7 +13,7 @@
 // something the flags want you to look at. Watch it for a session and the
 // patterns start to mean something before you have read a word.
 //
-// Like storyline.js it reads the DOM and never feeds it. No WebGL, no Three.js,
+// Like the rest of the chrome it reads the DOM and never feeds it. No WebGL, no Three.js,
 // reduced motion or the panel hidden, and it bows out; the numbers and the feed
 // are untouched.
 
@@ -158,7 +158,7 @@ async function start() {
 
   // Rebuild when live.js swaps the feed in: a change landing in the session is
   // exactly the moment the field should change shape.
-  const feed = document.querySelector('.cockpit__feed');
+  const feed = document.querySelector('.cockpit__changes');
   if (feed) new MutationObserver(build).observe(feed, { childList: true, subtree: false });
 
   // energy eases rather than switching, so a session going quiet reads as
@@ -201,3 +201,113 @@ async function start() {
 }
 
 start();
+
+
+// ── Magnet scrolling ────────────────────────────────────────────────────────
+//
+// The story and the changes are two views of the same session, so they are kept
+// in register: scrolling either one brings the other alongside. Each chapter
+// knows the first unit it covers, which is what makes the correspondence real
+// rather than a proportional guess — a three-line chapter and a 400-line diff
+// are the same chapter, and proportional scrolling would drift immediately.
+function linkColumns() {
+  const story = document.getElementById('story-col');
+  const changes = document.getElementById('changes-col');
+  if (!story || !changes) return;
+
+  const chapters = [...story.querySelectorAll('.chron__chapter[data-anchor]')];
+  if (!chapters.length) return;
+
+  // A scroll we caused must not bounce back and drive the other column again.
+  let settling = 0;
+  const nudge = (container, target) => {
+    if (!target) return;
+    settling = Date.now() + 500;
+    container.scrollTo({
+      top: target.offsetTop - container.offsetTop - 12,
+      behavior: 'smooth',
+    });
+  };
+  const quiet = () => Date.now() < settling;
+
+  function markActive(active) {
+    for (const c of chapters) {
+      c.dataset.active = String(c === active);
+    }
+    const anchor = active && active.dataset.anchor;
+    for (const p of changes.querySelectorAll('.post')) {
+      p.dataset.active = String(!!anchor && p.id === 'unit-' + anchor);
+    }
+  }
+
+  // Whichever chapter sits nearest the top of the story column is the one whose
+  // files should be showing.
+  function nearestChapter() {
+    let best = chapters[0];
+    let bestGap = Infinity;
+    for (const c of chapters) {
+      const gap = Math.abs(c.offsetTop - story.offsetTop - story.scrollTop);
+      if (gap < bestGap) { bestGap = gap; best = c; }
+    }
+    return best;
+  }
+
+  let pending = 0;
+  story.addEventListener('scroll', () => {
+    if (quiet()) return;
+    cancelAnimationFrame(pending);
+    pending = requestAnimationFrame(() => {
+      const active = nearestChapter();
+      markActive(active);
+      nudge(changes, document.getElementById('unit-' + active.dataset.anchor));
+    });
+  });
+
+  // The reverse direction: scrolling the changes lights the chapter that covers
+  // whatever file you have reached.
+  const byAnchor = new Map(chapters.map((c) => ['unit-' + c.dataset.anchor, c]));
+  changes.addEventListener('scroll', () => {
+    if (quiet()) return;
+    cancelAnimationFrame(pending);
+    pending = requestAnimationFrame(() => {
+      let active = null;
+      for (const p of changes.querySelectorAll('.post')) {
+        if (p.offsetTop - changes.offsetTop <= changes.scrollTop + 24 && byAnchor.has(p.id)) {
+          active = byAnchor.get(p.id);
+        }
+      }
+      if (active) {
+        markActive(active);
+        nudge(story, active);
+      }
+    });
+  });
+
+  markActive(chapters[0]);
+}
+
+linkColumns();
+// live.js swaps whole columns in; re-link whatever replaced them.
+const storyCol = document.getElementById('story-col');
+if (storyCol) new MutationObserver(linkColumns).observe(storyCol, { childList: true });
+
+
+// ── Full diffs, on demand ───────────────────────────────────────────────────
+//
+// The cockpit shows a compacted diff for every file. The whole diff is fetched
+// only when asked: inlining all of them would multiply a large session's page
+// several times over for content almost nobody opens.
+for (const box of document.querySelectorAll('details[data-diff]')) {
+  box.addEventListener('toggle', async () => {
+    if (!box.open || box.dataset.loaded) return;
+    box.dataset.loaded = 'yes';
+    const slot = box.querySelector('.post__fulldiff');
+    try {
+      const res = await fetch(box.dataset.diff);
+      slot.innerHTML = res.ok ? await res.text() : 'could not load this diff';
+    } catch {
+      slot.textContent = 'could not load this diff';
+      box.dataset.loaded = '';   // let a retry happen on the next open
+    }
+  });
+}

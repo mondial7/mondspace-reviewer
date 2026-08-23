@@ -11,6 +11,9 @@ type Narrative struct {
 	// Source is "model" when a model grouped and narrated the session, and
 	// "mechanical" when it fell back to deterministic grouping (ADR 0013).
 	Source string `json:"source"`
+	// Model names which model wrote the title and prose, so a reader can tell
+	// whose reading of the session they are looking at.
+	Model string `json:"model,omitempty"`
 	// Fingerprint identifies the review this story was written for. A stored
 	// story is reused while it matches, so opening the page again costs nothing.
 	Fingerprint string `json:"fingerprint,omitempty"`

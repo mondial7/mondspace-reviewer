@@ -178,7 +178,7 @@
   }
 }
 
-.storynav .masthead__focus {
+.storynav .masthead__focus--unused {
   font: inherit; font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase;
   color: var(--fg-dim); background: transparent; cursor: pointer;
   border: 1px solid var(--rule); border-radius: 999px;
@@ -268,6 +268,59 @@
   .page--story:not(.page--focus) .hero__title { transform: translateZ(-1px) scale(1.5); }
   .page--story:not(.page--focus) .hero__eyebrow { transform: translateZ(-0.5px) scale(1.25); }
 }
+
+/* The spatial backdrop sits behind every page, below all content. */
+.backdrop {
+  position: fixed; inset: 0; width: 100%; height: 100%;
+  z-index: 0; pointer-events: none;
+}
+.page > *:not(.backdrop) { position: relative; z-index: 1; }
+
+/* Zen strips the shell — backdrop and rail — leaving only the work. */
+.page--zen .backdrop { display: none; }
+.page--zen .storynav { display: none; }
+.page--zen.page--cockpit .cockpit { padding-top: var(--gutter); }
+
+.storynav__zen {
+  font: inherit; font-size: 0.7rem; letter-spacing: 0.09em; text-transform: uppercase;
+  color: var(--fg-dim); background: transparent; cursor: pointer;
+  border: 1px solid var(--rule); border-radius: 999px;
+  padding: 0.22rem 0.7rem;
+}
+.storynav__zen:hover,
+.storynav__zen[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
+
+/* Command palette — the way around when zen has hidden the rail. */
+.palette {
+  position: fixed; inset: 0; z-index: 50;
+  background: color-mix(in srgb, var(--bg) 72%, transparent);
+  backdrop-filter: blur(3px);
+  display: flex; align-items: flex-start; justify-content: center;
+  padding-top: 14vh;
+}
+.palette[hidden] { display: none; }
+.palette__sheet {
+  width: min(560px, 92vw);
+  background: var(--panel);
+  border: 1px solid var(--accent); border-radius: 10px;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+.palette__input {
+  width: 100%; border: none; outline: none;
+  background: transparent; color: var(--fg);
+  font: inherit; font-size: 0.95rem;
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid var(--rule);
+}
+.palette__list { list-style: none; margin: 0; padding: 0.3rem; max-height: 46vh; overflow-y: auto; }
+.palette__item {
+  display: flex; justify-content: space-between; gap: 1rem; align-items: baseline;
+  padding: 0.45rem 0.7rem; border-radius: 6px; cursor: pointer; min-width: 0;
+}
+.palette__item[data-selected="true"] { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+.palette__label { color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.palette__hint { color: var(--fg-dim); font-size: 0.76rem; white-space: nowrap; }
 
 /* Nav rail — the cockpit's top instrument strip, on every page. */
 .storynav {
@@ -447,7 +500,7 @@
   display: grid;
   gap: var(--gutter);
   padding: 0 var(--gutter) var(--gutter);
-  grid-template-columns: minmax(280px, 24rem) minmax(0, 1fr);
+  grid-template-columns: minmax(260px, 21rem) minmax(0, 0.9fr) minmax(0, 1.1fr);
   align-items: stretch;
 }
 
@@ -455,9 +508,74 @@
 .cockpit__panel {
   min-height: 0; min-width: 0;
   display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
-  gap: var(--gutter);
+  grid-template-rows: auto minmax(0, 1fr) auto;   /* brief · field · numbers */
+  gap: 0.6rem;
 }
+
+/* The model's reading of the session, at the top of the panel. */
+.brief {
+  border: 1px solid var(--rule); border-radius: 10px;
+  background: var(--panel); box-shadow: var(--panel-glow);
+  padding: 0.8rem 0.9rem;
+  min-width: 0;
+}
+.brief__title {
+  margin: 0; font-size: 1rem; line-height: 1.3; color: var(--fg);
+  overflow-wrap: anywhere;
+}
+.brief__text { margin: 0.4rem 0 0; color: var(--fg-dim); font-size: 0.83rem; line-height: 1.5; }
+.brief__src { margin: 0.5rem 0 0; font-size: 0.7rem; color: var(--fg-dim); }
+.brief__busy { margin: 0.5rem 0 0; font-size: 0.75rem; color: var(--fg-dim); }
+.brief__retry { margin: 0.5rem 0 0; }
+
+/* The two reading columns scroll independently but track each other. */
+.cockpit__story, .cockpit__changes {
+  min-height: 0; min-width: 0;
+  overflow-y: auto; overscroll-behavior: contain;
+  border: 1px solid var(--rule); border-radius: 10px;
+  background: var(--panel); box-shadow: var(--panel-glow);
+  padding: 0.9rem 1rem;
+  scroll-behavior: smooth;
+}
+
+.chron__chapter {
+  padding: 0.8rem 0; border-bottom: 1px solid var(--rule);
+  transition: opacity 0.25s ease;
+}
+.chron__chapter:last-of-type { border-bottom: none; }
+/* The chapter whose files are alongside is the one lit; the rest recede. */
+.chron__chapter[data-active="false"] { opacity: 0.42; }
+.chron__index { font-size: 0.68rem; color: var(--accent); letter-spacing: 0.15em; }
+.chron__chaptertitle { margin: 0.15rem 0 0.35rem; font-size: 0.98rem; color: var(--fg); }
+.chron__prose { margin: 0; color: var(--fg-dim); font-size: 0.87rem; line-height: 1.6; }
+.chron__files { margin: 0.35rem 0 0; font-size: 0.7rem; color: var(--fg-dim); opacity: 0.75; }
+
+/* When and how often a file was touched. */
+.post__when {
+  margin: 0.2rem 0 0.35rem; display: flex; gap: 0.7rem; flex-wrap: wrap;
+  font-size: 0.72rem; color: var(--fg-dim);
+}
+.post__edits { color: var(--accent); }
+.post__why { margin: 0 0 0.5rem; display: flex; gap: 0.5rem; align-items: baseline; flex-wrap: wrap; font-size: 0.8rem; }
+
+.post__more { margin-top: 0.5rem; }
+.post__moresummary {
+  cursor: pointer; font-size: 0.72rem; color: var(--fg-dim);
+  text-transform: uppercase; letter-spacing: 0.07em;
+}
+.post__moresummary:hover { color: var(--accent); }
+
+/* A file's history reads like a git log for that one file. */
+.history { margin: 0.5rem 0 0; padding-left: 1.1rem; font-size: 0.76rem; }
+.history__item { padding: 0.15rem 0; color: var(--fg-dim); }
+.history__item--failed { color: var(--del); }
+.history__when { color: var(--fg); font-variant-numeric: tabular-nums; margin-right: 0.5rem; }
+.history__tool { color: var(--hunk); margin-right: 0.5rem; }
+.history__intent { color: var(--fg-dim); }
+
+.post__actions { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin-top: 0.6rem; }
+/* A highlighted change, when the story column scrolled to it. */
+.post[data-active="true"] { box-shadow: inset 2px 0 0 var(--accent); padding-left: 0.6rem; }
 
 .cockpit__pulse {
   position: relative;
@@ -568,12 +686,17 @@
 .page--focus.page--cockpit .cockpit__pulse { min-height: 0; }
 
 /* A narrow window stacks the panel above the feed and lets the page scroll. */
+@media (max-width: 1400px) {
+  .cockpit { grid-template-columns: minmax(240px, 19rem) minmax(0, 1fr); }
+  .cockpit__story { grid-column: 2; }
+  .cockpit__changes { grid-column: 2; }
+}
 @media (max-width: 1000px) {
   .page--cockpit { height: auto; overflow: visible; }
   .cockpit { grid-template-columns: minmax(0, 1fr); }
+  .cockpit__story, .cockpit__changes { grid-column: 1; overflow-y: visible; }
   .cockpit__pulse { min-height: 220px; }
   .cockpit__stats { grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); }
-  .cockpit__feed { overflow-y: visible; max-height: none; }
 }
 
 /* ── Status board ───────────────────────────────────────────────────────────*/

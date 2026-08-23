@@ -105,6 +105,7 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 	handler := web.NewServer(view, store).
 		WithStats(usecase.ComputeStats(sess, units, diffs, commits, time.Now())).
 		WithAgent(agentStatus(ctx, sum, *summarizerURL, *model)).
+		WithHistories(usecase.FileHistories(sess.Events, units)).
 		WithNarrative(shown).
 		WithWorkspace(discoverSessions(*out, *repo)).
 		WithAsk(webAskFunc(sess, snap, sum)).
@@ -123,6 +124,7 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 		narrative, err := usecase.NarrateProgressively(narrateCtx, sum, sess, units,
 			handler.SetNarrative) // publish each chapter as the model writes it
 		narrative.Fingerprint = mechanical.Fingerprint
+		narrative.Model = *model
 
 		// Narration is the one model call the reviewer never triggers, so it is
 		// the one most worth recording: without this it is invisible.
