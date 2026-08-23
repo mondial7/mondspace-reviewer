@@ -7,8 +7,9 @@ While an agent works in auto mode, `msr` turns its raw activity into a
 real diff, a concise summary, deterministic flags, and one-click annotation. It
 watches; it never writes to the agent.
 
-Run `msr web` for the full experience: a cinematic storyline of the session, with
-**focus mode** (`f`) one keypress away when you just want the essence.
+Run `msr web` for the full experience: a cockpit that reads the session as a
+story beside its diffs, live while the agent is still working — across as many
+repositories as you like.
 
 > The **review log is the product.** Narration and interrogation exist only to
 > help you produce annotations.
@@ -173,7 +174,7 @@ annotations still have a stable home.
 | `msr review --since=<ref> [--until=<ref>] [--plain\|--tui] [--repo=.]` | Review the net change from `--since` to `--until` (default: the working tree) — no `--session` required. |
 | `msr ask --scope=unit\|session --session=… "question"` | Answer a question from the bounded log context. |
 | `msr export --format=md\|json\|slack --session=…` | Produce the review report, debt list, and open agenda — or a concise single Slack message. |
-| `msr web --session=… --repo=.` | Serve the review as a localhost web app (scrollable diffs, click-to-annotate). |
+| `msr web [--session=…] [--repo=… …]` | Serve the review as a localhost web app. `--repo` is repeatable; with no `--session` the newest review opens. |
 | `msr gc [--session=<id>] [--repo=.] [--dry-run]` | Delete throwaway review refs (`refs/mondspace/review/*`) for closed sessions — or one session's ref with `--session`. `--dry-run` prints what would be removed. |
 
 ## Flags (deterministic, no model)
@@ -237,13 +238,14 @@ so every unit's diff stays stable even after the file is rewritten.
 ## Web app
 
 ```sh
-msr web --session=<session-id> --repo=.        # http://127.0.0.1:7777
+msr web                                        # http://127.0.0.1:7777
 ```
 
 A localhost web application (ADR 0004) served by the same binary: the same
-net-change-per-file review, with scrollable diffs and click-to-annotate. It is
+net-change-per-file review, read as a story beside its diffs. It is
 server-rendered Go templates with hand-written BEM CSS — no build step and no
-client framework. It binds to localhost only and holds no credentials.
+client framework, and Three.js is vendored rather than fetched. It binds to
+localhost only, holds no credentials, and works with no model at all.
 
 Annotations persist through the same store as the CLI. By default that is the
 append-only JSONL log; set `MSR_POSTGRES_DSN` to use PostgreSQL instead, which
@@ -252,63 +254,111 @@ creates its tables in a dedicated schema (`--pg-schema`, default
 
 ```sh
 export MSR_POSTGRES_DSN='postgres://user:pass@localhost:5432/db?sslmode=disable'
-msr web --session=<session-id> --repo=. --pg-schema=mondspace_reviewer
+msr web --pg-schema=mondspace_reviewer
 ```
 
 The web app is becoming the primary interface; the TUI remains supported.
 
-## The story view
-
-```sh
-msr web --session=<session-id> --repo=.   # then open /story, or "read as a story →"
-```
-
-`/story` is the session as a **long-form, chaptered read** — a parallax landing
-page rather than a table: a hero, then chapters of related work, each with prose
-explaining what changed and why, and the real files, stats and flags beside it.
-Press **`f`** for focus mode to read the same story plain and dense.
-
-Grouping is deterministic (by area) and always works offline; a model regroups
-and writes the prose when one is reachable. Nothing the model says is taken on
-trust: chapter prose is labelled *inferred*, invented file or area names are
-dropped, and anything it forgets is appended, so the story can neither lose nor
-fabricate a change (ADR 0013). If the model is unavailable the page still reads,
-mechanically, and says so.
-
-The page is served immediately and the story is upgraded in the background, one
-chapter at a time — it never waits on a model.
-
 ## The cockpit
 
 ```sh
-msr web                                   # newest review in this repo
-msr web --repo=../api --repo-also=../web  # one workspace, several repositories
-msr web --session=<id>                    # a particular review
+msr web                                        # newest review in this repo
+msr web --session=<id>                         # a particular review
+msr web --repo=. --repo=../api --repo=../web   # one workspace, several repositories
 ```
 
-`msr web` **opens on the cockpit** — while an agent is still working the first
-question is "is anything still happening", not "what shall I review first". The
-review queue is one click away at `/review`, and every deep link from the
-cockpit lands there. One desktop screen, three panes, and only the feed scrolls:
+`msr web` opens the **cockpit** at `/` — one page, three columns, and only the
+two right-hand ones scroll:
 
-- an **isometric grid** — one block per changed file — that breathes while the
-  session is live and settles when it goes quiet;
-- the session **in numbers**: time open, files, lines, commits, pull requests;
-- a **newest-first feed** of every change: one line of description and its diff.
+| | |
+|---|---|
+| **panel** (fixed) | the model's title and brief for the session, an isometric field, and the numbers |
+| **story** | the session as chapters of prose, plus the reviewer assistant |
+| **changes** | every change, with diffs, notes, annotation and re-analysis |
 
-Every number there comes from git or the event log. **Nothing on the cockpit is
-model-derived** — that is the point of putting it beside a narration feature.
+Clicking a chapter brings its files up beside it; scrolling the changes lights
+the chapter that covers them. Nothing scrolls on its own.
 
-Long diffs are *compacted*, never silently truncated: hunk headers all survive
-so the shape of the change does, git's per-file plumbing is dropped (the feed
-already names the file), and the elision says how many lines it left out
-(`… 37 more lines`).
+**The isometric field is an instrument, not decoration.** One block per changed
+file: height is lines changed (log-scaled), colour is growth / deletion /
+flagged, depth is recency, and it only moves while the session is live —
+strongest at the newest end. A still field means nothing is happening.
 
-**Pull requests, honestly.** `msr` talks to no forge. PRs are counted by matching
-commit subjects against GitHub's merge-commit and squash-merge shapes, counting
-distinct references. That means it counts pull requests that **landed** — an open
-PR is not a commit and cannot be seen, and a forge with another subject
-convention will report zero. See [ADR 0015](ADR/0015-cockpit-view.md).
+**Every number comes from git or the event log.** Time open, files, lines,
+commits, pull requests, tokens. Nothing on the panel is model-derived, which is
+the point of putting it beside a narration feature. The prose and the per-group
+descriptions are labelled `inferred` and name the model that wrote them.
+
+### Reading the changes
+
+Files that changed together in a directory are shown together — five files added
+under one package is one act of work, not five entries. Each group carries one
+model-written sentence about what the change is **for**; a group the model could
+not describe says so rather than inventing something.
+
+A mechanical headline ("edited jsonl.go") is never shown: the filename above it
+already says that. Per-file headlines appear only when a model wrote one, which
+is what **re-analyse** produces.
+
+Long diffs are compacted, never silently truncated — hunk headers survive so the
+shape of the change does, git's per-file plumbing is dropped, and the elision
+says what it left out (`… 37 more lines`). **open full history** puts the whole
+diff in an overlay and steps through that file's git history with `←`/`→`,
+showing each version's commit, date and author.
+
+A **tree** toggle shows the same changes as an indented folder listing with just
+churn and flags.
+
+### The shell
+
+Every page shares one backdrop and one nav rail.
+
+| | |
+|---|---|
+| `⌘K` | command palette — pages, and every changed file |
+| `⌘Z` | zen mode: hide the shell, leaving only the work (`Esc` leaves) |
+| `⌘J` | theme: dark → light → follow the system |
+
+Zen hides the rail, which is why navigation does not depend on it.
+
+### Other pages
+
+- **`/activity`** — every model call: which model, how long, whether it failed,
+  and every change to the review while it was open.
+- **`/status`** — is the reviewer's model online (re-probed every 20s), what it
+  has spent, split into prompt / completion / *of which reasoning*, and every
+  session in the workspace.
+- **`/sessions`** — the workspace as a list.
+
+`/review` and `/story` were folded into the cockpit and permanently redirect.
+
+## Working across several repositories
+
+`--repo` is repeatable, so a workspace can hold as many projects as you like:
+
+```sh
+msr web --repo=. --repo=../api --repo=../web --repo=../worker
+```
+
+The logic is deliberately simple:
+
+- **Each repository keeps its own store**, at `<repo>/.mondspace-reviewer`, so
+  two projects never collide. (An absolute `--out` overrides this and is shared.)
+- **The workspace is the union** of every session found, newest first. The
+  session switcher at the top of the panel lists them as `repo · prompt`.
+- **A session remembers which repository it belongs to.** Opening one reads
+  *that* repository's git tree, store and stored story — `--repo` order only
+  decides which session opens first.
+- **Sessions load on demand and are cached.** Building all of them at start-up
+  would be a git diff per file per session; the first visit pays and later ones
+  do not.
+- **Opening a session never calls a model.** It reuses that session's stored
+  story, or falls back to deterministic grouping.
+- **A directory with no events is not a session** and is skipped, so a stray
+  audit log cannot masquerade as one.
+
+With no `--session`, the newest review opens. With no `--repo`, the current
+directory is used.
 
 ## Where the model calls go
 
@@ -420,13 +470,11 @@ MSR_SUMMARIZER_URL=http://localhost:1234/v1 MSR_MODEL=qwen/qwen3.5-9b \
 
 **v2.0.0** — everything below is built, tested, and shippable:
 
-- **Web app** (`msr web`) — the primary interface: a cinematic storyline of the
-  session (Three.js, vendored, offline) with **focus mode** (`f`) for dense,
-  motionless review; scrollable diffs, click-to-annotate, a multi-session
-  workspace, a persistent reviewer-assistant chat, per-unit re-analysis with
-  model attribution, live updates over SSE, and an **activity page**
-  (`/activity`) showing every model call with the model that served it and what
-  it cost.
+- **Web app** (`msr web`) — the primary interface: a single-page cockpit with
+  the story, the diffs, annotation and re-analysis side by side; a live
+  isometric field driven by the real changes; a workspace spanning any number of
+  repositories; zen mode and a `⌘K` palette; live updates over SSE; and
+  `/activity` and `/status` pages accounting for every model call and token.
 - **Net-change review** — one unit per changed file against the pre-session git
   baseline, so an agent's back-and-forth collapses into one clear change
   (ADR 0002). Also available for any range via `--since` / `--until`.

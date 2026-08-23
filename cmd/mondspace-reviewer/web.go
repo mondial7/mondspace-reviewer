@@ -31,9 +31,8 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 	fs := flag.NewFlagSet("web", flag.ContinueOnError)
 	addr := fs.String("addr", "127.0.0.1:7777", "address to listen on (localhost only by default)")
 	out := fs.String("out", ".mondspace-reviewer", "store root directory (jsonl store)")
-	repo := fs.String("repo", ".", "repository to review")
-	var also repoList
-	fs.Var(&also, "repo-also", "another repository to include in the workspace (repeatable)")
+	var repos repoList
+	fs.Var(&repos, "repo", "repository to review (repeatable: --repo=a --repo=b)")
 	session := fs.String("session", "", "session id")
 	schema := fs.String("pg-schema", pgstore.DefaultSchema, "Postgres schema (never public)")
 	summarizerURL := fs.String("summarizer-url", defaultSummarizerURL, "OpenAI-compatible summarizer endpoint")
@@ -43,7 +42,10 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 	}
 	// With no --session, open the newest review in the workspace: a reviewer
 	// arriving at a repository should not have to look up an id first.
-	workspace := discoverWorkspace(append([]string{*repo}, also...), *out)
+	if len(repos) == 0 {
+		repos = repoList{"."}
+	}
+	workspace := discoverWorkspace(repos, *out)
 	if *session == "" {
 		if len(workspace) == 0 {
 			return fmt.Errorf("no reviews found — run `msr review` first, or pass --session")
@@ -55,8 +57,9 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 	// several repositories in the workspace, --repo is only the starting point:
 	// using it for a session that lives elsewhere reads the wrong git tree and
 	// finds no changes at all.
+	repo := repos[0]
 	if entry, known := workspaceIndex[*session]; known {
-		*repo = entry.repo
+		repo = entry.repo
 		*out = entry.out
 	}
 
@@ -72,12 +75,12 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 		return err
 	}
 
-	snap := gitsnap.New(*repo, *session)
+	snap := gitsnap.New(repo, *session)
 	baseline, err := snap.Baseline(ctx, firstEventTime(sess))
 	if err != nil {
 		return err
 	}
-	storeRel := storeRelativeTo(*repo, *out)
+	storeRel := storeRelativeTo(repo, *out)
 	units, diffs, err := usecase.BuildFileUnits(ctx, snap, *session, baseline, domain.SnapshotRef{}, func(f string) bool {
 		return f == storeRel || strings.HasPrefix(f, storeRel+"/")
 	})
@@ -88,7 +91,7 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 	view := web.Session{
 		ID:     *session,
 		Prompt: sess.Prompt,
-		Repo:   *repo,
+		Repo:   repo,
 		Units:  units,
 		Notes:  usecase.MarkSuperseded(units, sess.Notes),
 		Diffs:  diffs,
@@ -203,7 +206,7 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 	// involved.
 	go refreshReview(ctx, reviewRefresher{
 		handler: handler, snap: snap, store: store, sum: sum,
-		sessionID: *session, repo: *repo, storeRel: storeRel,
+		sessionID: *session, repo: repo, storeRel: storeRel,
 		baseline: baseline, model: *model,
 		fingerprint: usecase.ReviewFingerprint(firstStats), narrate: narrateOnce,
 	})
@@ -563,8 +566,8 @@ func refreshAgent(ctx context.Context, handler *web.Server, sum port.Summarizer,
 	}
 }
 
-// repoList collects a repeatable --repo-also flag, so one server can hold a
-// workspace spanning several repositories.
+// repoList collects a repeatable --repo flag, so one server can hold a workspace
+// spanning any number of repositories.
 type repoList []string
 
 func (r *repoList) String() string     { return strings.Join(*r, ",") }
