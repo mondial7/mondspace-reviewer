@@ -223,3 +223,13 @@
 }
 .ask__btn:hover { border-color: var(--accent); }
 .session__agent { color: var(--fg-dim); }
+
+/* Re-analysis (issue #10) and model attribution */
+.reanalyse { display: inline-block; margin-top: 0.8rem; }
+.reanalyse__btn {
+  padding: 0.25rem 0.6rem; cursor: pointer; font: inherit;
+  color: var(--fg-dim); background: var(--bg);
+  border: 1px dashed var(--rule); border-radius: 4px;
+}
+.reanalyse__btn:hover { color: var(--accent); border-color: var(--accent); }
+.detail__model { color: var(--fg-dim); }

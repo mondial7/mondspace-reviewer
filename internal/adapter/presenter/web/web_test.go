@@ -100,6 +100,76 @@ func TestAnnotateRejectsUnknownUnitAndKind(t *testing.T) {
 	}
 }
 
+func TestReanalyseReplacesHeadlineAndRecordsModel(t *testing.T) {
+	var called []string
+	h := web.NewServer(testSession(), nil).WithReanalyse(
+		func(_ context.Context, u domain.Unit) (domain.Headline, string, error) {
+			called = append(called, u.ID)
+			return domain.Headline{Text: "a sharper summary", WhySrc: domain.WhyInferred}, "qwen/qwen3.5-9b", nil
+		})
+
+	req := httptest.NewRequest(http.MethodPost, "/units/s-f001/reanalyse", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusSeeOther && rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if len(called) != 1 || called[0] != "s-f001" {
+		t.Fatalf("re-analysed %v, want just s-f001", called)
+	}
+
+	body := get(t, h, "/").Body.String()
+	if !strings.Contains(body, "a sharper summary") {
+		t.Errorf("the re-analysed headline should replace the old one:\n%s", body)
+	}
+	// Which model produced a headline must be visible — attribution matters when
+	// re-running with a better model (issue #10).
+	if !strings.Contains(body, "qwen/qwen3.5-9b") {
+		t.Errorf("the producing model should be attributed:\n%s", body)
+	}
+	// Only the requested unit changes.
+	if strings.Contains(body, "a sharper summary</span> <span") {
+		t.Errorf("re-analysis leaked to other units")
+	}
+}
+
+func TestAuditLogRecordsInteractions(t *testing.T) {
+	audit := &recordingAudit{}
+	h := web.NewServer(testSession(), nil).WithAudit(audit).WithAsk(
+		func(context.Context, string, []web.Exchange) (string, error) { return "an answer", nil })
+
+	post := func(path, body string) {
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		h.ServeHTTP(httptest.NewRecorder(), req)
+	}
+	post("/units/s-f001/notes", "kind=objection&text=wrong")
+	post("/ask", "question=why")
+
+	if len(audit.entries) != 2 {
+		t.Fatalf("audit recorded %d entries, want 2 (annotate + ask)", len(audit.entries))
+	}
+	if audit.entries[0].Action != "annotate" || audit.entries[0].UnitID != "s-f001" {
+		t.Errorf("first entry = %+v, want an annotate on s-f001", audit.entries[0])
+	}
+	if audit.entries[1].Action != "ask" {
+		t.Errorf("second entry = %+v, want an ask", audit.entries[1])
+	}
+	for _, e := range audit.entries {
+		if e.TS.IsZero() || e.SessionID == "" {
+			t.Errorf("every audit entry needs a session and a timestamp: %+v", e)
+		}
+	}
+}
+
+type recordingAudit struct{ entries []web.AuditEntry }
+
+func (a *recordingAudit) Append(e web.AuditEntry) error {
+	a.entries = append(a.entries, e)
+	return nil
+}
+
 func TestAskKeepsConversationHistory(t *testing.T) {
 	var asked []string
 	h := web.NewServer(testSession(), nil).WithAsk(

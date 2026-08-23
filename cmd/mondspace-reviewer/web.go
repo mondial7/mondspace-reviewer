@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -76,7 +77,9 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 	sum := chooseSummarizer(*summarizerURL, *model)
 	handler := web.NewServer(view, store).
 		WithWorkspace(discoverSessions(*out, *repo)).
-		WithAsk(webAskFunc(sess, snap, sum))
+		WithAsk(webAskFunc(sess, snap, sum)).
+		WithReanalyse(webReanalyseFunc(snap, sum, *model)).
+		WithAudit(auditFile(filepath.Join(*out, *session, "audit.jsonl")))
 
 	srv := &http.Server{
 		Handler:           handler,
@@ -212,4 +215,36 @@ func mustAbs(p string) string {
 		return p
 	}
 	return abs
+}
+
+// webReanalyseFunc re-summarises a unit on demand, reporting which model did it.
+func webReanalyseFunc(snap port.Snapshotter, sum port.Summarizer, model string) web.ReanalyseFunc {
+	return func(ctx context.Context, u domain.Unit) (domain.Headline, string, error) {
+		diff, err := snap.Diff(ctx, u.From, u.To, u.Files)
+		if err != nil {
+			diff = domain.Diff{}
+		}
+		return usecase.Summarize(ctx, sum, u, diff), model, nil
+	}
+}
+
+// auditFile appends interactions to an append-only JSONL log beside the session,
+// so a review carries its own provenance (issue #11).
+type auditFile string
+
+func (a auditFile) Append(e web.AuditEntry) error {
+	if err := os.MkdirAll(filepath.Dir(string(a)), 0o755); err != nil {
+		return err
+	}
+	line, err := json.Marshal(e)
+	if err != nil {
+		return err
+	}
+	f, err := os.OpenFile(string(a), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	_, err = f.Write(append(line, '\n'))
+	return err
 }

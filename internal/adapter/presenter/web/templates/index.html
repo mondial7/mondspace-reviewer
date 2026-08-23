@@ -66,6 +66,10 @@
               <span class="why why--{{ .WhySrc }}">{{ .WhySrc }}</span>
               <span class="why__text">{{ .Why }}</span>
             </dd>
+            {{ with .Model }}
+            <dt class="detail__label">model</dt>
+            <dd class="detail__value"><span class="detail__model">{{ . }}</span></dd>
+            {{ end }}
           </dl>
 
           {{ with .Notes }}
@@ -85,6 +89,12 @@
 {{ end }}</code></pre>
           {{ else }}
           <p class="diff diff--empty">No textual changes.</p>
+          {{ end }}
+
+          {{ if $.HasReanal }}
+          <form class="reanalyse" method="post" action="/units/{{ .ID }}/reanalyse">
+            <button class="reanalyse__btn" type="submit" title="Re-run the AI analysis for this file">re-analyse</button>
+          </form>
           {{ end }}
 
           <form class="annotate" method="post" action="/units/{{ .ID }}/notes">
