@@ -40,6 +40,24 @@ func TestExportCommandMarkdown(t *testing.T) {
 	}
 }
 
+func TestExportCommandSlack(t *testing.T) {
+	root := t.TempDir()
+	seedReviewedSession(t, root)
+
+	var out bytes.Buffer
+	if err := run(context.Background(), []string{"export", "--format=slack", "--session=s", "--out=" + root}, nil, &out); err != nil {
+		t.Fatalf("export slack: %v", err)
+	}
+
+	s := out.String()
+	if !bytes.Contains(out.Bytes(), []byte("*Review")) || !bytes.Contains(out.Bytes(), []byte("wrong layer")) {
+		t.Errorf("slack export missing content:\n%s", s)
+	}
+	if bytes.Contains(out.Bytes(), []byte("## ")) {
+		t.Errorf("slack export must not contain markdown headings:\n%s", s)
+	}
+}
+
 func TestExportCommandJSONAndUnknownFormat(t *testing.T) {
 	root := t.TempDir()
 	seedReviewedSession(t, root)

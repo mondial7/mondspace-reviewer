@@ -23,6 +23,7 @@ type NoteGroup struct {
 type ReportItem struct {
 	UnitID       string   `json:"unit_id"`
 	Headline     Headline `json:"headline"`
+	Flags        []Flag   `json:"flags,omitempty"`
 	NoteKind     NoteKind `json:"note_kind,omitempty"`
 	NoteText     string   `json:"note_text,omitempty"`
 	SupersededBy string   `json:"superseded_by,omitempty"`

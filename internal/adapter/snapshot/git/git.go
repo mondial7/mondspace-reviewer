@@ -177,6 +177,34 @@ func (s *Snapshotter) untrackedDiff(ctx context.Context, path string) (string, b
 	return string(out), true
 }
 
+// reviewRefPrefix is the namespace every session's throwaway review ref lives
+// under (SPEC §7).
+const reviewRefPrefix = "refs/mondspace/review/"
+
+// ReviewRefs lists the session IDs that currently have a review ref, sorted
+// for deterministic output. It is repo-wide: the receiver's own sessionID is
+// irrelevant to this call.
+func (s *Snapshotter) ReviewRefs(ctx context.Context) ([]string, error) {
+	out, err := s.run(ctx, os.Environ(), "for-each-ref", "--format=%(refname)", reviewRefPrefix)
+	if err != nil {
+		return nil, err
+	}
+	var sessions []string
+	for _, line := range nonEmptyLines(out) {
+		sessions = append(sessions, strings.TrimPrefix(line, reviewRefPrefix))
+	}
+	sort.Strings(sessions)
+	return sessions, nil
+}
+
+// DeleteReviewRef deletes the review ref for one session. Deleting an
+// already-absent ref is not an error: git update-ref -d succeeds either way,
+// and a caller may race with another gc run.
+func (s *Snapshotter) DeleteReviewRef(ctx context.Context, sessionID string) error {
+	_, err := s.run(ctx, os.Environ(), "update-ref", "-d", reviewRefPrefix+sessionID)
+	return err
+}
+
 func nonEmptyLines(s string) []string {
 	var out []string
 	for _, l := range strings.Split(s, "\n") {

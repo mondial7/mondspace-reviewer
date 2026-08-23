@@ -282,6 +282,72 @@ func TestSnapshotWorksWithoutAmbientGitIdentity(t *testing.T) {
 	}
 }
 
+func TestReviewRefsListsSessionsWithReviewRefs(t *testing.T) {
+	dir := newRepo(t)
+	ctx := context.Background()
+
+	if _, err := gitsnap.New(dir, "sess-b").Snapshot(ctx, "b1"); err != nil {
+		t.Fatalf("Snapshot sess-b: %v", err)
+	}
+	if _, err := gitsnap.New(dir, "sess-a").Snapshot(ctx, "a1"); err != nil {
+		t.Fatalf("Snapshot sess-a: %v", err)
+	}
+
+	refs, err := gitsnap.New(dir, "irrelevant").ReviewRefs(ctx)
+	if err != nil {
+		t.Fatalf("ReviewRefs: %v", err)
+	}
+	if len(refs) != 2 || refs[0] != "sess-a" || refs[1] != "sess-b" {
+		t.Errorf("ReviewRefs = %v, want [sess-a sess-b] (sorted)", refs)
+	}
+}
+
+func TestReviewRefsEmptyWhenNoneExist(t *testing.T) {
+	dir := newRepo(t)
+	refs, err := gitsnap.New(dir, "irrelevant").ReviewRefs(context.Background())
+	if err != nil {
+		t.Fatalf("ReviewRefs: %v", err)
+	}
+	if len(refs) != 0 {
+		t.Errorf("ReviewRefs = %v, want none", refs)
+	}
+}
+
+func TestDeleteReviewRefRemovesTheRef(t *testing.T) {
+	dir := newRepo(t)
+	ctx := context.Background()
+
+	s := gitsnap.New(dir, "sess-1")
+	if _, err := s.Snapshot(ctx, "s1"); err != nil {
+		t.Fatalf("Snapshot: %v", err)
+	}
+
+	refs, err := s.ReviewRefs(ctx)
+	if err != nil || len(refs) != 1 {
+		t.Fatalf("ReviewRefs before delete = %v, %v", refs, err)
+	}
+
+	if err := s.DeleteReviewRef(ctx, "sess-1"); err != nil {
+		t.Fatalf("DeleteReviewRef: %v", err)
+	}
+
+	refs, err = s.ReviewRefs(ctx)
+	if err != nil {
+		t.Fatalf("ReviewRefs after delete: %v", err)
+	}
+	if len(refs) != 0 {
+		t.Errorf("ReviewRefs after delete = %v, want none", refs)
+	}
+}
+
+func TestDeleteReviewRefOnAbsentRefIsNotAnError(t *testing.T) {
+	dir := newRepo(t)
+	s := gitsnap.New(dir, "irrelevant")
+	if err := s.DeleteReviewRef(context.Background(), "never-existed"); err != nil {
+		t.Errorf("DeleteReviewRef on an absent ref should not error: %v", err)
+	}
+}
+
 func TestSnapshotLeavesHeadIndexAndWorktreeUnchanged(t *testing.T) {
 	dir := newRepo(t)
 
