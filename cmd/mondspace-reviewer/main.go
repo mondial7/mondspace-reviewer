@@ -345,8 +345,13 @@ func buildTUIModel(store port.Store, sessionID string) (tui.Model, error) {
 // chooseSummarizer probes the configured endpoint; if it is unreachable the
 // reviewer degrades to the null (mechanical-only) summarizer. An API key from
 // MSR_API_KEY (bearer token) is used for authenticated endpoints.
+//
+// MSR_NO_THINKING=1 asks the server to skip the model's reasoning phase. It is
+// opt-in because it trades prose quality for speed, and only a model whose chat
+// template reads enable_thinking honours it.
 func chooseSummarizer(baseURL, model string) port.Summarizer {
 	apiKey := os.Getenv("MSR_API_KEY")
+	noThinking := os.Getenv("MSR_NO_THINKING") == "1"
 	client := &http.Client{Timeout: 1500 * time.Millisecond}
 	req, err := http.NewRequest(http.MethodGet, strings.TrimRight(baseURL, "/")+"/models", nil)
 	if err != nil {
@@ -359,7 +364,11 @@ func chooseSummarizer(baseURL, model string) port.Summarizer {
 	if err == nil {
 		resp.Body.Close()
 		if resp.StatusCode < 500 {
-			return openai.New(baseURL, model).WithAPIKey(apiKey)
+			sum := openai.New(baseURL, model).WithAPIKey(apiKey)
+			if noThinking {
+				sum = sum.WithoutThinking()
+			}
+			return sum
 		}
 	}
 	return null.New()

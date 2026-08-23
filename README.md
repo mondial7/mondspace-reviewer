@@ -298,6 +298,35 @@ token), set a bearer token via the environment — it is never written to disk:
 export MSR_API_KEY=sk-…
 ```
 
+### Structured output
+
+When the endpoint supports it, the story is requested as **schema-enforced JSON**
+(`response_format: json_schema`). LM Studio compiles the schema into a llama.cpp
+grammar (GGUF) or Outlines (MLX), so the reply is valid JSON by construction, and
+the list of allowed area names is an `enum` — a model *cannot* name an area that
+does not exist. An endpoint that rejects the schema is retried without it, so
+this can never break a working setup.
+
+### Reasoning models
+
+A reasoning model spends most of a small context thinking before it emits any
+output: measured at **1,400–3,800 reasoning tokens** for an 81-token prompt,
+which is what makes narration fail on a modest context window. Two ways out:
+
+```sh
+export MSR_NO_THINKING=1          # send chat_template_kwargs.enable_thinking=false
+```
+
+…or give the model room. Loading `qwen/qwen3.5-9b` at 32k instead of 4k costs
+only ~1.4 GiB and is what makes the story view work at all:
+
+```sh
+lms load qwen/qwen3.5-9b -c 32768 --parallel 1 --ttl 3600
+```
+
+`MSR_NO_THINKING` is opt-in: it trades some prose quality for a large speed win,
+and only a model whose chat template reads `enable_thinking` honours it.
+
 If the endpoint is unreachable, `msr` silently falls back to mechanical headlines
 (files + change counts) and an offline notice for questions — **the queue never
 waits on the model.** The model can improve a headline's *what*, but it can never
