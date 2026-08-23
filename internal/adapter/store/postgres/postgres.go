@@ -8,10 +8,12 @@ package postgres
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
@@ -82,6 +84,13 @@ func (s *Store) migrate(ctx context.Context) error {
 			seq         bigserial NOT NULL,
 			payload     jsonb NOT NULL
 		)`,
+		// A session has one current story, not a history of them, so the session
+		// id is the key and re-narrating replaces the row.
+		`CREATE TABLE IF NOT EXISTS ` + s.table("narratives") + ` (
+			session_id  text PRIMARY KEY,
+			updated_at  timestamptz NOT NULL DEFAULT now(),
+			payload     jsonb NOT NULL
+		)`,
 		`CREATE INDEX IF NOT EXISTS events_session_idx ON ` + s.table("events") + ` (session_id, seq)`,
 		`CREATE INDEX IF NOT EXISTS units_session_idx ON ` + s.table("units") + ` (session_id, seq)`,
 		`CREATE INDEX IF NOT EXISTS notes_session_idx ON ` + s.table("notes") + ` (session_id, seq)`,
@@ -130,6 +139,43 @@ func (s *Store) AppendNote(n domain.Note) error {
 		 VALUES ($1, $2, $3, $4, $5) ON CONFLICT (id) DO NOTHING`,
 		n.ID, n.SessionID, n.UnitID, nonZeroTime(n.TS), payload)
 	return err
+}
+
+// SaveNarrative stores a session's story so it survives a restart. Narration
+// costs several model calls; without this every launch pays for them again.
+func (s *Store) SaveNarrative(n domain.Narrative) error {
+	payload, err := json.Marshal(n)
+	if err != nil {
+		return err
+	}
+	_, err = s.pool.Exec(context.Background(),
+		`INSERT INTO `+s.table("narratives")+` (session_id, payload)
+		 VALUES ($1, $2)
+		 ON CONFLICT (session_id) DO UPDATE SET payload = EXCLUDED.payload, updated_at = now()`,
+		n.SessionID, payload)
+	return err
+}
+
+// LoadNarrative returns the stored story, or a zero Narrative when the session
+// has never been narrated. That is an ordinary state, not a failure: the caller
+// narrates it.
+func (s *Store) LoadNarrative(sessionID string) (domain.Narrative, error) {
+	var payload []byte
+	err := s.pool.QueryRow(context.Background(),
+		`SELECT payload FROM `+s.table("narratives")+` WHERE session_id = $1`,
+		sessionID).Scan(&payload)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return domain.Narrative{}, nil
+	}
+	if err != nil {
+		return domain.Narrative{}, err
+	}
+	var n domain.Narrative
+	if err := json.Unmarshal(payload, &n); err != nil {
+		// A corrupt story is worth re-narrating, not worth failing over.
+		return domain.Narrative{}, nil
+	}
+	return n, nil
 }
 
 // Load reconstructs a session. The task prompt is the first prompt event's

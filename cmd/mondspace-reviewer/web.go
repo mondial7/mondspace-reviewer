@@ -351,3 +351,12 @@ type narrativeCache interface {
 	SaveNarrative(domain.Narrative) error
 	LoadNarrative(sessionID string) (domain.Narrative, error)
 }
+
+// Every store must remember stories. This is asserted rather than left to the
+// runtime type switch because the failure is silent: a store that does not
+// satisfy it simply re-narrates on every launch, costing several model calls
+// with nothing to show that anything is wrong.
+var (
+	_ narrativeCache = (*jsonl.Store)(nil)
+	_ narrativeCache = (*pgstore.Store)(nil)
+)

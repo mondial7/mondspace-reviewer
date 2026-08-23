@@ -150,3 +150,56 @@ func TestSchemaNameIsValidated(t *testing.T) {
 		}
 	}
 }
+
+func TestNarrativeIsStoredAndReplaced(t *testing.T) {
+	// Narration costs several model calls, so the Postgres store must remember a
+	// story exactly as the JSONL store does — otherwise every launch pays again.
+	store, _ := newStore(t)
+	defer store.Close()
+
+	first := domain.Narrative{
+		SessionID: "s1", Title: "Locking down auth", Intro: "…",
+		Source: domain.NarrativeModel, Fingerprint: "abc123",
+		Chapters: []domain.Chapter{{Title: "Tokens", Prose: "p", UnitIDs: []string{"s1-f001"}}},
+	}
+	if err := store.SaveNarrative(first); err != nil {
+		t.Fatalf("SaveNarrative: %v", err)
+	}
+
+	got, err := store.LoadNarrative("s1")
+	if err != nil {
+		t.Fatalf("LoadNarrative: %v", err)
+	}
+	if got.Title != first.Title || got.Fingerprint != "abc123" || len(got.Chapters) != 1 {
+		t.Errorf("LoadNarrative = %+v, want %+v", got, first)
+	}
+
+	// A session has one current story, not a history: re-narrating replaces it.
+	second := first
+	second.Title = "Re-narrated"
+	second.Fingerprint = "def456"
+	if err := store.SaveNarrative(second); err != nil {
+		t.Fatalf("SaveNarrative (replace): %v", err)
+	}
+	got, err = store.LoadNarrative("s1")
+	if err != nil {
+		t.Fatalf("LoadNarrative after replace: %v", err)
+	}
+	if got.Title != "Re-narrated" || got.Fingerprint != "def456" {
+		t.Errorf("re-narrating should replace the story, got %+v", got)
+	}
+}
+
+func TestLoadNarrativeIsEmptyForAnUnnarratedSession(t *testing.T) {
+	store, _ := newStore(t)
+	defer store.Close()
+
+	got, err := store.LoadNarrative("never-narrated")
+
+	if err != nil {
+		t.Fatalf("an unnarrated session is not an error: %v", err)
+	}
+	if got.Fingerprint != "" || len(got.Chapters) != 0 {
+		t.Errorf("expected an empty narrative, got %+v", got)
+	}
+}
