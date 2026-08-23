@@ -71,10 +71,16 @@ func runReview(ctx context.Context, args []string, stdout io.Writer) error {
 	out := fs.String("out", ".mondspace-reviewer", "store root directory")
 	repo := fs.String("repo", ".", "repository to snapshot (hooks source / tui)")
 	session := fs.String("session", "", "session id (hooks/tui)")
+	since := fs.String("since", "", "review the net change from this ref (commit/branch/tag), bypassing sessions entirely")
+	until := fs.String("until", "", "bound --since's far end at this ref (default: the current working tree)")
 	summarizerURL := fs.String("summarizer-url", defaultSummarizerURL, "OpenAI-compatible summarizer endpoint")
 	model := fs.String("model", defaultModel, "summarizer model")
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
+	}
+
+	if *since != "" {
+		return runSince(ctx, *usePlain, *useTUI, *verbose, *session, *repo, *out, *since, *until, *summarizerURL, *model, stdout)
 	}
 
 	if *useTUI {
@@ -307,32 +313,10 @@ func runFileReview(ctx context.Context, store port.Store, snap *gitsnap.Snapshot
 	if err != nil {
 		return err
 	}
-	files, err := snap.ChangedFiles(ctx, baseline)
+	units, diffs, err := buildFileUnits(ctx, snap, sessionID, repo, out, baseline, domain.SnapshotRef{})
 	if err != nil {
 		return err
 	}
-	files = excludeStore(files, repo, out) // never review msr's own store
-
-	diffs := map[string]domain.Diff{}
-	var units []domain.Unit
-	for i, f := range files {
-		d, err := snap.Diff(ctx, baseline, domain.SnapshotRef{}, []string{f})
-		if err != nil {
-			d = domain.Diff{}
-		}
-		u := domain.Unit{
-			ID:        fmt.Sprintf("%s-f%03d", sessionID, i+1),
-			SessionID: sessionID,
-			Files:     []string{f},
-			From:      baseline,
-			Sealed:    true,
-		}
-		u.Flags = usecase.Flags(u, d)
-		u.Headline = usecase.DiffHeadline(f, d)
-		diffs[u.ID] = d
-		units = append(units, u)
-	}
-	units = usecase.SuppressCoveredNoTest(units)
 	sess.Units = units
 	notes := usecase.MarkSuperseded(units, sess.Notes)
 
@@ -344,6 +328,149 @@ func runFileReview(ctx context.Context, store port.Store, snap *gitsnap.Snapshot
 		WithAsk(askFunc(sess, snap, sum))
 	_, err = tea.NewProgram(model, tea.WithInput(os.Stdin), tea.WithOutput(stdout)).Run()
 	return err
+}
+
+// buildFileUnits is the per-file net-diff engine shared by every retroactive
+// review path: one unit per file changed between baseline and until (an empty
+// until diffs against the current working tree), with its real diff, flags,
+// and mechanical headline. `sessionID` only seeds unit IDs — it need not name
+// a recorded session.
+func buildFileUnits(ctx context.Context, snap *gitsnap.Snapshotter, sessionID, repo, out string, baseline, until domain.SnapshotRef) ([]domain.Unit, map[string]domain.Diff, error) {
+	files, err := snap.ChangedFiles(ctx, baseline, until)
+	if err != nil {
+		return nil, nil, err
+	}
+	files = excludeStore(files, repo, out) // never review msr's own store
+
+	diffs := map[string]domain.Diff{}
+	var units []domain.Unit
+	for i, f := range files {
+		d, err := snap.Diff(ctx, baseline, until, []string{f})
+		if err != nil {
+			d = domain.Diff{}
+		}
+		u := domain.Unit{
+			ID:        fmt.Sprintf("%s-f%03d", sessionID, i+1),
+			SessionID: sessionID,
+			Files:     []string{f},
+			From:      baseline,
+			To:        until,
+			Sealed:    true,
+		}
+		u.Flags = usecase.Flags(u, d)
+		u.Headline = usecase.DiffHeadline(f, d)
+		diffs[u.ID] = d
+		units = append(units, u)
+	}
+	units = usecase.SuppressCoveredNoTest(units)
+	return units, diffs, nil
+}
+
+// runSince dispatches --since review to the plain or TUI presenter. It needs
+// no --session: with none given it synthesizes one from --since, so unit ids
+// stay stable and annotations still land under .mondspace-reviewer/.
+func runSince(ctx context.Context, usePlain, useTUI, verbose bool, session, repo, out, since, until, summarizerURL, model string, stdout io.Writer) error {
+	sessionID := session
+	if sessionID == "" {
+		sessionID = "since-" + shortRef(since)
+	}
+	snap := gitsnap.New(repo, sessionID)
+
+	switch {
+	case useTUI:
+		sum := chooseSummarizer(summarizerURL, model)
+		return runSinceReview(ctx, jsonl.New(out), snap, sum, sessionID, repo, out, since, until, stdout)
+	case usePlain:
+		pres := plain.New(stdout).RelativeTo(repo)
+		if verbose {
+			pres.Verbose()
+		}
+		return runSincePlain(ctx, snap, pres, sessionID, repo, out, since, until)
+	default:
+		return fmt.Errorf("--plain or --tui is required")
+	}
+}
+
+// runSincePlain presents a --since review through the plain presenter: the
+// same per-file units buildFileUnits produces for any other retroactive
+// review, with no TUI and no session required.
+func runSincePlain(ctx context.Context, snap *gitsnap.Snapshotter, pres port.Presenter, sessionID, repo, out, since, until string) error {
+	units, _, err := sinceFileUnits(ctx, snap, sessionID, repo, out, since, until)
+	if err != nil {
+		return err
+	}
+	for _, u := range units {
+		if err := pres.Present(u, nil); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// runSinceReview is --since review in the interactive TUI. It loads whatever
+// session state exists under sessionID (empty when --session was not given,
+// or when it names a session msr has not seen before — Store.Load degrades to
+// an empty Session rather than erroring), so annotations still persist and
+// supersession still works even though there is no event log driving units.
+func runSinceReview(ctx context.Context, store port.Store, snap *gitsnap.Snapshotter, sum port.Summarizer, sessionID, repo, out, since, until string, stdout io.Writer) error {
+	units, diffs, err := sinceFileUnits(ctx, snap, sessionID, repo, out, since, until)
+	if err != nil {
+		return err
+	}
+	sess, err := store.Load(sessionID)
+	if err != nil {
+		return err
+	}
+	sess.Units = units
+	notes := usecase.MarkSuperseded(units, sess.Notes)
+
+	model := tui.New(units, notes, store).
+		RelativeTo(repo).
+		WithDiffs(diffs).
+		WithSummarize(summarizeFunc(snap, sum)).
+		WithDiff(diffFunc(snap)).
+		WithAsk(askFunc(sess, snap, sum))
+	_, err = tea.NewProgram(model, tea.WithInput(os.Stdin), tea.WithOutput(stdout)).Run()
+	return err
+}
+
+// sinceFileUnits resolves --since/--until against git and builds the per-file
+// units for that range, sharing buildFileUnits with session-based retroactive
+// review.
+func sinceFileUnits(ctx context.Context, snap *gitsnap.Snapshotter, sessionID, repo, out, since, until string) ([]domain.Unit, map[string]domain.Diff, error) {
+	baseline, untilRef, err := resolveSinceRange(ctx, snap, since, until)
+	if err != nil {
+		return nil, nil, err
+	}
+	return buildFileUnits(ctx, snap, sessionID, repo, out, baseline, untilRef)
+}
+
+// resolveSinceRange resolves --since (required) and --until (optional; the
+// zero SnapshotRef means "the current working tree") to concrete refs.
+func resolveSinceRange(ctx context.Context, snap *gitsnap.Snapshotter, since, until string) (baseline, untilRef domain.SnapshotRef, err error) {
+	baseline, err = snap.ResolveRef(ctx, since)
+	if err != nil {
+		return domain.SnapshotRef{}, domain.SnapshotRef{}, fmt.Errorf("resolving --since=%q: %w", since, err)
+	}
+	if until == "" {
+		return baseline, domain.SnapshotRef{}, nil
+	}
+	untilRef, err = snap.ResolveRef(ctx, until)
+	if err != nil {
+		return domain.SnapshotRef{}, domain.SnapshotRef{}, fmt.Errorf("resolving --until=%q: %w", until, err)
+	}
+	return baseline, untilRef, nil
+}
+
+// shortRef turns a ref into a short, session-id-safe token for synthesizing
+// "since-<shortref>" when --since is used with no --session.
+func shortRef(ref string) string {
+	r := strings.NewReplacer("/", "-", "\\", "-").Replace(ref)
+	const maxLen = 24
+	if len(r) > maxLen {
+		r = r[:maxLen]
+	}
+	return r
 }
 
 // excludeStore drops files under msr's own store directory from the review, so

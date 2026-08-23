@@ -121,6 +121,22 @@ msr review --source=replay --file=testdata/sessions/basic.jsonl --plain
    **Live review** starts empty and fills as each unit seals — the cursor stays
    where you are (the agent outruns you by construction).
 
+### Review an arbitrary range, no session required
+
+`--since` reviews the net change from any commit, branch, or tag — no hooks,
+no recorded session, and no `--session` flag needed:
+
+```sh
+msr review --tui   --since=main --repo=.                 # net change from main to the working tree
+msr review --plain --since=v1.2.0 --until=v1.3.0          # net change between two tags
+```
+
+It reuses the same per-file net-diff engine as retroactive session review: one
+unit per changed file, real diff, deterministic flags. Baseline is `--since`;
+the far end is `--until` if given, otherwise the current working tree. With no
+`--session`, unit ids are seeded from a synthesized `since-<ref>` handle, so
+annotations still have a stable home.
+
 3. Ask questions and export your review:
 
    ```sh
@@ -135,6 +151,7 @@ msr review --source=replay --file=testdata/sessions/basic.jsonl --plain
 | `msr install-hooks --dir=.` | Write the four agent hooks into `.claude/settings.json` (merges, never clobbers). |
 | `msr ingest --kind=…` | Append one hook event (reads hook JSON on stdin, always exits 0). |
 | `msr review --source=replay\|hooks [--plain\|--tui] [--verbose]` | Cluster and present the session. `--verbose` (`-v`) lists each unit's member events and snapshot refs. |
+| `msr review --since=<ref> [--until=<ref>] [--plain\|--tui] [--repo=.]` | Review the net change from `--since` to `--until` (default: the working tree) — no `--session` required. |
 | `msr ask --scope=unit\|session --session=… "question"` | Answer a question from the bounded log context. |
 | `msr export --format=md\|json --session=…` | Produce the review report, debt list, and open agenda. |
 
