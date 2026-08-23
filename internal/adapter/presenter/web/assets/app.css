@@ -342,3 +342,39 @@
 .page--focus .story { padding: 0 clamp(1rem, 4vw, 3rem) 2rem; }
 .masthead__story { color: var(--accent); text-decoration: none; }
 .masthead__story:hover { text-decoration: underline; }
+
+/* Activity: the provenance trail — who asked what, which model answered, and
+   what it cost. Dense by design; this is a log, not a story. */
+.activity { display: flex; flex-direction: column; gap: 2px; }
+.activity__row {
+  display: grid;
+  grid-template-columns: auto auto auto 1fr auto auto;
+  gap: 0.75rem; align-items: baseline;
+  padding: 0.45rem 0.7rem;
+  background: var(--bg-raised);
+  border: 1px solid var(--rule); border-radius: 4px;
+  font-size: 0.9rem;
+}
+.activity__when { color: var(--fg-dim); font-variant-numeric: tabular-nums; }
+.activity__action {
+  color: var(--accent); font-weight: 700;
+  min-width: 5.5rem;
+}
+.activity__row--narrate .activity__action,
+.activity__row--reanalyse .activity__action,
+.activity__row--ask .activity__action { color: var(--inferred); }
+.activity__unit { color: var(--hunk); text-decoration: none; }
+.activity__unit:hover { text-decoration: underline; }
+.activity__detail {
+  color: var(--fg); min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.activity__model { color: var(--fg-dim); }
+.activity__took { color: var(--add); font-variant-numeric: tabular-nums; }
+.activity__row--failed { border-color: var(--del); }
+.masthead__hint { color: var(--fg-dim); }
+
+@media (max-width: 700px) {
+  .activity__row { grid-template-columns: auto 1fr; }
+  .activity__detail { white-space: normal; grid-column: 1 / -1; }
+}

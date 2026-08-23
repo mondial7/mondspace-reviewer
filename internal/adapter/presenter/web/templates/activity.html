@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Activity — mondspace-reviewer</title>
+  <link rel="stylesheet" href="/assets/app.css">
+  <script type="module" src="/assets/storyline.js" defer></script>
+  <script type="module" src="/assets/live.js" defer></script>
+</head>
+<body class="page">
+  <canvas class="starfield" id="starfield" aria-hidden="true"></canvas>
+
+  <nav class="storynav">
+    <a class="storynav__link" href="/">review</a>
+    <a class="storynav__link" href="/story">story</a>
+    <a class="storynav__link" href="/sessions">all sessions</a>
+    <button class="masthead__focus" id="focus-toggle" type="button"
+            aria-pressed="false" title="Toggle focus mode (f)">focus mode <kbd>f</kbd></button>
+  </nav>
+
+  <header class="masthead">
+    <h1 class="masthead__title">Activity</h1>
+    <p class="masthead__meta">
+      <span class="masthead__count">{{ len .Entries }} recorded</span>
+      <span class="masthead__hint">every annotation, question, re-analysis and
+        narration in <code>{{ .SessionID }}</code> — newest first</span>
+    </p>
+  </header>
+
+  <main class="activity">
+    {{ range .Entries }}
+    <article class="activity__row activity__row--{{ .Action }}{{ if .Failed }} activity__row--failed{{ end }}">
+      <time class="activity__when">{{ .When }}</time>
+      <span class="activity__action">{{ .Action }}</span>
+      {{ if .Unit }}<a class="activity__unit" href="/#unit-{{ .Unit }}">{{ .Unit }}</a>{{ end }}
+      <span class="activity__detail">{{ .Detail }}</span>
+      {{ if .Model }}<span class="activity__model">{{ .Model }}</span>{{ end }}
+      {{ if .Took }}<span class="activity__took">{{ .Took }}</span>{{ end }}
+      {{ if .Failed }}<span class="flag">failed</span>{{ end }}
+    </article>
+    {{ else }}
+    <p class="queue__empty">Nothing recorded yet — annotate a unit, ask a
+      question, or re-analyse a file and it will show up here.</p>
+    {{ end }}
+  </main>
+</body>
+</html>

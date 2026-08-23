@@ -307,25 +307,43 @@ the list of allowed area names is an `enum` — a model *cannot* name an area th
 does not exist. An endpoint that rejects the schema is retried without it, so
 this can never break a working setup.
 
+The effect on a reasoning model is not subtle. Same prompt, same 32k context,
+`qwen/qwen3.5-9b`:
+
+| request | completion tokens | finish | time |
+| --- | --- | --- | --- |
+| plain | 299 (all reasoning) | `length` — truncated, no answer | 107s |
+| schema-enforced | 54 | `stop` — complete JSON | **2.2s** |
+
+Left to itself the model reasons until it runs out of budget and returns
+nothing. The grammar simply does not let it.
+
 ### Reasoning models
 
-A reasoning model spends most of a small context thinking before it emits any
-output: measured at **1,400–3,800 reasoning tokens** for an 81-token prompt,
-which is what makes narration fail on a modest context window. Two ways out:
+A reasoning model spends its budget thinking before it emits any output, which
+is what makes narration fail on a modest context window. Two things help, and
+one thing that sounds like it should does not:
+
+```sh
+lms load qwen/qwen3.5-9b -c 32768 --parallel 1 --ttl 3600   # room to think
+```
+
+Loading at 32k instead of 4k costs ~1.4 GiB and is what makes the story view
+work at all. Structured output (above) is the other half.
 
 ```sh
 export MSR_NO_THINKING=1          # send chat_template_kwargs.enable_thinking=false
 ```
 
-…or give the model room. Loading `qwen/qwen3.5-9b` at 32k instead of 4k costs
-only ~1.4 GiB and is what makes the story view work at all:
+`MSR_NO_THINKING` is opt-in and **had no measurable effect on qwen/qwen3.5-9b
+under LM Studio** — its chat template ignores the flag, and reasoning tokens
+were unchanged. It is kept because other templates do honour it; do not count
+on it without measuring your own model.
 
-```sh
-lms load qwen/qwen3.5-9b -c 32768 --parallel 1 --ttl 3600
-```
-
-`MSR_NO_THINKING` is opt-in: it trades some prose quality for a large speed win,
-and only a model whose chat template reads `enable_thinking` honours it.
+One quirk worth knowing: a schema-constrained reply from LM Studio arrives in
+`reasoning_content` with `content` empty, because the grammar constrains
+sampling inside the template's thinking block. `msr` reads it either way — a
+reply filed as reasoning is still a reply.
 
 If the endpoint is unreachable, `msr` silently falls back to mechanical headlines
 (files + change counts) and an offline notice for questions — **the queue never

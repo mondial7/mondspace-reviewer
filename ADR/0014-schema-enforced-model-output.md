@@ -21,6 +21,12 @@ Two measurements changed what is worth building:
   **llama.cpp grammar** (GGUF) or **Outlines** (MLX) and constrains sampling, so
   the reply cannot be malformed rather than merely being asked not to be.
 
+Measured on the same prompt and a 32k context with `qwen/qwen3.5-9b`: unconstrained,
+the model spent all 299 completion tokens reasoning, hit `finish_reason: length`
+and returned nothing, in 107 seconds. Schema-enforced, it returned complete valid
+JSON in 54 tokens and **2.2 seconds**. Structured output is not a tidiness
+measure here; it is the difference between narration working and not.
+
 ## Decision
 
 **Ask the server to enforce the shape; keep the parser as a backstop.**
@@ -39,9 +45,14 @@ Two measurements changed what is worth building:
   as malformed, so the call is retried without the schema. A 5xx surfaces:
   the server broke, and retrying differently would only hide the fault.
 - `MSR_NO_THINKING=1` sends `chat_template_kwargs: {"enable_thinking": false}`,
-  which LM Studio forwards to the chat template. Measured: reasoning fell from
-  1,400–3,800 to 839 tokens, still valid JSON, 31s. Opt-in, because it trades
-  prose quality for speed and only some chat templates honour it.
+  which LM Studio forwards to the chat template. Kept, but **measured as having
+  no effect on qwen/qwen3.5-9b**: reasoning tokens were unchanged. Its template
+  ignores the flag. Opt-in, and not to be relied on without measuring.
+- **A reply may arrive as reasoning.** With a schema, LM Studio returns the JSON
+  in `reasoning_content` and leaves `content` empty, because the grammar
+  constrains sampling inside the template's thinking block. Reading only
+  `content` is what made narration fall back silently; the adapter now falls
+  back to `reasoning_content` when `content` is empty.
 
 ## Consequences
 

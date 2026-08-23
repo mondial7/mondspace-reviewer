@@ -271,6 +271,45 @@ func TestAnswerLeavesTheReplyFormatFreeByDefault(t *testing.T) {
 	}
 }
 
+func TestAnswerReadsAReplyTheServerFiledAsReasoning(t *testing.T) {
+	// Measured against LM Studio with qwen/qwen3.5-9b: a schema-constrained reply
+	// arrives complete (finish_reason "stop") but in reasoning_content, with
+	// content empty — the grammar constrains sampling inside the template's
+	// thinking block. Treating that as an empty reply is what made narration
+	// silently fall back.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, `{"choices":[{"message":{"role":"assistant","content":"",`+
+			`"reasoning_content":"{\"title\":\"T\",\"prose\":\"p\"}"}}]}`)
+	}))
+	defer srv.Close()
+
+	got, err := openai.New(srv.URL, "m").AnswerSchema(context.Background(), "q", domain.AskContext{}, narrativeSchema())
+	if err != nil {
+		t.Fatalf("AnswerSchema: %v", err)
+	}
+	if got != `{"title":"T","prose":"p"}` {
+		t.Errorf("answer = %q, want the reply the server filed as reasoning", got)
+	}
+}
+
+func TestContentWinsOverReasoningWhenBothArePresent(t *testing.T) {
+	// Reasoning is the model thinking aloud; content is its answer. When there is
+	// an answer, the thinking must never displace it.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, `{"choices":[{"message":{"role":"assistant","content":"the answer",`+
+			`"reasoning_content":"let me think about this"}}]}`)
+	}))
+	defer srv.Close()
+
+	got, err := openai.New(srv.URL, "m").Answer(context.Background(), "q", domain.AskContext{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "the answer" {
+		t.Errorf("answer = %q, want the content", got)
+	}
+}
+
 func TestHeadlineErrorsOnNon2xxAndUnreachable(t *testing.T) {
 	u := domain.Unit{ID: "u1"}
 

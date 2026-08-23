@@ -75,14 +75,24 @@ type AuditEntry struct {
 	TS        time.Time
 	SessionID string
 	UnitID    string
-	Action    string // annotate | ask | reanalyse
+	Action    string // annotate | ask | reanalyse | narrate
 	Detail    string
+	Model     string // the model that served a call, when one did
+	Millis    int64  // how long the call took, when it was a model call
+	Failed    bool
 }
 
 // AuditLog persists interactions. Declared where consumed, so this adapter
 // depends on no other adapter.
 type AuditLog interface {
 	Append(AuditEntry) error
+}
+
+// AuditReader is an optional capability of an AuditLog: reading back what was
+// recorded, which is what /activity shows. A log that can only be appended to
+// still works; its page is simply empty.
+type AuditReader interface {
+	Entries() ([]AuditEntry, error)
 }
 
 // Annotator persists a reviewer's annotation. It is declared where it is
@@ -193,6 +203,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /ask", s.handleAsk)
 	s.mux.HandleFunc("POST /units/{id}/reanalyse", s.handleReanalyse)
 	s.mux.HandleFunc("GET /story", s.handleStory)
+	s.mux.HandleFunc("GET /activity", s.handleActivity)
 	s.mux.HandleFunc("GET /events", s.handleEvents)
 }
 
@@ -453,6 +464,69 @@ func (s *Server) record(e AuditEntry) {
 	}
 	e.TS = s.now()
 	_ = s.audit.Append(e)
+}
+
+// Record logs an interaction that happened outside a request — narration, most
+// of all, which runs in the background and is otherwise invisible. Open pages
+// are told, so /activity updates itself as calls complete.
+func (s *Server) Record(e AuditEntry) {
+	s.record(e)
+	s.broadcast("activity")
+}
+
+// activityView is one audit entry prepared for display.
+type activityView struct {
+	When   string
+	Action string
+	Detail string
+	Unit   string
+	Model  string
+	Took   string
+	Failed bool
+}
+
+// handleActivity shows the trail of what the reviewer and the model did: every
+// annotation, question, re-analysis and narration, with what each model call
+// cost. It renders even with no audit log wired, because the nav always links
+// here and a dead link is worse than an empty page.
+func (s *Server) handleActivity(w http.ResponseWriter, r *http.Request) {
+	var entries []AuditEntry
+	if reader, ok := s.audit.(AuditReader); ok && s.audit != nil {
+		got, err := reader.Entries()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		entries = got
+	}
+
+	// Newest first: a reviewer wants what just happened, not the beginning.
+	rows := make([]activityView, 0, len(entries))
+	for i := len(entries) - 1; i >= 0; i-- {
+		e := entries[i]
+		row := activityView{
+			When: e.TS.Local().Format("15:04:05"), Action: e.Action,
+			Detail: e.Detail, Unit: e.UnitID, Model: e.Model, Failed: e.Failed,
+		}
+		if e.Millis > 0 {
+			row.Took = fmt.Sprintf("%.1fs", float64(e.Millis)/1000)
+		}
+		rows = append(rows, row)
+	}
+
+	s.mu.RLock()
+	sessionID := s.sess.ID
+	s.mu.RUnlock()
+
+	data := struct {
+		SessionID string
+		Entries   []activityView
+	}{SessionID: sessionID, Entries: rows}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := s.tmpl.ExecuteTemplate(w, "activity.html", data); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
 }
 
 // chapterView pairs a chapter's prose with the real units it covers, so the

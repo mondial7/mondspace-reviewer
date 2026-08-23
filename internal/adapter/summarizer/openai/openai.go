@@ -83,7 +83,14 @@ type chatMessage struct {
 
 type chatReply struct {
 	Choices []struct {
-		Message chatMessage `json:"message"`
+		Message struct {
+			Content string `json:"content"`
+			// Reasoning is the model thinking aloud, which some servers split out
+			// of content. A schema-constrained reply from LM Studio arrives here
+			// with content empty, because the grammar constrains sampling inside
+			// the chat template's thinking block.
+			Reasoning string `json:"reasoning_content"`
+		} `json:"message"`
 	} `json:"choices"`
 }
 
@@ -180,7 +187,14 @@ func (s *Summarizer) chat(ctx context.Context, system, user string, format *resp
 	if len(reply.Choices) == 0 {
 		return "", fmt.Errorf("summarizer returned no choices")
 	}
-	return reply.Choices[0].Message.Content, nil
+
+	msg := reply.Choices[0].Message
+	if strings.TrimSpace(msg.Content) == "" {
+		// The answer is in the thinking. Better a reply the caller can parse than
+		// an empty string that reads, wrongly, as "the model had nothing to say".
+		return msg.Reasoning, nil
+	}
+	return msg.Content, nil
 }
 
 // askPrompt renders the bounded context and the question into a user message.

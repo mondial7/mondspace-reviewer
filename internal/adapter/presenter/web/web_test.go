@@ -234,6 +234,73 @@ func (a *recordingAudit) Append(e web.AuditEntry) error {
 	return nil
 }
 
+// readableAudit can also be read back, so it can drive the activity page.
+type readableAudit struct{ recordingAudit }
+
+func (a *readableAudit) Entries() ([]web.AuditEntry, error) { return a.entries, nil }
+
+func TestActivityPageShowsWhatWasRecordedNewestFirst(t *testing.T) {
+	audit := &readableAudit{}
+	audit.entries = []web.AuditEntry{
+		{TS: time.Date(2026, 8, 23, 9, 0, 0, 0, time.UTC), SessionID: "s", UnitID: "s-f001",
+			Action: "annotate", Detail: "objection: wrong"},
+		{TS: time.Date(2026, 8, 23, 9, 5, 0, 0, time.UTC), SessionID: "s",
+			Action: "narrate", Detail: "3 chapters", Model: "qwen/qwen3.5-9b", Millis: 31000},
+	}
+	h := web.NewServer(testSession(), nil).WithAudit(audit)
+
+	rec := get(t, h, "/activity")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /activity = %d, want 200", rec.Code)
+	}
+	body := rec.Body.String()
+
+	for _, want := range []string{"narrate", "annotate", "qwen/qwen3.5-9b", "objection: wrong"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("activity page is missing %q", want)
+		}
+	}
+	// Newest first: the reviewer wants what just happened, not the beginning.
+	if strings.Index(body, "narrate") > strings.Index(body, "annotate") {
+		t.Errorf("entries should be newest first")
+	}
+	// A model call reports what it cost, which is the point of the page.
+	if !strings.Contains(body, "31.0s") && !strings.Contains(body, "31s") {
+		t.Errorf("a model call should show how long it took: %s", body)
+	}
+}
+
+func TestActivityPageExplainsItselfWhenNothingIsRecorded(t *testing.T) {
+	// No audit log wired at all: the page must still render rather than 404,
+	// because a link to it is always in the nav.
+	rec := get(t, web.NewServer(testSession(), nil), "/activity")
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /activity = %d, want 200 even with no audit log", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "Nothing recorded yet") {
+		t.Errorf("an empty activity page should say so: %s", rec.Body.String())
+	}
+}
+
+func TestRecordMakesAModelCallVisibleAndLive(t *testing.T) {
+	audit := &readableAudit{}
+	h := web.NewServer(testSession(), nil).WithAudit(audit)
+
+	h.Record(web.AuditEntry{SessionID: "s", Action: "narrate",
+		Detail: "2 chapters", Model: "qwen/qwen3.5-9b", Millis: 1200})
+
+	if len(audit.entries) != 1 {
+		t.Fatalf("recorded %d entries, want 1", len(audit.entries))
+	}
+	if got := audit.entries[0]; got.Action != "narrate" || got.Model != "qwen/qwen3.5-9b" || got.TS.IsZero() {
+		t.Errorf("entry = %+v, want a timestamped narrate entry naming the model", got)
+	}
+	if !strings.Contains(get(t, h, "/activity").Body.String(), "2 chapters") {
+		t.Error("a recorded call should appear on the activity page")
+	}
+}
+
 func TestAskKeepsConversationHistory(t *testing.T) {
 	var asked []string
 	h := web.NewServer(testSession(), nil).WithAsk(
