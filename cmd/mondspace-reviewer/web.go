@@ -152,7 +152,7 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 		WithRepos(openRepos(), addRepo(*out)).
 		WithAsk(webAskFunc(sess, snap, sum)).
 		WithReanalyse(webReanalyseFunc(snap, sum, *model)).
-		WithAudit(auditFile(filepath.Join(storeRoot, *session, "audit.jsonl")))
+		WithAudit(workspaceAudit{writeTo: filepath.Join(storeRoot, *session, "audit.jsonl")})
 
 	// narrateOnce is the only thing in the app that calls the model unbidden, and
 	// it runs at most once per review: on first sight of it, or when the reviewer
@@ -379,8 +379,43 @@ func webReanalyseFunc(snap port.Snapshotter, sum port.Summarizer, model string) 
 // so a review carries its own provenance (issue #11).
 type auditFile string
 
-// Entries reads the log back for the activity page. A log that has never been
-// written to is not an error — it is an empty history.
+// workspaceAudit writes to the open session's log and reads back every session's,
+// across every repository. Provenance belongs with the session it describes, but
+// "what has been happening" is a question about the whole workspace — filtering
+// the activity page to one session hid work the reviewer had just done.
+type workspaceAudit struct{ writeTo string }
+
+func (a workspaceAudit) Append(e web.AuditEntry) error { return auditFile(a.writeTo).Append(e) }
+
+func (a workspaceAudit) Entries() ([]web.AuditEntry, error) {
+	seen := map[string]bool{}
+	paths := []string{a.writeTo}
+	seen[a.writeTo] = true
+
+	for id, entry := range workspaceIndex {
+		path := filepath.Join(entry.out, id, "audit.jsonl")
+		if !seen[path] {
+			seen[path] = true
+			paths = append(paths, path)
+		}
+	}
+
+	var all []web.AuditEntry
+	for _, path := range paths {
+		got, err := auditFile(path).Entries()
+		if err != nil {
+			continue // one unreadable log must not blank the whole page
+		}
+		all = append(all, got...)
+	}
+	// Oldest first; the page reverses it. Sorting here is what makes several
+	// logs read as one history rather than as concatenated files.
+	sort.SliceStable(all, func(i, j int) bool { return all[i].TS.Before(all[j].TS) })
+	return all, nil
+}
+
+// Entries reads one log back. A log that has never been written to is not an
+// error — it is an empty history.
 func (a auditFile) Entries() ([]web.AuditEntry, error) {
 	f, err := os.Open(string(a))
 	if os.IsNotExist(err) {

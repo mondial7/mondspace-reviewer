@@ -163,13 +163,7 @@
 .diff__line--meta { color: var(--fg-dim); }
 
 /* Annotate */
-.annotate { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; margin-top: 0.9rem; }
 .annotate__label { color: var(--fg-dim); }
-.annotate__text {
-  flex: 1 1 16rem; min-width: 10rem; padding: 0.3rem 0.5rem;
-  background: var(--bg); color: var(--fg);
-  border: 1px solid var(--rule); border-radius: 4px; font: inherit;
-}
 .annotate__btn {
   padding: 0.3rem 0.6rem; cursor: pointer; font: inherit;
   background: var(--bg); color: var(--fg);
@@ -484,7 +478,7 @@
 .activity { display: flex; flex-direction: column; gap: 2px; }
 .activity__row {
   display: grid;
-  grid-template-columns: auto auto auto 1fr auto auto;
+  grid-template-columns: auto auto auto auto 1fr auto auto;
   gap: 0.75rem; align-items: baseline;
   padding: 0.45rem 0.7rem;
   background: var(--bg-raised);
@@ -492,6 +486,7 @@
   font-size: 0.9rem;
 }
 .activity__when { color: var(--fg-dim); font-variant-numeric: tabular-nums; }
+.activity__session { color: var(--hunk); font-size: 0.78rem; }
 .activity__action {
   color: var(--accent); font-weight: 700;
   min-width: 5.5rem;
@@ -764,10 +759,19 @@
 }
 
 /* ── Status board ───────────────────────────────────────────────────────────*/
+/* Two columns, each stacked in a deliberate order: the agent above what it has
+   spent, the repositories above the sessions they hold. auto-fit would reflow
+   them into whatever fitted, which put usage beside its own agent. */
 .board {
   display: grid; gap: var(--gutter);
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
   padding: 0 var(--gutter) var(--gutter);
+}
+.board__col { display: flex; flex-direction: column; gap: var(--gutter); min-width: 0; }
+
+@media (max-width: 900px) {
+  .board { grid-template-columns: minmax(0, 1fr); }
 }
 .board__panel {
   background: var(--panel);
@@ -824,8 +828,25 @@
 
 /* Three rows: the note, the kinds, then the tools. Each row wraps as a unit
    rather than one button at a time. */
-.annotate { display: flex; flex-direction: column; gap: 0.35rem; margin-top: 0.55rem; min-width: 0; }
-.annotate__text { width: 100%; min-width: 0; }
+.annotate {
+  display: flex; flex-direction: column; align-items: stretch;
+  gap: 0.35rem; margin-top: 0.55rem; min-width: 0;
+}
+/* Two rows to start, growable by hand. The height is stated in `rows` and in
+   `field-sizing`, never left to a flex basis — as a column item, a basis is a
+   height, which is how this became a 16rem box. */
+.annotate__text {
+  width: 100%; min-width: 0;
+  flex: 0 0 auto;
+  padding: 0.35rem 0.5rem;
+  background: var(--bg); color: var(--fg);
+  border: 1px solid var(--rule); border-radius: 4px;
+  font: inherit; line-height: 1.4;
+  resize: vertical;
+  min-height: 2.6rem;
+  max-height: 12rem;
+}
+.annotate__text:focus { outline: none; border-color: var(--accent); }
 .annotate__kinds { display: flex; gap: 0.3rem; flex-wrap: wrap; }
 .annotate__btn { white-space: nowrap; flex: 0 0 auto; }
 

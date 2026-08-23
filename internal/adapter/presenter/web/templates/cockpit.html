@@ -230,8 +230,8 @@
           <!-- Three rows: write the note, choose what kind it is, then the
                tools that act on the file itself. -->
           <form class="annotate" method="post" action="/units/{{ .ID }}/notes">
-            <input class="annotate__text" name="text" type="text"
-                   placeholder="optional note…" autocomplete="off">
+            <textarea class="annotate__text" name="text" rows="2"
+                      placeholder="optional note…" autocomplete="off"></textarea>
             <div class="annotate__kinds">
               <button class="annotate__btn annotate__btn--ok" name="kind" value="ok">ok</button>
               <button class="annotate__btn annotate__btn--question" name="kind" value="question">question</button>

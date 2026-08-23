@@ -24,6 +24,7 @@
   </nav>
 
   <main class="board">
+    <div class="board__col">
 
     <!-- The reviewer's own model: the one thing no other page reports. -->
     <section class="board__panel">
@@ -76,6 +77,9 @@
       </div>
     </section>
 
+    </div>
+
+    <div class="board__col">
     <!-- The repositories this workspace holds, and a way to open another. -->
     <section class="board__panel">
       <h2 class="board__title">repositories</h2>
@@ -115,6 +119,7 @@
       <p class="queue__empty">No sessions recorded for this project yet.</p>
       {{ end }}
     </section>
+    </div>
   </main>
 </body>
 </html>

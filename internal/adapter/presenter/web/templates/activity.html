@@ -28,7 +28,7 @@
     <p class="masthead__meta">
       <span class="masthead__count">{{ len .Entries }} recorded</span>
       <span class="masthead__hint">every annotation, question, re-analysis and
-        narration in <code>{{ .SessionID }}</code> — newest first</span>
+        narration across every session in the workspace — newest first</span>
     </p>
   </header>
 
@@ -36,6 +36,7 @@
     {{ range .Entries }}
     <article class="activity__row activity__row--{{ .Action }}{{ if .Failed }} activity__row--failed{{ end }}">
       <time class="activity__when">{{ .When }}</time>
+      {{ with .Session }}<span class="activity__session">{{ . }}</span>{{ end }}
       <span class="activity__action">{{ .Action }}</span>
       {{ if .Unit }}<a class="activity__unit" href="/#unit-{{ .Unit }}">{{ .Unit }}</a>{{ end }}
       <span class="activity__detail">{{ .Detail }}</span>

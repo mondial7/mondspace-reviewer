@@ -1113,13 +1113,27 @@ func thousands(n int) string {
 
 // activityView is one audit entry prepared for display.
 type activityView struct {
-	When   string
-	Action string
-	Detail string
-	Unit   string
-	Model  string
-	Took   string
-	Failed bool
+	When    string
+	Session string
+	Action  string
+	Detail  string
+	Unit    string
+	Model   string
+	Took    string
+	Failed  bool
+}
+
+// shortSession abbreviates a session id to something that fits a column. A ULID
+// or a UUID is unreadable in full and unnecessary: the first segment is enough
+// to tell two sessions apart at a glance.
+func shortSession(id string) string {
+	if i := strings.Index(id, "-"); i > 0 {
+		return id[:i]
+	}
+	if len(id) > 8 {
+		return id[:8]
+	}
+	return id
 }
 
 // handleActivity shows the trail of what the reviewer and the model did: every
@@ -1142,8 +1156,9 @@ func (s *Server) handleActivity(w http.ResponseWriter, r *http.Request) {
 	for i := len(entries) - 1; i >= 0; i-- {
 		e := entries[i]
 		row := activityView{
-			When: e.TS.Local().Format("15:04:05"), Action: e.Action,
-			Detail: e.Detail, Unit: e.UnitID, Model: e.Model, Failed: e.Failed,
+			When: e.TS.Local().Format("01-02 15:04:05"), Session: shortSession(e.SessionID),
+			Action: e.Action, Detail: e.Detail, Unit: e.UnitID,
+			Model: e.Model, Failed: e.Failed,
 		}
 		if e.Millis > 0 {
 			row.Took = fmt.Sprintf("%.1fs", float64(e.Millis)/1000)
