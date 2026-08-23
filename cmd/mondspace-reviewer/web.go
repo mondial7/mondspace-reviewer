@@ -152,7 +152,7 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 		WithLoader(targetLoader()).
 		WithVersions(snap.FileVersions, snap.DiffAt).
 		WithRepos(openRepos(), addRepo(*out)).
-		WithDescribe(describeGroup(sess, units, diffs, sum, store)).
+		WithDescribe(describeAnyTarget(sum)).
 		WithExchanges(exchangeStore(store), sess.Exchanges).
 		WithAsk(webAskFunc(sess, units, diffs, snap, sum)).
 		WithReanalyse(webReanalyseFunc(snap, sum, *model)).
@@ -162,7 +162,11 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 	// it runs at most once per review: on first sight of it, or when the reviewer
 	// asks again. Whatever it produces — model story or fallback — is stored with
 	// the review's fingerprint, so a failure is not retried by navigating.
-	narrateOnce := func(ctx context.Context) {
+	narrateOnce := func(ctx context.Context, targetID string) {
+		if targetID != "" && targetID != *session {
+			narrateTarget(ctx, handlerRef(), sum, targetID, *model)
+			return
+		}
 		narrateCtx, cancel := context.WithTimeout(ctx, 20*time.Minute)
 		defer cancel()
 
@@ -206,6 +210,7 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 		}
 	}
 	handler = handler.WithNarrate(narrateOnce)
+	setHandler(handler)
 
 	srv := &http.Server{
 		Handler:           handler,
@@ -215,7 +220,7 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 		// Never narrated, or the stored story is stale. Write it once now; from
 		// here on it is the reviewer's call. Going through the server means this
 		// and a retry click can never overlap.
-		handler.NarrateNow(context.Background())
+		handler.NarrateNow(context.Background(), *session)
 	}
 
 	// A cockpit left open on a second screen must not go stale: the session it is
@@ -507,7 +512,7 @@ type reviewRefresher struct {
 	baseline    domain.SnapshotRef
 	model       string
 	fingerprint string
-	narrate     func(context.Context)
+	narrate     func(context.Context, string)
 }
 
 // reviewTick is how often the review is checked for movement. One `git diff
@@ -583,7 +588,7 @@ func refreshReview(ctx context.Context, r reviewRefresher) {
 					SessionID: r.sessionID, Action: "renarrate-queued",
 					Detail: "the review changed; asking the model to re-read it",
 				})
-				r.handler.NarrateNow(ctx)
+				r.handler.NarrateNow(ctx, r.sessionID)
 			}
 		}
 	}
@@ -952,34 +957,108 @@ func exchangeStore(store port.Store) web.ExchangeStore {
 	return nil
 }
 
-// describeGroup writes what one group of changes is for, on request. The
-// automatic pass is bounded, so in a large session most groups arrive
-// undescribed; this is the reviewer asking for one, and it is saved with the
-// story so it is written once.
-func describeGroup(sess domain.Session, units []domain.Unit, diffs map[string]domain.Diff, sum port.Summarizer, store port.Store) web.DescribeFunc {
-	return func(ctx context.Context, groupID string) (string, error) {
+// The handler is needed by the target-aware narration below, which is built
+// before the handler exists. A single assignment after construction is simpler
+// than threading a promise through six builder calls.
+var liveHandler *web.Server
+
+func setHandler(h *web.Server) { liveHandler = h }
+func handlerRef() *web.Server  { return liveHandler }
+
+// narrateTarget reads a target that is not the one this server started with —
+// a commit, a tag, a pull request — and stores the story against it. Reviewing
+// any of them is the point of ADR 0017; narrating only one would undercut it.
+func narrateTarget(ctx context.Context, handler *web.Server, sum port.Summarizer, targetID, model string) {
+	entry, known := targetIndex[targetID]
+	if !known || handler == nil {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Minute)
+	defer cancel()
+
+	units, diffs, err := unitsFor(ctx, entry)
+	if err != nil {
+		return
+	}
+	started := time.Now()
+	narrative, err := usecase.NarrateProgressively(ctx, sum, domain.Session{
+		ID: targetID, Prompt: entry.target.Title,
+	}, units, func(partial domain.Narrative) { handler.SetNarrativeFor(targetID, partial) })
+	narrative.Fingerprint = usecase.Fingerprint(units)
+	narrative.Model = model
+
+	record := web.AuditEntry{
+		SessionID: targetID, Action: "narrate", Model: model,
+		Millis: time.Since(started).Milliseconds(),
+		Detail: fmt.Sprintf("%s %q: %d chapters, %s",
+			entry.target.Kind, usecase.Brief(entry.target.Title, 40),
+			len(narrative.Chapters), narrative.Source),
+	}
+	if err != nil {
+		record.Failed = true
+		record.Detail = err.Error()
+	}
+
+	groups := usecase.GroupChanges(units, diffs)
+	narrative.Meanings = usecase.DescribeGroups(ctx, sum, domain.Session{Prompt: entry.target.Title},
+		groups, func(partial map[string]string) {
+			live := narrative
+			live.Meanings = partial
+			handler.SetNarrativeFor(targetID, live)
+		})
+
+	handler.Record(record)
+	handler.SetNarrativeFor(targetID, narrative)
+	_ = jsonl.New(entry.out).SaveNarrative(narrative)
+}
+
+// unitsFor is the net change a target covers. It is the same engine every other
+// review uses; only the two refs differ.
+func unitsFor(ctx context.Context, entry targetEntry) ([]domain.Unit, map[string]domain.Diff, error) {
+	snap := gitsnap.New(entry.repo, entry.target.ID)
+	storeRel := storeRelativeTo(entry.repo, entry.out)
+	return usecase.BuildFileUnits(ctx, snap, entry.target.ID, entry.target.From, entry.target.To,
+		func(f string) bool {
+			return f == storeRel || strings.HasPrefix(f, storeRel+"/")
+		})
+}
+
+// describeAnyTarget writes what one group of changes is for, in whichever target
+// is open — not only the one the server started with.
+func describeAnyTarget(sum port.Summarizer) web.DescribeFunc {
+	return func(ctx context.Context, targetID, groupID string) (string, error) {
+		entry, known := targetIndex[targetID]
+		if !known {
+			return "", fmt.Errorf("nothing here to review under %q", targetID)
+		}
 		ctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 		defer cancel()
 
+		units, diffs, err := unitsFor(ctx, entry)
+		if err != nil {
+			return "", err
+		}
 		for _, g := range usecase.GroupChanges(units, diffs) {
 			if g.ID != groupID {
 				continue
 			}
-			described := usecase.DescribeGroups(ctx, sum, sess, []domain.ChangeGroup{g}, nil)
+			described := usecase.DescribeGroups(ctx, sum,
+				domain.Session{Prompt: entry.target.Title}, []domain.ChangeGroup{g}, nil)
 			meaning, ok := described[groupID]
 			if !ok {
 				return "", fmt.Errorf("the model did not describe this change")
 			}
-
-			// Persist it with the story, so the next launch does not pay again.
-			if cache, ok := store.(narrativeCache); ok {
-				if stored, err := cache.LoadNarrative(sess.ID); err == nil && len(stored.Chapters) > 0 {
-					if stored.Meanings == nil {
-						stored.Meanings = map[string]string{}
-					}
-					stored.Meanings[groupID] = meaning
-					_ = cache.SaveNarrative(stored)
+			// Saved with that target's story, so it is written once.
+			store := jsonl.New(entry.out)
+			stored, err := store.LoadNarrative(targetID)
+			if err == nil {
+				if stored.Meanings == nil {
+					stored.Meanings = map[string]string{}
 				}
+				stored.Meanings[groupID] = meaning
+				stored.SessionID = targetID
+				_ = store.SaveNarrative(stored)
 			}
 			return meaning, nil
 		}

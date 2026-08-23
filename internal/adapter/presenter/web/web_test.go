@@ -249,7 +249,7 @@ func TestCockpitOffersRetryOnlyWhenTheModelHasNotNarrated(t *testing.T) {
 
 	// Fell back to mechanical grouping: offer the reviewer a way to try again.
 	h := web.NewServer(testSession(), nil).WithNarrative(mechanical).
-		WithNarrate(func(context.Context) {})
+		WithNarrate(func(context.Context, string) {})
 	if !strings.Contains(get(t, h, "/").Body.String(), "/story/narrate") {
 		t.Error("a mechanical story should offer a retry")
 	}
@@ -259,7 +259,7 @@ func TestCockpitOffersRetryOnlyWhenTheModelHasNotNarrated(t *testing.T) {
 	narrated := mechanical
 	narrated.Source = domain.NarrativeModel
 	h = web.NewServer(testSession(), nil).WithNarrative(narrated).
-		WithNarrate(func(context.Context) {})
+		WithNarrate(func(context.Context, string) {})
 	if strings.Contains(get(t, h, "/").Body.String(), "/story/narrate") {
 		t.Error("a model-narrated story should not offer a retry")
 	}
@@ -278,7 +278,7 @@ func TestNarrateRunsInTheBackgroundAndNeverTwiceAtOnce(t *testing.T) {
 	var mu sync.Mutex
 	started := 0
 
-	h := web.NewServer(testSession(), nil).WithNarrate(func(context.Context) {
+	h := web.NewServer(testSession(), nil).WithNarrate(func(context.Context, string) {
 		mu.Lock()
 		started++
 		mu.Unlock()
@@ -933,7 +933,7 @@ func TestDescribingOneGroupOnDemand(t *testing.T) {
 	var asked string
 	h := web.NewServer(testSession(), nil).
 		WithNarrative(domain.Narrative{SessionID: "s", Source: domain.NarrativeModel}).
-		WithDescribe(func(_ context.Context, groupID string) (string, error) {
+		WithDescribe(func(_ context.Context, _, groupID string) (string, error) {
 			asked = groupID
 			return "Persists the story so a restart costs nothing.", nil
 		})
@@ -970,7 +970,7 @@ func TestDescribeButtonIsOfferedOnlyWhenItCanDoSomething(t *testing.T) {
 	}
 
 	h := web.NewServer(testSession(), nil).WithDescribe(
-		func(context.Context, string) (string, error) { return "x", nil })
+		func(context.Context, string, string) (string, error) { return "x", nil })
 	if !strings.Contains(get(t, h, "/").Body.String(), "/describe") {
 		t.Error("a wired describer should offer the control")
 	}

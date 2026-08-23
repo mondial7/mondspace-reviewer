@@ -99,7 +99,7 @@ type ReanalyseFunc func(ctx context.Context, u domain.Unit) (domain.Headline, st
 
 // NarrateFunc regenerates the session's story. It is slow — several model calls
 // — so it runs in the background and open pages are told when it lands.
-type NarrateFunc func(ctx context.Context)
+type NarrateFunc func(ctx context.Context, targetID string)
 
 // AuditEntry records one reviewer interaction. Once reviews are shared, these
 // are records, not a cache: who did what, when (issue #11).
@@ -159,7 +159,7 @@ type AddRepoFunc func(path string) ([]SessionSummary, []RepoStatus, error)
 // DescribeFunc writes what one group of changes is for, on demand. The
 // automatic pass is bounded (ADR 0014), so most groups in a large session are
 // left undescribed; this is how a reviewer asks for one.
-type DescribeFunc func(ctx context.Context, groupID string) (string, error)
+type DescribeFunc func(ctx context.Context, targetID, groupID string) (string, error)
 
 // Loader materialises one session's review on demand. A workspace may span
 // several repositories and many sessions; building every one at start-up would
@@ -335,9 +335,10 @@ func (s *Server) handleDescribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	target := s.openSession(r).ID
 	groupID := r.PathValue("id")
 	started := time.Now()
-	meaning, err := describe(context.WithoutCancel(r.Context()), groupID)
+	meaning, err := describe(context.WithoutCancel(r.Context()), target, groupID)
 
 	entry := AuditEntry{Action: "describe", Detail: groupID,
 		Millis: time.Since(started).Milliseconds()}
@@ -345,17 +346,12 @@ func (s *Server) handleDescribe(w http.ResponseWriter, r *http.Request) {
 		entry.Failed = true
 		entry.Detail = groupID + ": " + err.Error()
 	} else {
-		s.mu.Lock()
-		if s.sess.Narrative.Meanings == nil {
-			s.sess.Narrative.Meanings = map[string]string{}
-		}
-		s.sess.Narrative.Meanings[groupID] = meaning
-		s.mu.Unlock()
+		s.describedGroup(target, groupID, meaning)
 	}
 	s.Record(entry)
 	s.broadcast("narrative")
 
-	http.Redirect(w, r, "/#group-"+groupID, http.StatusSeeOther)
+	http.Redirect(w, r, "/?target="+target+"#group-"+groupID, http.StatusSeeOther)
 }
 
 // WithVersions wires the file-history overlay: the commits that touched a file,
@@ -487,6 +483,43 @@ func (s *Server) SetStats(st domain.SessionStats) {
 func (s *Server) WithNarrative(n domain.Narrative) *Server {
 	s.sess.Narrative = n
 	return s
+}
+
+// describedGroup records one group's meaning against whichever target it
+// belongs to — the one being read, which is not necessarily the one this server
+// started with.
+func (s *Server) describedGroup(targetID, groupID, meaning string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	apply := func(sess *Session) {
+		if sess.Narrative.Meanings == nil {
+			sess.Narrative.Meanings = map[string]string{}
+		}
+		sess.Narrative.Meanings[groupID] = meaning
+	}
+	if targetID == "" || targetID == s.sess.ID {
+		apply(&s.sess)
+		return
+	}
+	if cached, ok := s.loaded[targetID]; ok {
+		apply(&cached)
+		s.loaded[targetID] = cached
+	}
+}
+
+// SetNarrativeFor replaces the story of whichever target was narrated, which
+// may be one opened from the picker rather than the one served at start-up.
+func (s *Server) SetNarrativeFor(targetID string, n domain.Narrative) {
+	s.mu.Lock()
+	if targetID == "" || targetID == s.sess.ID {
+		s.sess.Narrative = n
+	} else if cached, ok := s.loaded[targetID]; ok {
+		cached.Narrative = n
+		s.loaded[targetID] = cached
+	}
+	s.mu.Unlock()
+	s.broadcast("narrative")
 }
 
 // SetNarrative replaces the story while the server is running, so a slow model
@@ -965,20 +998,23 @@ func (s *Server) handleNarrate(w http.ResponseWriter, r *http.Request) {
 	// The request context dies when this handler returns, so the background work
 	// gets one that outlives it. Already running is not an error: the reviewer
 	// gets the story either way.
-	s.NarrateNow(context.WithoutCancel(r.Context()))
-	http.Redirect(w, r, "/story", http.StatusSeeOther)
+	// Whatever is open is what gets narrated: a commit and a tag are as
+	// narratable as a recorded run (ADR 0017).
+	target := s.openSession(r).ID
+	s.NarrateNow(context.WithoutCancel(r.Context()), target)
+	http.Redirect(w, r, "/?target="+target, http.StatusSeeOther)
 }
 
 // NarrateNow starts narration in the background unless one is already running,
 // reporting whether it started. Both the startup narration and the reviewer's
 // retry go through here, so the two can never overlap.
-func (s *Server) NarrateNow(ctx context.Context) bool {
+func (s *Server) NarrateNow(ctx context.Context, targetID string) bool {
 	if !s.beginNarration() {
 		return false
 	}
 	go func() {
 		defer s.endNarration()
-		s.narrate(ctx)
+		s.narrate(ctx, targetID)
 	}()
 	s.broadcast("narrative") // tell open pages it has started
 	return true
@@ -1036,8 +1072,8 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 	thread := append([]Exchange(nil), s.thread...)
 	hasAsk := s.ask != nil
 	hasReanal := s.reanalyse != nil
-	canRetry := s.narrate != nil && narrative.Source != domain.NarrativeModel &&
-		sess.ID == s.sess.ID // only the session this server is tracking can re-narrate
+	// Any target can be narrated now, not only the one this server started with.
+	canRetry := s.narrate != nil && narrative.Source != domain.NarrativeModel
 	narrating := s.narrating
 	s.mu.RUnlock()
 
