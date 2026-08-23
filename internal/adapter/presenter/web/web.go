@@ -7,6 +7,7 @@
 package web
 
 import (
+	"context"
 	"embed"
 	"html/template"
 	"io/fs"
@@ -38,6 +39,51 @@ type Session struct {
 	Diffs  map[string]domain.Diff
 }
 
+// SessionSummary is one row of the workspace: a review that exists, wherever it
+// came from. Sessions span repos and agents (issue #8).
+type SessionSummary struct {
+	ID      string
+	Repo    string
+	Agent   string
+	Prompt  string
+	Files   int
+	Flags   int
+	Open    int // unresolved questions and objections
+	Started time.Time
+}
+
+// Exchange is one question and its answer. Review is iterative dialogue, so the
+// thread is kept and handed back to the assistant as context (issue #12).
+type Exchange struct {
+	Question string
+	Answer   string
+	TS       time.Time
+}
+
+// AskFunc answers a question given everything already discussed.
+type AskFunc func(ctx context.Context, question string, history []Exchange) (string, error)
+
+// ReanalyseFunc re-summarises one unit, returning the headline and the model
+// that produced it. Re-running with a better model is cheap because the diff is
+// stable (issue #10).
+type ReanalyseFunc func(ctx context.Context, u domain.Unit) (domain.Headline, string, error)
+
+// AuditEntry records one reviewer interaction. Once reviews are shared, these
+// are records, not a cache: who did what, when (issue #11).
+type AuditEntry struct {
+	TS        time.Time
+	SessionID string
+	UnitID    string
+	Action    string // annotate | ask | reanalyse
+	Detail    string
+}
+
+// AuditLog persists interactions. Declared where consumed, so this adapter
+// depends on no other adapter.
+type AuditLog interface {
+	Append(AuditEntry) error
+}
+
 // Annotator persists a reviewer's annotation. It is declared where it is
 // consumed so this adapter depends on no other adapter.
 type Annotator interface {
@@ -51,8 +97,14 @@ type Server struct {
 	tmpl  *template.Template
 	notes Annotator
 
-	mu   sync.RWMutex
-	sess Session
+	mu        sync.RWMutex
+	sess      Session
+	workspace []SessionSummary
+	thread    []Exchange
+	models    map[string]string // unit ID -> model that produced its headline
+	ask       AskFunc
+	reanalyse ReanalyseFunc
+	audit     AuditLog
 
 	newID func() string
 	now   func() time.Time
@@ -62,12 +114,13 @@ type Server struct {
 // case annotations are held in memory only.
 func NewServer(sess Session, notes Annotator) *Server {
 	s := &Server{
-		mux:   http.NewServeMux(),
-		tmpl:  template.Must(template.New("").Funcs(funcs()).ParseFS(templates, "templates/*.html")),
-		sess:  sess,
-		notes: notes,
-		newID: func() string { return ulid.Make().String() },
-		now:   func() time.Time { return time.Now().UTC() },
+		mux:    http.NewServeMux(),
+		tmpl:   template.Must(template.New("").Funcs(funcs()).ParseFS(templates, "templates/*.html")),
+		sess:   sess,
+		notes:  notes,
+		models: map[string]string{},
+		newID:  func() string { return ulid.Make().String() },
+		now:    func() time.Time { return time.Now().UTC() },
 	}
 	s.routes()
 	return s
@@ -76,6 +129,30 @@ func NewServer(sess Session, notes Annotator) *Server {
 // WithClock overrides id and time generation for deterministic tests.
 func (s *Server) WithClock(newID func() string, now func() time.Time) *Server {
 	s.newID, s.now = newID, now
+	return s
+}
+
+// WithAsk wires the reviewer-assistant. Without it, the ask panel is not shown.
+func (s *Server) WithAsk(fn AskFunc) *Server {
+	s.ask = fn
+	return s
+}
+
+// WithReanalyse wires per-unit re-analysis; without it, the button is not shown.
+func (s *Server) WithReanalyse(fn ReanalyseFunc) *Server {
+	s.reanalyse = fn
+	return s
+}
+
+// WithAudit records every reviewer interaction.
+func (s *Server) WithAudit(a AuditLog) *Server {
+	s.audit = a
+	return s
+}
+
+// WithWorkspace supplies the sessions listed at /sessions.
+func (s *Server) WithWorkspace(sessions []SessionSummary) *Server {
+	s.workspace = sessions
 	return s
 }
 
@@ -89,6 +166,9 @@ func (s *Server) routes() {
 	s.mux.Handle("GET /assets/", http.StripPrefix("/assets/", http.FileServer(http.FS(static))))
 	s.mux.HandleFunc("GET /{$}", s.handleIndex)
 	s.mux.HandleFunc("POST /units/{id}/notes", s.handleAnnotate)
+	s.mux.HandleFunc("GET /sessions", s.handleWorkspace)
+	s.mux.HandleFunc("POST /ask", s.handleAsk)
+	s.mux.HandleFunc("POST /units/{id}/reanalyse", s.handleReanalyse)
 }
 
 // noteKinds are the annotations a reviewer may attach (SPEC §11).
@@ -135,6 +215,8 @@ func (s *Server) handleAnnotate(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	s.sess.Notes = append(s.sess.Notes, note)
 	s.mu.Unlock()
+	s.record(AuditEntry{SessionID: unit.SessionID, UnitID: unit.ID,
+		Action: "annotate", Detail: string(note.Kind) + ": " + note.Text})
 
 	http.Redirect(w, r, "/#unit-"+unit.ID, http.StatusSeeOther)
 }
@@ -164,6 +246,7 @@ type unitView struct {
 	Removed  int
 	Diff     []diffLine
 	Notes    []domain.Note
+	Model    string
 }
 
 type diffLine struct {
@@ -174,13 +257,112 @@ type diffLine struct {
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	s.mu.RLock()
 	data := struct {
-		Session Session
-		Units   []unitView
-	}{Session: s.sess, Units: s.views()}
+		Session   Session
+		Units     []unitView
+		Thread    []Exchange
+		HasAsk    bool
+		HasReanal bool
+	}{Session: s.sess, Units: s.views(), Thread: s.thread,
+		HasAsk: s.ask != nil, HasReanal: s.reanalyse != nil}
 	s.mu.RUnlock()
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := s.tmpl.ExecuteTemplate(w, "index.html", data); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+// handleAsk answers a question in the running conversation. An assistant that
+// is offline or failing becomes a visible notice, never a 500.
+func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	question := strings.TrimSpace(r.FormValue("question"))
+	if question == "" {
+		http.Redirect(w, r, "/#ask", http.StatusSeeOther)
+		return
+	}
+
+	answer := "(no assistant configured)"
+	if s.ask != nil {
+		s.mu.RLock()
+		history := append([]Exchange(nil), s.thread...)
+		s.mu.RUnlock()
+
+		got, err := s.ask(r.Context(), question, history)
+		if err != nil {
+			answer = "(" + err.Error() + ")"
+		} else {
+			answer = got
+		}
+	}
+
+	s.mu.Lock()
+	s.thread = append(s.thread, Exchange{Question: question, Answer: answer, TS: s.now()})
+	sessionID := s.sess.ID
+	s.mu.Unlock()
+	s.record(AuditEntry{SessionID: sessionID, Action: "ask", Detail: question})
+
+	http.Redirect(w, r, "/#ask", http.StatusSeeOther)
+}
+
+// handleReanalyse re-summarises one unit with the configured model, replacing
+// its headline and recording which model produced it.
+func (s *Server) handleReanalyse(w http.ResponseWriter, r *http.Request) {
+	unit, ok := s.unit(r.PathValue("id"))
+	if !ok {
+		http.Error(w, "unknown unit", http.StatusNotFound)
+		return
+	}
+	if s.reanalyse == nil {
+		http.Error(w, "no analyser configured", http.StatusBadRequest)
+		return
+	}
+
+	headline, model, err := s.reanalyse(r.Context(), unit)
+	if err != nil {
+		// A failing model must not lose the existing headline.
+		s.record(AuditEntry{SessionID: unit.SessionID, UnitID: unit.ID,
+			Action: "reanalyse", Detail: "failed: " + err.Error()})
+		http.Redirect(w, r, "/#unit-"+unit.ID, http.StatusSeeOther)
+		return
+	}
+
+	s.mu.Lock()
+	for i := range s.sess.Units {
+		if s.sess.Units[i].ID == unit.ID {
+			s.sess.Units[i].Headline = headline
+			break
+		}
+	}
+	s.models[unit.ID] = model
+	s.mu.Unlock()
+	s.record(AuditEntry{SessionID: unit.SessionID, UnitID: unit.ID,
+		Action: "reanalyse", Detail: model})
+
+	http.Redirect(w, r, "/#unit-"+unit.ID, http.StatusSeeOther)
+}
+
+// record appends to the audit log. A log that cannot be written must not break
+// the review, so the error is swallowed after a best-effort attempt.
+func (s *Server) record(e AuditEntry) {
+	if s.audit == nil {
+		return
+	}
+	e.TS = s.now()
+	_ = s.audit.Append(e)
+}
+
+// handleWorkspace lists every known review, across repos and agents.
+func (s *Server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
+	s.mu.RLock()
+	data := struct{ Sessions []SessionSummary }{Sessions: s.workspace}
+	s.mu.RUnlock()
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := s.tmpl.ExecuteTemplate(w, "sessions.html", data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
@@ -226,6 +408,7 @@ func (s *Server) view(u domain.Unit) unitView {
 		Removed:  removed,
 		Diff:     splitDiff(d.Text),
 		Notes:    notes,
+		Model:    s.models[u.ID],
 	}
 }
 

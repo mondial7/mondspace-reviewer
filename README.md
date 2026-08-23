@@ -83,7 +83,7 @@ cd mondspace-reviewer
 go build -o msr ./cmd/mondspace-reviewer
 ```
 
-Requires **Go 1.24+**, `git`, and no CGO. The optional headline/interrogation
+Requires **Go 1.25+**, `git`, and no CGO. The optional headline/interrogation
 features talk to any OpenAI-compatible endpoint (defaulting to a local
 [LM Studio](https://lmstudio.ai) server) and degrade gracefully when it is absent.
 
@@ -157,6 +157,7 @@ annotations still have a stable home.
    ```sh
    msr ask --scope=session --session=<session-id> "did the retry change have a stated reason?"
    msr export --format=md --session=<session-id> > review.md
+   msr export --format=slack --session=<session-id>   # one concise message, ready to post
    ```
 
 ## Commands
@@ -168,8 +169,9 @@ annotations still have a stable home.
 | `msr review --source=replay\|hooks\|opencode [--plain\|--tui] [--verbose]` | Cluster and present the session. `--verbose` (`-v`) lists each unit's member events and snapshot refs. |
 | `msr review --since=<ref> [--until=<ref>] [--plain\|--tui] [--repo=.]` | Review the net change from `--since` to `--until` (default: the working tree) — no `--session` required. |
 | `msr ask --scope=unit\|session --session=… "question"` | Answer a question from the bounded log context. |
-| `msr export --format=md\|json --session=…` | Produce the review report, debt list, and open agenda. |
+| `msr export --format=md\|json\|slack --session=…` | Produce the review report, debt list, and open agenda — or a concise single Slack message. |
 | `msr web --session=… --repo=.` | Serve the review as a localhost web app (scrollable diffs, click-to-annotate). |
+| `msr gc [--session=<id>] [--repo=.] [--dry-run]` | Delete throwaway review refs (`refs/mondspace/review/*`) for closed sessions — or one session's ref with `--session`. `--dry-run` prints what would be removed. |
 
 ## Flags (deterministic, no model)
 
@@ -301,7 +303,8 @@ MSR_SUMMARIZER_URL=http://localhost:1234/v1 MSR_MODEL=qwen/qwen3.5-9b \
 - Deterministic flags + interactive bubbletea TUI with annotations and supersession
 - LM Studio headlines with `stated`/`inferred` discipline and async fill-in
 - Interrogation (`a` / `A`, plus a scriptable `ask`)
-- Export to Markdown and JSON
+- Export to Markdown, JSON, and a concise single Slack message
+- `msr gc` to delete throwaway review refs for closed sessions
 - A second agent event source, `opencode` (ADR 0006), alongside `hooks`
 
 Planned work is tracked in [issues](https://github.com/mondial7/mondspace-reviewer/issues).

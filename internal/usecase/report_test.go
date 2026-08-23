@@ -117,18 +117,32 @@ func TestBuildReportCollectsDebt(t *testing.T) {
 	}
 }
 
-func TestBuildReportCarriesFlags(t *testing.T) {
+func TestBuildReportCarriesUnitFlags(t *testing.T) {
 	sess := reportSession()
-	sess.Units[1].Flags = []domain.Flag{domain.FlagFailed}
+	// s-u002 has no test coverage for its source file — give it a flag to carry.
+	for i := range sess.Units {
+		if sess.Units[i].ID == "s-u002" {
+			sess.Units[i].Flags = []domain.Flag{domain.FlagNoTest}
+		}
+	}
 
 	r := usecase.BuildReport(sess)
 
 	obj, found := groupFor(r, domain.NoteObjection)
 	if !found || len(obj.Items) != 1 {
-		t.Fatalf("objection group = %+v, want one item on s-u002", obj)
+		t.Fatalf("objection group = %+v, want one item", obj)
 	}
-	if !hasFlag(obj.Items[0].Flags, domain.FlagFailed) {
-		t.Errorf("item flags = %v, want failed carried from the unit", obj.Items[0].Flags)
+	if len(obj.Items[0].Flags) != 1 || obj.Items[0].Flags[0] != domain.FlagNoTest {
+		t.Errorf("Flags = %v, want [no-test] carried from the unit", obj.Items[0].Flags)
+	}
+
+	// s-u001 was never flagged.
+	ok, found := groupFor(r, domain.NoteOK)
+	if !found || len(ok.Items) != 1 {
+		t.Fatalf("ok group = %+v, want one item", ok)
+	}
+	if len(ok.Items[0].Flags) != 0 {
+		t.Errorf("Flags = %v, want none", ok.Items[0].Flags)
 	}
 }
 

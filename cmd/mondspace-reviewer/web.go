@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -30,6 +31,8 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 	repo := fs.String("repo", ".", "repository to review")
 	session := fs.String("session", "", "session id")
 	schema := fs.String("pg-schema", pgstore.DefaultSchema, "Postgres schema (never public)")
+	summarizerURL := fs.String("summarizer-url", defaultSummarizerURL, "OpenAI-compatible summarizer endpoint")
+	model := fs.String("model", defaultModel, "summarizer model")
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
 	}
@@ -71,8 +74,15 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 		Diffs:  diffs,
 	}
 
+	sum := chooseSummarizer(*summarizerURL, *model)
+	handler := web.NewServer(view, store).
+		WithWorkspace(discoverSessions(*out, *repo)).
+		WithAsk(webAskFunc(sess, snap, sum)).
+		WithReanalyse(webReanalyseFunc(snap, sum, *model)).
+		WithAudit(auditFile(filepath.Join(*out, *session, "audit.jsonl")))
+
 	srv := &http.Server{
-		Handler:           web.NewServer(view, store),
+		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	ln, err := net.Listen("tcp", *addr)
@@ -124,4 +134,117 @@ func storeRelativeTo(repo, out string) string {
 		return out
 	}
 	return rel
+}
+
+// webAskFunc adapts the reviewer-assistant to the bounded-context ask usecase,
+// threading the conversation so far into each question (issue #12).
+func webAskFunc(sess domain.Session, snap port.Snapshotter, sum port.Summarizer) web.AskFunc {
+	return func(ctx context.Context, question string, history []web.Exchange) (string, error) {
+		askCtx := usecase.BuildAskContext(domain.AskSession, sess, domain.Unit{}, domain.Diff{})
+		return sum.Answer(ctx, withHistory(question, history), askCtx)
+	}
+}
+
+// withHistory prefixes the running conversation so follow-ups have context.
+func withHistory(question string, history []web.Exchange) string {
+	if len(history) == 0 {
+		return question
+	}
+	var b strings.Builder
+	b.WriteString("Earlier in this review:\n")
+	for _, e := range history {
+		b.WriteString("Q: " + e.Question + "\nA: " + e.Answer + "\n")
+	}
+	b.WriteString("\nNow: " + question)
+	return b.String()
+}
+
+// discoverSessions lists the reviews present in the store root, so the workspace
+// can show every session across repos (issue #8).
+func discoverSessions(out, repo string) []web.SessionSummary {
+	entries, err := os.ReadDir(out)
+	if err != nil {
+		return nil
+	}
+	store := jsonl.New(out)
+	var sessions []web.SessionSummary
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		s, err := store.Load(e.Name())
+		if err != nil {
+			continue
+		}
+		summary := web.SessionSummary{
+			ID:     e.Name(),
+			Repo:   filepath.Base(mustAbs(repo)),
+			Agent:  agentOf(s),
+			Prompt: s.Prompt,
+			Files:  len(s.Units),
+		}
+		for _, u := range s.Units {
+			summary.Flags += len(u.Flags)
+		}
+		for _, n := range s.Notes {
+			if n.Kind == domain.NoteQuestion || n.Kind == domain.NoteObjection {
+				summary.Open++
+			}
+		}
+		if len(s.Events) > 0 {
+			summary.Started = s.Events[0].TS
+		}
+		sessions = append(sessions, summary)
+	}
+	return sessions
+}
+
+// agentOf reports which agent produced a session, from its event source.
+func agentOf(s domain.Session) string {
+	for _, e := range s.Events {
+		if e.Source != "" {
+			return e.Source
+		}
+	}
+	return "unknown"
+}
+
+func mustAbs(p string) string {
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		return p
+	}
+	return abs
+}
+
+// webReanalyseFunc re-summarises a unit on demand, reporting which model did it.
+func webReanalyseFunc(snap port.Snapshotter, sum port.Summarizer, model string) web.ReanalyseFunc {
+	return func(ctx context.Context, u domain.Unit) (domain.Headline, string, error) {
+		diff, err := snap.Diff(ctx, u.From, u.To, u.Files)
+		if err != nil {
+			diff = domain.Diff{}
+		}
+		return usecase.Summarize(ctx, sum, u, diff), model, nil
+	}
+}
+
+// auditFile appends interactions to an append-only JSONL log beside the session,
+// so a review carries its own provenance (issue #11).
+type auditFile string
+
+func (a auditFile) Append(e web.AuditEntry) error {
+	if err := os.MkdirAll(filepath.Dir(string(a)), 0o755); err != nil {
+		return err
+	}
+	line, err := json.Marshal(e)
+	if err != nil {
+		return err
+	}
+	f, err := os.OpenFile(string(a), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	_, err = f.Write(append(line, '\n'))
+	return err
 }

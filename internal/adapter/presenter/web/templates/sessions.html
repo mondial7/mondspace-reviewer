@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Reviews — mondspace-reviewer</title>
+  <link rel="stylesheet" href="/assets/app.css">
+  <script type="module" src="/assets/storyline.js" defer></script>
+</head>
+<body class="page">
+  <canvas class="starfield" id="starfield" aria-hidden="true"></canvas>
+
+  <header class="masthead">
+    <h1 class="masthead__title">mondspace-reviewer</h1>
+    <p class="masthead__meta">
+      <span class="masthead__count">{{ len .Sessions }} review(s)</span>
+      <button class="masthead__focus" id="focus-toggle" type="button"
+              aria-pressed="false" title="Toggle focus mode (f)">focus mode <kbd>f</kbd></button>
+    </p>
+  </header>
+
+  <main class="queue">
+    {{ range .Sessions }}
+    <article class="unit" data-added="{{ .Files }}" data-removed="0" data-flags="{{ .Flags }}">
+      <div class="unit__summary">
+        <a class="unit__handle" href="/?session={{ .ID }}">{{ .ID }}</a>
+        <span class="unit__file">{{ .Repo }}</span>
+        <span class="session__agent">{{ .Agent }}</span>
+        <span class="unit__headline">{{ .Prompt }}</span>
+        <span class="unit__stats">
+          <span class="unit__stat unit__stat--add">{{ .Files }} files</span>
+          {{ if .Flags }}<span class="flag">{{ .Flags }} flags</span>{{ end }}
+          {{ if .Open }}<span class="flag">{{ .Open }} open</span>{{ end }}
+        </span>
+      </div>
+    </article>
+    {{ else }}
+    <p class="queue__empty">No reviews recorded yet.</p>
+    {{ end }}
+  </main>
+</body>
+</html>

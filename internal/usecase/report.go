@@ -11,11 +11,9 @@ var groupOrder = []domain.NoteKind{
 // are re-checked for supersession from the current units, then bucketed.
 func BuildReport(sess domain.Session) domain.Report {
 	notes := MarkSuperseded(sess.Units, sess.Notes)
-	headlines := map[string]domain.Headline{}
-	flags := map[string][]domain.Flag{}
+	units := map[string]domain.Unit{}
 	for _, u := range sess.Units {
-		headlines[u.ID] = u.Headline
-		flags[u.ID] = u.Flags
+		units[u.ID] = u
 	}
 
 	r := domain.Report{SessionID: sess.ID, Prompt: sess.Prompt}
@@ -24,7 +22,7 @@ func BuildReport(sess domain.Session) domain.Report {
 		var items []domain.ReportItem
 		for _, n := range notes {
 			if n.Kind == kind {
-				items = append(items, itemFor(n, headlines[n.UnitID], flags[n.UnitID]))
+				items = append(items, itemFor(n, units[n.UnitID]))
 			}
 		}
 		if len(items) > 0 {
@@ -33,7 +31,7 @@ func BuildReport(sess domain.Session) domain.Report {
 	}
 
 	for _, n := range notes {
-		item := itemFor(n, headlines[n.UnitID], flags[n.UnitID])
+		item := itemFor(n, units[n.UnitID])
 		switch {
 		case n.Kind == domain.NoteDebt:
 			r.Debt = append(r.Debt, item)
@@ -62,11 +60,11 @@ func isOpen(kind domain.NoteKind) bool {
 	return kind == domain.NoteQuestion || kind == domain.NoteObjection
 }
 
-func itemFor(n domain.Note, h domain.Headline, flags []domain.Flag) domain.ReportItem {
+func itemFor(n domain.Note, u domain.Unit) domain.ReportItem {
 	return domain.ReportItem{
 		UnitID:       n.UnitID,
-		Headline:     h,
-		Flags:        flags,
+		Headline:     u.Headline,
+		Flags:        u.Flags,
 		NoteKind:     n.Kind,
 		NoteText:     n.Text,
 		SupersededBy: n.SupersededBy,
