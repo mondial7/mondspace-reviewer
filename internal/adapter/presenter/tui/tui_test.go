@@ -50,6 +50,18 @@ func TestCtrlCAlwaysQuits(t *testing.T) {
 	quitsOnCtrlC(t, tui.New(nil, nil, nil), "with an empty session")
 }
 
+func TestCollapsedLineShowsChangeStats(t *testing.T) {
+	units := []domain.Unit{{ID: "s-u001", Files: []string{"a.go"}}}
+	diffs := map[string]domain.Diff{"s-u001": {Text: "@@ -1 +1 @@\n-old body\n+new one\n+new two\n"}}
+
+	m := tui.New(units, nil, nil).WithDiffs(diffs)
+
+	v := m.View()
+	if !strings.Contains(v, "+2") || !strings.Contains(v, "-1") {
+		t.Errorf("collapsed line should show net change stats:\n%s", v)
+	}
+}
+
 func TestExpandFetchesAndShowsDiff(t *testing.T) {
 	units := []domain.Unit{{ID: "s-u001", Files: []string{"a.go"},
 		From: domain.SnapshotRef{Commit: "aaa"}, To: domain.SnapshotRef{Commit: "bbb"}}}

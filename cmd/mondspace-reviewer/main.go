@@ -90,7 +90,7 @@ func runReview(ctx context.Context, args []string, stdout io.Writer) error {
 			}
 			return runLiveTUI(ctx, jsonl.New(*out), snap, sum, *session, *repo, *out, events, stdout)
 		}
-		return runTUIReview(jsonl.New(*out), snap, sum, *session, *repo, stdout)
+		return runFileReview(ctx, jsonl.New(*out), snap, sum, *session, *repo, *out, stdout)
 	}
 	if !*usePlain {
 		return fmt.Errorf("--plain or --tui is required")
@@ -293,20 +293,96 @@ func runLiveTUI(ctx context.Context, store port.Store, snap port.Snapshotter, su
 	return err
 }
 
-func runTUIReview(store port.Store, snap port.Snapshotter, sum port.Summarizer, sessionID, repo string, stdout io.Writer) error {
+// runFileReview is retroactive review: it reconstructs the session's *net*
+// change from git — a per-file diff against the commit just before the session —
+// so back-and-forth edits collapse into one reviewable change per file, each
+// with its real diff, rather than a unit per keystroke.
+func runFileReview(ctx context.Context, store port.Store, snap *gitsnap.Snapshotter, sum port.Summarizer, sessionID, repo, out string, stdout io.Writer) error {
 	sess, err := store.Load(sessionID)
 	if err != nil {
 		return err
 	}
-	sess.Units = usecase.SuppressCoveredNoTest(sess.Units)
-	notes := usecase.MarkSuperseded(sess.Units, sess.Notes)
-	model := tui.New(sess.Units, notes, store).
+
+	baseline, err := snap.Baseline(ctx, firstEventTime(sess))
+	if err != nil {
+		return err
+	}
+	files, err := snap.ChangedFiles(ctx, baseline)
+	if err != nil {
+		return err
+	}
+	files = excludeStore(files, repo, out) // never review msr's own store
+
+	diffs := map[string]domain.Diff{}
+	var units []domain.Unit
+	for i, f := range files {
+		d, err := snap.Diff(ctx, baseline, domain.SnapshotRef{}, []string{f})
+		if err != nil {
+			d = domain.Diff{}
+		}
+		u := domain.Unit{
+			ID:        fmt.Sprintf("%s-f%03d", sessionID, i+1),
+			SessionID: sessionID,
+			Files:     []string{f},
+			From:      baseline,
+			Sealed:    true,
+		}
+		u.Flags = usecase.Flags(u, d)
+		u.Headline = usecase.DiffHeadline(f, d)
+		diffs[u.ID] = d
+		units = append(units, u)
+	}
+	units = usecase.SuppressCoveredNoTest(units)
+	sess.Units = units
+	notes := usecase.MarkSuperseded(units, sess.Notes)
+
+	model := tui.New(units, notes, store).
 		RelativeTo(repo).
+		WithDiffs(diffs).
 		WithSummarize(summarizeFunc(snap, sum)).
 		WithDiff(diffFunc(snap)).
 		WithAsk(askFunc(sess, snap, sum))
 	_, err = tea.NewProgram(model, tea.WithInput(os.Stdin), tea.WithOutput(stdout)).Run()
 	return err
+}
+
+// excludeStore drops files under msr's own store directory from the review, so
+// the reviewer never sees the tool's bookkeeping as if it were agent work.
+func excludeStore(files []string, repo, out string) []string {
+	storeRel := out
+	if repoAbs, err := filepath.Abs(repo); err == nil {
+		if outAbs, err := filepath.Abs(out); err == nil {
+			if rel, err := filepath.Rel(repoAbs, outAbs); err == nil {
+				storeRel = rel
+			}
+		}
+	}
+	kept := files[:0]
+	for _, f := range files {
+		if f == storeRel || strings.HasPrefix(f, storeRel+"/") {
+			continue
+		}
+		kept = append(kept, f)
+	}
+	return kept
+}
+
+// firstEventTime is the earliest event timestamp in the session — when the agent
+// started work — used to pick the pre-session git baseline.
+func firstEventTime(sess domain.Session) time.Time {
+	earliest := time.Time{}
+	for _, e := range sess.Events {
+		if e.TS.IsZero() {
+			continue
+		}
+		if earliest.IsZero() || e.TS.Before(earliest) {
+			earliest = e.TS
+		}
+	}
+	if earliest.IsZero() {
+		return time.Now()
+	}
+	return earliest
 }
 
 // askFunc builds the interrogation closure: assemble the bounded context (unit

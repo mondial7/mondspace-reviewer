@@ -111,6 +111,17 @@ func (m Model) WithDiff(fn func(domain.Unit) tea.Msg) Model {
 	return m
 }
 
+// WithDiffs seeds unit diffs up front (retroactive review has them already), so
+// change stats show immediately and expansion is instant.
+func (m Model) WithDiffs(diffs map[string]domain.Diff) Model {
+	seeded := make(map[string]domain.Diff, len(diffs))
+	for k, v := range diffs {
+		seeded[k] = v
+	}
+	m.diffs = seeded
+	return m
+}
+
 // Read reports whether a unit has been reviewed and accepted (an ok note).
 func (m Model) Read(unitID string) bool { return m.read[unitID] }
 
@@ -390,17 +401,37 @@ func (m Model) unitLine(u domain.Unit, selected bool) string {
 	if m.read[u.ID] {
 		mark = okStyle.Render("✓ ")
 	}
-	// Once the model has summarized a unit, the collapsed line reads as a
-	// storyline sentence; until then it anchors on the changed files.
+	// The file is the anchor; once the model summarizes a unit, its storyline
+	// sentence is appended so the line reads as "<file> — <what changed>".
 	primary := m.relFiles(u.Files)
 	if m.summarized[u.ID] && u.Headline.Text != "" {
-		primary = u.Headline.Text
+		primary += "  " + dimStyle.Render("· ") + u.Headline.Text
 	}
 	line := cursor + mark + handleStyle.Render(shortHandle(u.ID)) + "  " + primary
+	if d, ok := m.diffs[u.ID]; ok {
+		if a, r := diffStats(d.Text); a > 0 || r > 0 {
+			line += "  " + statedStyle.Render(fmt.Sprintf("+%d", a)) + " " + flagStyle.Render(fmt.Sprintf("-%d", r))
+		}
+	}
 	if len(u.Flags) > 0 {
 		line += "  " + renderFlags(u.Flags)
 	}
 	return line + "\n"
+}
+
+// diffStats counts added and removed content lines in a unified diff.
+func diffStats(text string) (added, removed int) {
+	for _, line := range strings.Split(text, "\n") {
+		switch {
+		case strings.HasPrefix(line, "+++") || strings.HasPrefix(line, "---"):
+			continue
+		case strings.HasPrefix(line, "+"):
+			added++
+		case strings.HasPrefix(line, "-"):
+			removed++
+		}
+	}
+	return added, removed
 }
 
 func (m Model) details(u domain.Unit) string {

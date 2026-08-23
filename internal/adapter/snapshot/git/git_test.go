@@ -7,9 +7,77 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/mondial7/mondspace-reviewer/internal/domain"
 
 	gitsnap "github.com/mondial7/mondspace-reviewer/internal/adapter/snapshot/git"
 )
+
+func gitCommitAt(t *testing.T, dir, date, msg string) {
+	t.Helper()
+	cmd := exec.Command("git", "commit", "-qm", msg)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(),
+		"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t",
+		"GIT_AUTHOR_DATE="+date, "GIT_COMMITTER_DATE="+date)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("commit: %v\n%s", err, out)
+	}
+}
+
+func TestBaselineNetChangesAndDiff(t *testing.T) {
+	dir := t.TempDir()
+	gitCmd(t, dir, "init", "-q")
+	gitCmd(t, dir, "config", "user.email", "t@t")
+	gitCmd(t, dir, "config", "user.name", "t")
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("v1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCmd(t, dir, "add", "a.txt")
+	gitCommitAt(t, dir, "2026-01-01T00:00:00", "init")
+
+	// The agent's session (committed later): change a.txt and add b.txt.
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("v1\nv2\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "b.txt"), []byte("new\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCmd(t, dir, "add", "-A")
+	gitCommitAt(t, dir, "2026-07-01T00:00:00", "work")
+
+	s := gitsnap.New(dir, "sess")
+	ctx := context.Background()
+
+	// Baseline: the commit at/before a mid-session time is the init commit.
+	baseline, err := s.Baseline(ctx, time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("Baseline: %v", err)
+	}
+	if baseline.Commit == "" {
+		t.Fatal("Baseline returned empty commit")
+	}
+
+	// Net changed files since the baseline: a.txt (changed) and b.txt (added).
+	files, err := s.ChangedFiles(ctx, baseline)
+	if err != nil {
+		t.Fatalf("ChangedFiles: %v", err)
+	}
+	got := strings.Join(files, ",")
+	if !strings.Contains(got, "a.txt") || !strings.Contains(got, "b.txt") {
+		t.Errorf("ChangedFiles = %v, want a.txt and b.txt", files)
+	}
+
+	// A worktree diff (empty `to`) shows the net change of a file.
+	d, err := s.Diff(ctx, baseline, domain.SnapshotRef{}, []string{"a.txt"})
+	if err != nil {
+		t.Fatalf("Diff: %v", err)
+	}
+	if !strings.Contains(d.Text, "+v2") {
+		t.Errorf("net diff missing the added line:\n%s", d.Text)
+	}
+}
 
 func gitCmd(t *testing.T, dir string, args ...string) string {
 	t.Helper()

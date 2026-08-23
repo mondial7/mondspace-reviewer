@@ -107,13 +107,19 @@ msr review --source=replay --file=testdata/sessions/basic.jsonl --plain
 2. Review the session in the interactive queue:
 
    ```sh
-   msr review --source=hooks --plain --session=<session-id>          # line-oriented
-   msr review --tui --session=<session-id>                           # TUI over the stored session
-   msr review --tui --source=hooks --session=<session-id> --repo=.   # live TUI: units stream in as the agent works
+   msr review --tui --session=<session-id> --repo=.                  # retroactive: net change per file
+   msr review --tui --source=hooks --session=<session-id> --repo=.   # live: units stream in as the agent works
+   msr review --source=hooks --plain --session=<session-id>          # line-oriented, scriptable
    ```
 
-   In live mode the queue starts empty and fills as each unit seals — the cursor
-   stays where you are (the agent outruns you by construction).
+   **Retroactive review** reconstructs the session's *net* change from git — one
+   reviewable unit per file, diffed against the commit just before the session —
+   so an agent's back-and-forth on a file collapses into a single, clear change
+   (`auth/token.go · replace Validate with a TokenValidator interface  +9 -3`)
+   with its real diff on expand. It reads like `git diff` / a PR, not a keystroke log.
+
+   **Live review** starts empty and fills as each unit seals — the cursor stays
+   where you are (the agent outruns you by construction).
 
 3. Ask questions and export your review:
 

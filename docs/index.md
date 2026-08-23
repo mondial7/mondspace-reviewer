@@ -25,9 +25,11 @@ designed for being behind. Nothing scrolls away, nothing auto-advances.
 
 ## What makes it trustworthy
 
-- **A storyline, not a file list.** Each unit collapses to a one-line summary of
-  the change; expand it for the concise *why* and the **actual diff** — enough to
-  review and annotate even when a change is too big to read line by line.
+- **Net change, not keystrokes.** Retroactive review reconstructs the session's
+  *net* diff from git — one unit per file, against the commit just before the
+  session — so an agent's back-and-forth on a file collapses into a single, clear
+  change (`auth/token.go · replace Validate… +9 -3`) with its real diff on expand.
+  It reads like `git diff` or a PR, not a log of every touch.
 - **Units, not tool calls.** A unit dismissed in one keystroke is cheap; 200
   micro-edits is unusable.
 - **`stated` vs `inferred`, always.** A rationale in the agent's own words looks

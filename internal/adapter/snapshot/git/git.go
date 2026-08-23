@@ -9,7 +9,9 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"sort"
 	"strings"
+	"time"
 
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
 )
@@ -76,9 +78,17 @@ func (s *Snapshotter) Snapshot(ctx context.Context, label string) (domain.Snapsh
 	return domain.SnapshotRef{Commit: commit, Label: label}, nil
 }
 
-// Diff returns the change between two snapshots, restricted to paths.
+// emptyTree is git's well-known hash of the empty tree, used as the baseline
+// when there is no commit before a session (a brand-new repo).
+const emptyTree = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+
+// Diff returns the change between two snapshots, restricted to paths. An empty
+// `to` diffs against the current working tree (the net change since `from`).
 func (s *Snapshotter) Diff(ctx context.Context, from, to domain.SnapshotRef, paths []string) (domain.Diff, error) {
-	args := []string{"diff", from.Commit, to.Commit}
+	args := []string{"diff", from.Commit}
+	if to.Commit != "" {
+		args = append(args, to.Commit)
+	}
 	if len(paths) > 0 {
 		args = append(args, "--")
 		args = append(args, paths...)
@@ -87,7 +97,74 @@ func (s *Snapshotter) Diff(ctx context.Context, from, to domain.SnapshotRef, pat
 	if err != nil {
 		return domain.Diff{}, err
 	}
+	// A new, untracked file produces no `git diff` output; show it as all-added.
+	if text == "" && to.Commit == "" && len(paths) == 1 {
+		if alt, ok := s.untrackedDiff(ctx, paths[0]); ok {
+			text = alt
+		}
+	}
 	return domain.Diff{Text: text, Files: paths}, nil
+}
+
+// Baseline is the commit at or before `before` on HEAD's first-parent history —
+// the repo state just before a session began. With no such commit it is the
+// empty tree.
+func (s *Snapshotter) Baseline(ctx context.Context, before time.Time) (domain.SnapshotRef, error) {
+	out, err := s.run(ctx, os.Environ(), "rev-list", "-1", "--first-parent",
+		"--before="+before.UTC().Format(time.RFC3339), "HEAD")
+	if err != nil || out == "" {
+		return domain.SnapshotRef{Commit: emptyTree, Label: "baseline"}, nil
+	}
+	return domain.SnapshotRef{Commit: out, Label: "baseline"}, nil
+}
+
+// ChangedFiles lists the files whose net content differs from `from` to the
+// current working tree, including new untracked files.
+func (s *Snapshotter) ChangedFiles(ctx context.Context, from domain.SnapshotRef) ([]string, error) {
+	set := map[string]bool{}
+
+	tracked, err := s.run(ctx, os.Environ(), "diff", "--name-only", from.Commit, "--")
+	if err != nil {
+		return nil, err
+	}
+	for _, f := range nonEmptyLines(tracked) {
+		set[f] = true
+	}
+	if untracked, err := s.run(ctx, os.Environ(), "ls-files", "--others", "--exclude-standard"); err == nil {
+		for _, f := range nonEmptyLines(untracked) {
+			set[f] = true
+		}
+	}
+
+	files := make([]string, 0, len(set))
+	for f := range set {
+		files = append(files, f)
+	}
+	sort.Strings(files)
+	return files, nil
+}
+
+// untrackedDiff renders a not-yet-tracked file as an all-added diff. git returns
+// exit 1 when there are differences, which is expected here, so its status is
+// ignored.
+func (s *Snapshotter) untrackedDiff(ctx context.Context, path string) (string, bool) {
+	cmd := exec.CommandContext(ctx, "git", "diff", "--no-index", "--", os.DevNull, path)
+	cmd.Dir = s.repoDir
+	out, _ := cmd.Output()
+	if len(out) == 0 {
+		return "", false
+	}
+	return string(out), true
+}
+
+func nonEmptyLines(s string) []string {
+	var out []string
+	for _, l := range strings.Split(s, "\n") {
+		if l != "" {
+			out = append(out, l)
+		}
+	}
+	return out
 }
 
 func (s *Snapshotter) run(ctx context.Context, env []string, args ...string) (string, error) {
