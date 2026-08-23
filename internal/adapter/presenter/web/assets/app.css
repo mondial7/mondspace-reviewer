@@ -893,3 +893,18 @@
 .versions__hash { color: var(--accent); }
 .versions__subject { color: var(--fg-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
 .versions__author { color: var(--fg-dim); opacity: 0.7; }
+
+/* Opening another repository from the status page. */
+.addrepo { display: flex; gap: 0.4rem; margin-top: 0.8rem; min-width: 0; }
+.addrepo__input {
+  flex: 1; min-width: 0; font: inherit; font-size: 0.8rem;
+  color: var(--fg); background: var(--bg);
+  border: 1px solid var(--rule); border-radius: 6px; padding: 0.4rem 0.6rem;
+}
+.addrepo__input:focus { outline: none; border-color: var(--accent); }
+.addrepo__btn {
+  font: inherit; font-size: 0.75rem; cursor: pointer; white-space: nowrap;
+  color: var(--bg); background: var(--accent);
+  border: none; border-radius: 6px; padding: 0.4rem 0.8rem;
+}
+.addrepo__err { margin: 0.5rem 0 0; color: var(--del); font-size: 0.78rem; }

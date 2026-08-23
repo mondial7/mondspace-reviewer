@@ -125,6 +125,17 @@ type VersionLister func(ctx context.Context, path string, limit int) ([]domain.C
 // VersionDiffer is what one commit did to one file.
 type VersionDiffer func(ctx context.Context, commit, path string) (domain.Diff, error)
 
+// RepoStatus is one repository the workspace holds.
+type RepoStatus struct {
+	Name     string
+	Path     string
+	Sessions int
+}
+
+// AddRepoFunc starts watching another repository without a restart, returning
+// the whole workspace and repository list afterwards rather than a fragment.
+type AddRepoFunc func(path string) ([]SessionSummary, []RepoStatus, error)
+
 // Loader materialises one session's review on demand. A workspace may span
 // several repositories and many sessions; building every one at start-up would
 // mean a git diff per file per session, so they are loaded when first opened.
@@ -152,6 +163,9 @@ type Server struct {
 	// costs nothing after the first visit.
 	loaded    map[string]Session
 	workspace []SessionSummary
+	repos     []RepoStatus
+	addRepo   AddRepoFunc
+	repoErr   string
 	thread    []Exchange
 	models    map[string]string // unit ID -> model that produced its headline
 	ask       AskFunc
@@ -218,6 +232,43 @@ func (s *Server) WithAudit(a AuditLog) *Server {
 func (s *Server) WithNarrate(fn NarrateFunc) *Server {
 	s.narrate = fn
 	return s
+}
+
+// WithRepos supplies the repositories the workspace holds, and optionally a way
+// to open another one while the server is running.
+func (s *Server) WithRepos(repos []RepoStatus, add AddRepoFunc) *Server {
+	s.repos, s.addRepo = repos, add
+	return s
+}
+
+// handleAddRepo starts watching another repository. A path that is not a
+// checkout is reported on the page rather than failing silently: it comes from
+// a form, and a typo that quietly did nothing is worse than an error.
+func (s *Server) handleAddRepo(w http.ResponseWriter, r *http.Request) {
+	s.mu.RLock()
+	add := s.addRepo
+	s.mu.RUnlock()
+	if add == nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	workspace, repos, err := add(r.FormValue("path"))
+
+	s.mu.Lock()
+	if err != nil {
+		s.repoErr = err.Error()
+	} else {
+		s.repoErr = ""
+		s.workspace, s.repos = workspace, repos
+	}
+	s.mu.Unlock()
+
+	if err == nil {
+		s.Record(AuditEntry{Action: "repo-opened", Detail: r.FormValue("path")})
+	}
+	s.broadcast("repos")
+	http.Redirect(w, r, "/status", http.StatusSeeOther)
 }
 
 // WithVersions wires the file-history overlay: the commits that touched a file,
@@ -377,7 +428,6 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /review", redirectHome)
 	s.mux.HandleFunc("GET /story", redirectHome)
 	s.mux.HandleFunc("POST /units/{id}/notes", s.handleAnnotate)
-	s.mux.HandleFunc("GET /sessions", s.handleWorkspace)
 	s.mux.HandleFunc("POST /ask", s.handleAsk)
 	s.mux.HandleFunc("POST /units/{id}/reanalyse", s.handleReanalyse)
 	s.mux.HandleFunc("GET /units/{id}/diff", s.handleUnitDiff)
@@ -385,6 +435,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /cockpit", s.handleCockpit)
 	s.mux.HandleFunc("GET /activity", s.handleActivity)
 	s.mux.HandleFunc("GET /status", s.handleStatus)
+	s.mux.HandleFunc("POST /repos", s.handleAddRepo)
+	// The workspace list folded into the status page.
+	s.mux.HandleFunc("GET /sessions", redirectStatus)
 	s.mux.HandleFunc("POST /story/narrate", s.handleNarrate)
 	s.mux.HandleFunc("GET /events", s.handleEvents)
 }
@@ -493,6 +546,10 @@ func short(hash string) string {
 		return hash
 	}
 	return hash[:8]
+}
+
+func redirectStatus(w http.ResponseWriter, r *http.Request) {
+	http.Redirect(w, r, "/status", http.StatusMovedPermanently)
 }
 
 func redirectHome(w http.ResponseWriter, r *http.Request) {
@@ -993,6 +1050,9 @@ func humanDuration(d time.Duration) string {
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	s.mu.RLock()
 	agent := s.agent
+	repos := s.repos
+	repoErr := s.repoErr
+	canAddRepo := s.addRepo != nil
 	sessions := s.workspace
 	sessionID := s.sess.ID
 	repo := s.sess.Repo
@@ -1017,13 +1077,16 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		Reasoning, Total   string
 		Average, Checked   string
 		Sessions           []SessionSummary
+		Repos              []RepoStatus
+		RepoErr            string
+		CanAddRepo         bool
 	}{
 		SessionID: sessionID, Repo: repo, Agent: agent,
 		Calls: thousands(u.Calls), Failures: thousands(u.Failures),
 		Prompt: thousands(u.Prompt), Completion: thousands(u.Completion),
 		Reasoning: thousands(u.Reasoning), Total: thousands(u.Prompt + u.Completion),
 		Average: avg, Checked: checked,
-		Sessions: sessions,
+		Sessions: sessions, Repos: repos, RepoErr: repoErr, CanAddRepo: canAddRepo,
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -1112,17 +1175,6 @@ type chapterView struct {
 	// Anchor is the first unit this chapter covers, so scrolling the story can
 	// bring the matching changes alongside it.
 	Anchor string
-}
-
-func (s *Server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
-	s.mu.RLock()
-	data := struct{ Sessions []SessionSummary }{Sessions: s.workspace}
-	s.mu.RUnlock()
-
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := s.tmpl.ExecuteTemplate(w, "sessions.html", data); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
 }
 
 func (s *Server) views() []unitView { return s.viewsOf(s.sess) }

@@ -340,6 +340,32 @@ Zen hides the rail, which is why navigation does not depend on it.
 msr web --repo=. --repo=../api --repo=../web --repo=../worker
 ```
 
+With **no `--repo`**, `msr` looks around. A directory that is itself a checkout
+opens itself — running inside a project should not offer up its vendored
+dependencies. A directory *of* checkouts offers its children, one level down: a
+deep walk of a home directory is slow and turns up repositories nobody meant to
+review.
+
+Beyond five, it asks rather than guessing, because quietly opening forty
+checkouts is not a default anyone would have picked:
+
+```
+Found 8 repositories:
+
+  1) api
+  2) billing
+  …
+
+Which to open? (e.g. 1,3,5 or 2-4 or all):
+```
+
+With no terminal to ask — a script, CI — it stops and tells you to pass `--repo`
+explicitly rather than choosing for you.
+
+Repositories can also be opened **while the app is running**, from the
+repositories card on `/status`. A path that is not a checkout is reported there
+rather than silently doing nothing.
+
 The logic is deliberately simple:
 
 - **Each repository keeps its own store**, at `<repo>/.mondspace-reviewer`, so

@@ -386,3 +386,45 @@ func (s *Snapshotter) DiffAt(ctx context.Context, commit, path string) (domain.D
 	}
 	return domain.Diff{Text: out}, nil
 }
+
+// DiscoverRepos finds the repositories to review under a path. If the path is
+// itself a checkout, that is the answer — running inside a project should not
+// offer up its vendored dependencies. Otherwise its immediate children are
+// scanned, which is the common workspace shape: ~/work/{api,web,worker}.
+//
+// Only one level down: a deep walk of a home directory is slow and turns up
+// checkouts nobody meant to review. Hidden directories are skipped.
+//
+// Results are sorted, so a launch prompt lists them the same way every time.
+func DiscoverRepos(root string) []string {
+	abs, err := filepath.Abs(root)
+	if err != nil {
+		return nil
+	}
+	if isRepo(abs) {
+		return []string{abs}
+	}
+
+	entries, err := os.ReadDir(abs)
+	if err != nil {
+		return nil
+	}
+	var repos []string
+	for _, e := range entries {
+		if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
+			continue
+		}
+		if child := filepath.Join(abs, e.Name()); isRepo(child) {
+			repos = append(repos, child)
+		}
+	}
+	sort.Strings(repos)
+	return repos
+}
+
+// isRepo reports whether a directory is a git checkout. A .git entry may be a
+// directory or, in a worktree or submodule, a file pointing elsewhere.
+func isRepo(dir string) bool {
+	_, err := os.Stat(filepath.Join(dir, ".git"))
+	return err == nil
+}

@@ -443,7 +443,7 @@ func TestAskSurfacesErrorWithoutCrashing(t *testing.T) {
 	}
 }
 
-func TestWorkspaceListsSessionsAcrossReposAndAgents(t *testing.T) {
+func TestStatusListsSessionsAcrossReposAndAgents(t *testing.T) {
 	sessions := []web.SessionSummary{
 		{ID: "s1", Repo: "mondspace-reviewer", Agent: "claude-code", Prompt: "add token validation",
 			Files: 12, Flags: 3, Open: 1, Started: time.Date(2026, 8, 22, 9, 0, 0, 0, time.UTC)},
@@ -452,7 +452,7 @@ func TestWorkspaceListsSessionsAcrossReposAndAgents(t *testing.T) {
 	}
 	h := web.NewServer(testSession(), nil).WithWorkspace(sessions)
 
-	rec := get(t, h, "/sessions")
+	rec := get(t, h, "/status")
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
@@ -518,7 +518,7 @@ func TestIndexListsUnits(t *testing.T) {
 	}
 	body := rec.Body.String()
 	for _, want := range []string{
-		"auth/token.go",   // the file is the anchor
+		"auth/token.go", // the file is the anchor
 		"auth/token.go", // the file itself
 		"http/middleware.go",
 		"no-test",              // flags surface
@@ -844,5 +844,77 @@ func TestCockpitOffersASessionSwitcher(t *testing.T) {
 	// Sessions from other repositories are reachable, and say which repo.
 	if !strings.Contains(body, "otherrepo") || !strings.Contains(body, "port the parser") {
 		t.Errorf("the switcher should span repositories:\n%s", body)
+	}
+}
+
+func TestStatusListsOpenRepositoriesAndAbsorbsTheSessionsPage(t *testing.T) {
+	h := web.NewServer(testSession(), nil).
+		WithWorkspace([]web.SessionSummary{
+			{ID: "s", Repo: "api", Prompt: "add token validation"},
+			{ID: "other", Repo: "web", Prompt: "port the parser"},
+		}).
+		WithRepos([]web.RepoStatus{
+			{Name: "api", Path: "/w/api", Sessions: 1},
+			{Name: "web", Path: "/w/web", Sessions: 1},
+		}, nil)
+
+	body := get(t, h, "/status").Body.String()
+
+	// Repositories, with where they are and how much they hold.
+	for _, want := range []string{"/w/api", "/w/web", "api", "web"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("status is missing %q", want)
+		}
+	}
+	// The sessions page folded in here, so its content must be present.
+	if !strings.Contains(body, "port the parser") {
+		t.Errorf("status should list the workspace's sessions:\n%s", body)
+	}
+	// And the old address still resolves.
+	if rec := get(t, h, "/sessions"); rec.Code != http.StatusMovedPermanently {
+		t.Errorf("GET /sessions = %d, want a permanent redirect", rec.Code)
+	}
+}
+
+func TestAddingARepositoryWithoutRestarting(t *testing.T) {
+	var asked string
+	h := web.NewServer(testSession(), nil).WithRepos(nil,
+		func(path string) ([]web.SessionSummary, []web.RepoStatus, error) {
+			asked = path
+			return []web.SessionSummary{{ID: "new", Repo: "worker", Prompt: "retry the queue"}},
+				[]web.RepoStatus{{Name: "worker", Path: "/w/worker", Sessions: 1}}, nil
+		})
+
+	req := httptest.NewRequest(http.MethodPost, "/repos", strings.NewReader("path=/w/worker"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("POST /repos = %d, want 303", rec.Code)
+	}
+	if asked != "/w/worker" {
+		t.Errorf("asked to open %q", asked)
+	}
+	// The new repository's sessions are immediately reachable.
+	if !strings.Contains(get(t, h, "/status").Body.String(), "retry the queue") {
+		t.Error("a newly opened repository's sessions should appear at once")
+	}
+}
+
+func TestAddingARepositoryReportsWhyItFailed(t *testing.T) {
+	// A typo'd path must say so, not fail silently and leave the reviewer
+	// wondering whether it worked.
+	h := web.NewServer(testSession(), nil).WithRepos(nil,
+		func(string) ([]web.SessionSummary, []web.RepoStatus, error) {
+			return nil, nil, errors.New("/w/nope is not a git repository")
+		})
+
+	req := httptest.NewRequest(http.MethodPost, "/repos", strings.NewReader("path=/w/nope"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	h.ServeHTTP(httptest.NewRecorder(), req)
+
+	if !strings.Contains(get(t, h, "/status").Body.String(), "not a git repository") {
+		t.Error("the failure should be shown on the page")
 	}
 }

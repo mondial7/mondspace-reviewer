@@ -16,7 +16,6 @@
     <a class="storynav__link" href="/">cockpit</a>
     <a class="storynav__link" href="/activity">activity</a>
     <a class="storynav__link" href="/status" aria-current="page">status</a>
-    <a class="storynav__link" href="/sessions">sessions</a>
     <span class="storynav__spacer"></span>
     <button class="storynav__zen" type="button" data-theme-toggle
             title="Theme">auto</button>
@@ -77,12 +76,36 @@
       </div>
     </section>
 
-    <!-- Every session known for this project. -->
+    <!-- The repositories this workspace holds, and a way to open another. -->
     <section class="board__panel">
-      <h2 class="board__title">sessions · {{ .Repo }}</h2>
+      <h2 class="board__title">repositories</h2>
+      {{ range .Repos }}
+      <div class="board__row">
+        <span class="board__key">{{ .Name }}</span>
+        <span class="board__val" title="{{ .Path }}">{{ .Path }}</span>
+        <span class="board__val">{{ .Sessions }}s</span>
+      </div>
+      {{ else }}
+      <p class="queue__empty">No repositories open.</p>
+      {{ end }}
+
+      {{ if .CanAddRepo }}
+      <form class="addrepo" method="post" action="/repos">
+        <input class="addrepo__input" name="path" type="text" autocomplete="off"
+               placeholder="path to another repository…">
+        <button class="addrepo__btn" type="submit">watch</button>
+      </form>
+      {{ with .RepoErr }}<p class="addrepo__err">{{ . }}</p>{{ end }}
+      {{ end }}
+    </section>
+
+    <!-- Every session in the workspace. -->
+    <section class="board__panel">
+      <h2 class="board__title">sessions</h2>
       {{ range .Sessions }}
       <div class="board__session">
         <a class="board__id" href="/?session={{ .ID }}">{{ .ID }}</a>
+        <span class="board__key">{{ .Repo }}</span>
         <span class="board__key">{{ .Agent }}</span>
         <span class="board__prompt">{{ .Prompt }}</span>
         <span class="board__val">{{ .Files }}f</span>

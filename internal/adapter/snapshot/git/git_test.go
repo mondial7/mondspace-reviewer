@@ -552,3 +552,64 @@ func TestDiffAtShowsWhatOneCommitDidToOneFile(t *testing.T) {
 		t.Errorf("diff should show the added content:\n%s", diff.Text)
 	}
 }
+
+func TestDiscoverReposFindsChildRepositories(t *testing.T) {
+	// A workspace directory holding several checkouts is the common shape:
+	// ~/work/{api,web,worker}. Pointing msr at the parent should find them.
+	root := t.TempDir()
+	for _, name := range []string{"api", "web", "worker"} {
+		dir := filepath.Join(root, name)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		gitCmd(t, dir, "init", "-q")
+	}
+	// A plain directory is not a repository and must not be offered as one.
+	if err := os.MkdirAll(filepath.Join(root, "notes"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	got := gitsnap.DiscoverRepos(root)
+
+	if len(got) != 3 {
+		t.Fatalf("found %d repositories, want 3: %v", len(got), got)
+	}
+	for i, want := range []string{"api", "web", "worker"} {
+		if filepath.Base(got[i]) != want {
+			t.Errorf("repo %d = %q, want %q (sorted for a stable prompt)", i, got[i], want)
+		}
+	}
+}
+
+func TestDiscoverReposPrefersTheRootWhenItIsItselfARepository(t *testing.T) {
+	// Run inside a checkout and that checkout is the answer, even if it happens
+	// to contain vendored or nested repositories.
+	root := newRepo(t)
+	nested := filepath.Join(root, "vendor", "dep")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	gitCmd(t, nested, "init", "-q")
+
+	got := gitsnap.DiscoverRepos(root)
+
+	if len(got) != 1 || filepath.Base(got[0]) != filepath.Base(root) {
+		t.Errorf("got %v, want just the root repository", got)
+	}
+}
+
+func TestDiscoverReposIgnoresHiddenAndMissingDirectories(t *testing.T) {
+	root := t.TempDir()
+	hidden := filepath.Join(root, ".cache", "thing")
+	if err := os.MkdirAll(hidden, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	gitCmd(t, hidden, "init", "-q")
+
+	if got := gitsnap.DiscoverRepos(root); len(got) != 0 {
+		t.Errorf("got %v, want nothing from a hidden directory", got)
+	}
+	if got := gitsnap.DiscoverRepos(filepath.Join(root, "nope")); len(got) != 0 {
+		t.Errorf("got %v, want nothing for a path that does not exist", got)
+	}
+}

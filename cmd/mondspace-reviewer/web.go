@@ -42,8 +42,18 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 	}
 	// With no --session, open the newest review in the workspace: a reviewer
 	// arriving at a repository should not have to look up an id first.
+	// With no --repo, look around: a checkout opens itself, and a directory of
+	// checkouts offers its children. Beyond a handful, ask rather than guess.
 	if len(repos) == 0 {
-		repos = repoList{"."}
+		found := gitsnap.DiscoverRepos(".")
+		if len(found) == 0 {
+			found = []string{"."}
+		}
+		chosen, err := selectRepos(found, os.Stdin, stdout, onTerminal())
+		if err != nil {
+			return err
+		}
+		repos = chosen
 	}
 	workspace := discoverWorkspace(repos, *out)
 	if *session == "" {
@@ -57,14 +67,17 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 	// several repositories in the workspace, --repo is only the starting point:
 	// using it for a session that lives elsewhere reads the wrong git tree and
 	// finds no changes at all.
-	repo := repos[0]
+	// --out is the *pattern* for finding a store ("<repo>/.mondspace-reviewer"
+	// unless absolute); storeRoot is where this particular session's store
+	// actually is. Overwriting the pattern with one session's resolved path
+	// makes every later discovery look in that one repository.
+	repo, storeRoot := repos[0], *out
 	if entry, known := workspaceIndex[*session]; known {
-		repo = entry.repo
-		*out = entry.out
+		repo, storeRoot = entry.repo, entry.out
 	}
 
 	// Postgres is opt-in via MSR_POSTGRES_DSN; otherwise the JSONL store is used.
-	store, closeStore, err := openStore(ctx, *out, *schema)
+	store, closeStore, err := openStore(ctx, storeRoot, *schema)
 	if err != nil {
 		return err
 	}
@@ -80,7 +93,7 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
-	storeRel := storeRelativeTo(repo, *out)
+	storeRel := storeRelativeTo(repo, storeRoot)
 	units, diffs, err := usecase.BuildFileUnits(ctx, snap, *session, baseline, domain.SnapshotRef{}, func(f string) bool {
 		return f == storeRel || strings.HasPrefix(f, storeRel+"/")
 	})
@@ -136,9 +149,10 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 		WithWorkspace(workspace).
 		WithLoader(sessionLoader(workspace, *out)).
 		WithVersions(snap.FileVersions, snap.DiffAt).
+		WithRepos(openRepos(), addRepo(*out)).
 		WithAsk(webAskFunc(sess, snap, sum)).
 		WithReanalyse(webReanalyseFunc(snap, sum, *model)).
-		WithAudit(auditFile(filepath.Join(*out, *session, "audit.jsonl")))
+		WithAudit(auditFile(filepath.Join(storeRoot, *session, "audit.jsonl")))
 
 	// narrateOnce is the only thing in the app that calls the model unbidden, and
 	// it runs at most once per review: on first sight of it, or when the reviewer
@@ -666,5 +680,57 @@ func sessionLoader(workspace []web.SessionSummary, out string) web.Loader {
 			Histories: usecase.FileHistories(sess.Events, units),
 			Narrative: narrative,
 		}, nil
+	}
+}
+
+// openRepos lists what the workspace currently holds, for the status page.
+func openRepos() []web.RepoStatus {
+	seen := map[string]web.RepoStatus{}
+	for _, entry := range workspaceIndex {
+		st := seen[entry.repo]
+		st.Path = entry.repo
+		st.Name = filepath.Base(mustAbs(entry.repo))
+		st.Sessions++
+		seen[entry.repo] = st
+	}
+
+	repos := make([]web.RepoStatus, 0, len(seen))
+	for _, st := range seen {
+		repos = append(repos, st)
+	}
+	sort.SliceStable(repos, func(i, j int) bool { return repos[i].Name < repos[j].Name })
+	return repos
+}
+
+// addRepo starts watching another repository without a restart. It refuses
+// anything that is not a git checkout: the path comes from a form, and a typo
+// that silently added an empty entry would be harder to notice than an error.
+func addRepo(out string) web.AddRepoFunc {
+	return func(path string) ([]web.SessionSummary, []web.RepoStatus, error) {
+		abs, err := filepath.Abs(strings.TrimSpace(path))
+		if err != nil {
+			return nil, nil, fmt.Errorf("%q is not a usable path", path)
+		}
+		info, err := os.Stat(filepath.Join(abs, ".git"))
+		if err != nil || info == nil {
+			return nil, nil, fmt.Errorf("%s is not a git repository", abs)
+		}
+		for _, entry := range workspaceIndex {
+			if mustAbs(entry.repo) == abs {
+				return nil, nil, fmt.Errorf("%s is already open", filepath.Base(abs))
+			}
+		}
+
+		// discoverWorkspace adds to the shared index and returns everything, so
+		// the caller gets the whole workspace back rather than a fragment.
+		known := make([]string, 0, len(workspaceIndex)+1)
+		seen := map[string]bool{}
+		for _, entry := range workspaceIndex {
+			if !seen[entry.repo] {
+				seen[entry.repo] = true
+				known = append(known, entry.repo)
+			}
+		}
+		return discoverWorkspace(append(known, abs), out), openRepos(), nil
 	}
 }
