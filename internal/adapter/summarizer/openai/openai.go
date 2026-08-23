@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -115,8 +116,21 @@ func (s *Summarizer) AnswerSchema(ctx context.Context, question string, c domain
 		Type:       "json_schema",
 		JSONSchema: schemaSpec{Name: schema.Name, Strict: true, Schema: schema.Schema},
 	}
-	return s.chat(ctx, answerSystemPrompt, askPrompt(question, c), format)
+	prompt := askPrompt(question, c)
+
+	content, err := s.chat(ctx, answerSystemPrompt, prompt, format)
+	if errors.Is(err, errRejected) {
+		// The endpoint does not implement structured output. Ask again without
+		// it: the caller still parses defensively, so a plain reply works — it is
+		// only less reliable, which is better than no narration at all.
+		return s.chat(ctx, answerSystemPrompt, prompt, nil)
+	}
+	return content, err
 }
+
+// errRejected marks a request the server refused as malformed, as opposed to one
+// it failed to serve. Only the former is worth retrying differently.
+var errRejected = errors.New("request rejected")
 
 // chat runs one chat completion and returns the assistant's message content.
 func (s *Summarizer) chat(ctx context.Context, system, user string, format *responseFormat) (string, error) {
@@ -152,6 +166,9 @@ func (s *Summarizer) chat(ctx context.Context, system, user string, format *resp
 		return "", err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode/100 == 4 {
+		return "", fmt.Errorf("summarizer returned status %d: %w", resp.StatusCode, errRejected)
+	}
 	if resp.StatusCode/100 != 2 {
 		return "", fmt.Errorf("summarizer returned status %d", resp.StatusCode)
 	}

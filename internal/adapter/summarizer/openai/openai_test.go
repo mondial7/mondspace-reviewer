@@ -213,6 +213,52 @@ func TestAnswerSchemaConstrainsTheReplyToASchema(t *testing.T) {
 	}
 }
 
+func TestAnswerSchemaRetriesUnconstrainedWhenTheServerRejectsTheSchema(t *testing.T) {
+	// Not every OpenAI-compatible endpoint implements structured output. One that
+	// does not must not turn a working narration into a failure.
+	var attempts []bool // whether each attempt carried a response_format
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		constrained := strings.Contains(string(raw), "response_format")
+		attempts = append(attempts, constrained)
+		if constrained {
+			http.Error(w, `{"error":"response_format is not supported"}`, http.StatusBadRequest)
+			return
+		}
+		io.WriteString(w, chatResponse(`{"title":"T"}`))
+	}))
+	defer srv.Close()
+
+	got, err := openai.New(srv.URL, "m").AnswerSchema(context.Background(), "q", domain.AskContext{}, narrativeSchema())
+	if err != nil {
+		t.Fatalf("AnswerSchema should fall back to an unconstrained call: %v", err)
+	}
+	if got != `{"title":"T"}` {
+		t.Errorf("answer = %q, want the retried reply", got)
+	}
+	if want := []bool{true, false}; len(attempts) != 2 || attempts[0] != want[0] || attempts[1] != want[1] {
+		t.Errorf("attempts = %v, want one constrained then one plain", attempts)
+	}
+}
+
+func TestAnswerSchemaDoesNotRetryAServerFailure(t *testing.T) {
+	// A 5xx says the server broke, not that it rejected the schema; retrying
+	// unconstrained would just hide the real fault.
+	var calls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		http.Error(w, "boom", http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	if _, err := openai.New(srv.URL, "m").AnswerSchema(context.Background(), "q", domain.AskContext{}, narrativeSchema()); err == nil {
+		t.Error("expected the 500 to surface")
+	}
+	if calls != 1 {
+		t.Errorf("made %d calls, want 1 — a 5xx is not a schema rejection", calls)
+	}
+}
+
 func TestAnswerLeavesTheReplyFormatFreeByDefault(t *testing.T) {
 	url, body := captureBody(t, "prose is fine here")
 
