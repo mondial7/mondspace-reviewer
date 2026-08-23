@@ -165,7 +165,7 @@ const (
 // runExport writes a review report for a stored session as Markdown or JSON.
 func runExport(args []string, stdout io.Writer) error {
 	fs := flag.NewFlagSet("export", flag.ContinueOnError)
-	format := fs.String("format", "md", "output format (md|json)")
+	format := fs.String("format", "md", "output format (md|json|slack)")
 	out := fs.String("out", ".mondspace-reviewer", "store root directory")
 	session := fs.String("session", "", "session id")
 	if err := fs.Parse(args[1:]); err != nil {
@@ -192,8 +192,11 @@ func runExport(args []string, stdout io.Writer) error {
 		}
 		_, err = fmt.Fprintln(stdout, string(data))
 		return err
+	case "slack":
+		_, err = fmt.Fprintln(stdout, usecase.ExportSlack(report))
+		return err
 	default:
-		return fmt.Errorf("unknown format %q (want md|json)", *format)
+		return fmt.Errorf("unknown format %q (want md|json|slack)", *format)
 	}
 }
 
