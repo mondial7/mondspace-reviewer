@@ -613,3 +613,98 @@ func TestDiscoverReposIgnoresHiddenAndMissingDirectories(t *testing.T) {
 		t.Errorf("got %v, want nothing for a path that does not exist", got)
 	}
 }
+
+func TestRecentCommitsWalksHistoryNewestFirst(t *testing.T) {
+	dir := newRepo(t)
+	base := time.Now()
+	commitAt(t, dir, base.Add(-3*time.Hour), "a.go", "First")
+	commitAt(t, dir, base.Add(-2*time.Hour), "b.go", "Second")
+	commitAt(t, dir, base.Add(-1*time.Hour), "c.go", "Third")
+
+	got, err := gitsnap.New(dir, "s").RecentCommits(context.Background(), 2)
+	if err != nil {
+		t.Fatalf("RecentCommits: %v", err)
+	}
+
+	if len(got) != 2 {
+		t.Fatalf("got %d commits, want the limit of 2: %+v", len(got), got)
+	}
+	if got[0].Subject != "Third" || got[1].Subject != "Second" {
+		t.Errorf("commits = %+v, want newest first", got)
+	}
+	// The parent is what makes a commit reviewable on its own.
+	if got[0].Parent == "" {
+		t.Errorf("a commit needs its parent to be a range: %+v", got[0])
+	}
+}
+
+func TestRecentCommitsGivesTheFirstCommitNoParent(t *testing.T) {
+	// A root commit has nothing before it. Reviewing it means diffing against
+	// the empty tree, which the caller can only do if it knows.
+	dir := t.TempDir()
+	gitCmd(t, dir, "init", "-q")
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("v1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCmd(t, dir, "add", "a.txt")
+	gitCmd(t, dir, "commit", "-qm", "root")
+
+	got, err := gitsnap.New(dir, "s").RecentCommits(context.Background(), 10)
+	if err != nil {
+		t.Fatalf("RecentCommits: %v", err)
+	}
+
+	if len(got) != 1 || got[0].Parent != "" {
+		t.Errorf("root commit = %+v, want no parent", got)
+	}
+}
+
+func TestTagsAreListedNewestFirst(t *testing.T) {
+	dir := newRepo(t)
+	base := time.Now()
+	commitAt(t, dir, base.Add(-2*time.Hour), "a.go", "One")
+	gitCmd(t, dir, "tag", "v1.0.0")
+	commitAt(t, dir, base.Add(-time.Hour), "b.go", "Two")
+	gitCmd(t, dir, "tag", "v1.1.0")
+
+	got, err := gitsnap.New(dir, "s").Tags(context.Background(), 10)
+	if err != nil {
+		t.Fatalf("Tags: %v", err)
+	}
+
+	if len(got) != 2 {
+		t.Fatalf("got %d tags, want 2: %+v", len(got), got)
+	}
+	if got[0].Name != "v1.1.0" || got[1].Name != "v1.0.0" {
+		t.Errorf("tags = %+v, want newest first", got)
+	}
+	if got[0].Hash == "" || got[0].TS.IsZero() {
+		t.Errorf("a tag needs its commit and date: %+v", got[0])
+	}
+}
+
+func TestTagsIsEmptyNotAnErrorWithoutAny(t *testing.T) {
+	got, err := gitsnap.New(newRepo(t), "s").Tags(context.Background(), 10)
+
+	if err != nil {
+		t.Fatalf("an untagged repository is not an error: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("got %+v, want none", got)
+	}
+}
+
+func TestIsDirtyReportsUncommittedWork(t *testing.T) {
+	dir := newRepo(t)
+	s := gitsnap.New(dir, "s")
+
+	if dirty, _ := s.IsDirty(context.Background()); dirty {
+		t.Error("a fresh checkout is not dirty")
+	}
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("changed\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if dirty, _ := s.IsDirty(context.Background()); !dirty {
+		t.Error("an edited working tree is dirty")
+	}
+}

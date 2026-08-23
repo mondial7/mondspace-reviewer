@@ -428,3 +428,77 @@ func isRepo(dir string) bool {
 	_, err := os.Stat(filepath.Join(dir, ".git"))
 	return err == nil
 }
+
+// RecentCommits walks history newest first, with each commit's first parent, so
+// a commit can be reviewed on its own as the range parent..commit. A root commit
+// has no parent and diffs against the empty tree.
+func (s *Snapshotter) RecentCommits(ctx context.Context, limit int) ([]domain.Commit, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	out, err := s.run(ctx, os.Environ(), "log", fmt.Sprintf("-%d", limit),
+		"--pretty=format:%H"+commitFieldSep+"%an"+commitFieldSep+"%cI"+
+			commitFieldSep+"%s"+commitFieldSep+"%P")
+	if err != nil {
+		return nil, nil // no HEAD yet: an empty history, not a failure
+	}
+
+	var commits []domain.Commit
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Split(line, commitFieldSep)
+		if len(fields) != 5 {
+			continue
+		}
+		ts, err := time.Parse(time.RFC3339, fields[2])
+		if err != nil {
+			continue
+		}
+		c := domain.Commit{Hash: fields[0], Author: fields[1], TS: ts, Subject: fields[3]}
+		// %P lists every parent; the first is the one a merge came from, which is
+		// the range a reviewer means by "what did this commit do".
+		if parents := strings.Fields(fields[4]); len(parents) > 0 {
+			c.Parent = parents[0]
+		}
+		commits = append(commits, c)
+	}
+	return commits, nil
+}
+
+// Tags lists the repository's tags newest first, with the commit each points at.
+// A tag is how a reviewer asks "what shipped in v3.1.0".
+func (s *Snapshotter) Tags(ctx context.Context, limit int) ([]domain.Tag, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	out, err := s.run(ctx, os.Environ(), "for-each-ref",
+		"--sort=-creatordate", fmt.Sprintf("--count=%d", limit),
+		"--format=%(refname:short)"+commitFieldSep+"%(objectname)"+commitFieldSep+"%(creatordate:iso-strict)",
+		"refs/tags")
+	if err != nil || out == "" {
+		return nil, nil // no tags is an ordinary state
+	}
+
+	var tags []domain.Tag
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Split(line, commitFieldSep)
+		if len(fields) != 3 {
+			continue
+		}
+		ts, err := time.Parse(time.RFC3339, fields[2])
+		if err != nil {
+			continue
+		}
+		tags = append(tags, domain.Tag{Name: fields[0], Hash: fields[1], TS: ts})
+	}
+	return tags, nil
+}
+
+// IsDirty reports whether the working tree differs from HEAD, which is what
+// makes "the work in progress" worth offering as something to review.
+func (s *Snapshotter) IsDirty(ctx context.Context) (bool, error) {
+	out, err := s.run(ctx, os.Environ(), "status", "--porcelain")
+	if err != nil {
+		return false, err
+	}
+	return strings.TrimSpace(out) != "", nil
+}

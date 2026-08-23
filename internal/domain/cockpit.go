@@ -10,6 +10,9 @@ type Commit struct {
 	Subject string    `json:"subject"`
 	Author  string    `json:"author"`
 	TS      time.Time `json:"ts"`
+	// Parent is what makes a commit reviewable on its own: the range is
+	// parent..hash. A root commit has none, and diffs against the empty tree.
+	Parent string `json:"parent,omitempty"`
 }
 
 // SessionStats is the session in numbers. Every field is derived from git or
