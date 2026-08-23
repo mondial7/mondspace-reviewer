@@ -54,3 +54,21 @@ type FileStat struct {
 	Added   int    `json:"added"`
 	Removed int    `json:"removed"`
 }
+
+// ChangeGroup is a set of files that changed together in one place. Five files
+// added under one package is one act of work, not five, and reviewing them as
+// five entries buries what actually happened.
+//
+// Meaning is model-written and therefore inferred (ADR 0003); the files, the
+// churn and the histories beneath it come from git.
+type ChangeGroup struct {
+	ID      string
+	Dir     string
+	Units   []Unit
+	Added   int
+	Removed int
+	Meaning string
+	// Sample is a bounded slice of what changed, carried so a description can be
+	// asked for without a second pass over the diffs.
+	Sample string
+}

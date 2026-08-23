@@ -1,0 +1,185 @@
+package usecase_test
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strings"
+	"testing"
+
+	"github.com/mondial7/mondspace-reviewer/internal/domain"
+	"github.com/mondial7/mondspace-reviewer/internal/port"
+	"github.com/mondial7/mondspace-reviewer/internal/usecase"
+)
+
+func TestGroupChangesCollectsFilesThatChangedTogether(t *testing.T) {
+	// Five files added under one package is one act of work, not five. Reviewing
+	// them as five entries buries the thing that actually happened.
+	units := []domain.Unit{
+		{ID: "u1", Files: []string{"internal/store/pg/pg.go"}},
+		{ID: "u2", Files: []string{"internal/store/pg/pg_test.go"}},
+		{ID: "u3", Files: []string{"internal/store/pg/schema.go"}},
+		{ID: "u4", Files: []string{"README.md"}},
+	}
+	diffs := map[string]domain.Diff{
+		"u1": {Text: "@@\n+a\n+b\n"},
+		"u2": {Text: "@@\n+c\n"},
+		"u3": {Text: "@@\n+d\n-e\n"},
+		"u4": {Text: "@@\n+f\n"},
+	}
+
+	got := usecase.GroupChanges(units, diffs)
+
+	if len(got) != 2 {
+		t.Fatalf("got %d groups, want the package and the loose file: %+v", len(got), got)
+	}
+	pkg := got[0]
+	if pkg.Dir != "internal/store/pg" {
+		t.Errorf("Dir = %q, want the shared directory", pkg.Dir)
+	}
+	if len(pkg.Units) != 3 {
+		t.Errorf("group holds %d files, want 3", len(pkg.Units))
+	}
+	// The group carries the combined churn, so it can be read without expanding.
+	if pkg.Added != 4 || pkg.Removed != 1 {
+		t.Errorf("group churn = +%d -%d, want +4 -1", pkg.Added, pkg.Removed)
+	}
+	// A file with no companions stands alone rather than being forced into a group.
+	if last := got[1]; last.Dir != "." || len(last.Units) != 1 {
+		t.Errorf("the loose file should stand alone, got %+v", last)
+	}
+}
+
+func TestGroupChangesKeepsEveryFileExactlyOnce(t *testing.T) {
+	units := []domain.Unit{
+		{ID: "a", Files: []string{"x/one.go"}},
+		{ID: "b", Files: []string{"x/two.go"}},
+		{ID: "c", Files: []string{"y/three.go"}},
+		{ID: "d", Files: []string{"y/four.go"}},
+		{ID: "e", Files: []string{"lonely.go"}},
+	}
+
+	got := usecase.GroupChanges(units, nil)
+
+	seen := map[string]int{}
+	for _, g := range got {
+		for _, u := range g.Units {
+			seen[u.ID]++
+		}
+	}
+	for _, u := range units {
+		if seen[u.ID] != 1 {
+			t.Errorf("unit %s appears %d times, want exactly once", u.ID, seen[u.ID])
+		}
+	}
+}
+
+func TestGroupChangesIsStableInInputOrder(t *testing.T) {
+	// The changes column is ordered newest-first by its caller; grouping must not
+	// reshuffle that, or the reader loses the thread.
+	units := []domain.Unit{
+		{ID: "a", Files: []string{"z/one.go"}},
+		{ID: "b", Files: []string{"a/two.go"}},
+		{ID: "c", Files: []string{"z/three.go"}},
+	}
+
+	got := usecase.GroupChanges(units, nil)
+
+	if len(got) != 2 || got[0].Dir != "z" || got[1].Dir != "a" {
+		t.Errorf("groups = %+v, want z first because its first file came first", got)
+	}
+}
+
+func TestGroupIDIsStableSoADescriptionCanBeStored(t *testing.T) {
+	units := []domain.Unit{
+		{ID: "u1", Files: []string{"pkg/a.go"}},
+		{ID: "u2", Files: []string{"pkg/b.go"}},
+	}
+
+	first := usecase.GroupChanges(units, nil)
+	second := usecase.GroupChanges(units, nil)
+
+	if first[0].ID == "" || first[0].ID != second[0].ID {
+		t.Errorf("group id = %q then %q, want a stable non-empty id", first[0].ID, second[0].ID)
+	}
+}
+
+// describer answers a per-group prompt and records what it was asked.
+type describer struct {
+	reply  string
+	err    error
+	asked  []string
+	schema []port.JSONSchema
+}
+
+func (d *describer) Answer(_ context.Context, q string, _ domain.AskContext) (string, error) {
+	d.asked = append(d.asked, q)
+	return d.reply, d.err
+}
+
+func (d *describer) AnswerSchema(ctx context.Context, q string, c domain.AskContext, s port.JSONSchema) (string, error) {
+	d.schema = append(d.schema, s)
+	return d.Answer(ctx, q, c)
+}
+
+func TestDescribeGroupsExplainsWhatEachChangeMeans(t *testing.T) {
+	// "edited jsonl.go" tells a reviewer nothing they cannot see from the
+	// filename. What they need is what the change is *for*.
+	d := &describer{reply: `{"meaning":"Persists a session's story so it survives a restart."}`}
+	groups := usecase.GroupChanges([]domain.Unit{
+		{ID: "u1", Files: []string{"internal/store/jsonl/jsonl.go"}},
+		{ID: "u2", Files: []string{"internal/store/jsonl/jsonl_test.go"}},
+	}, map[string]domain.Diff{
+		"u1": {Text: "@@\n+func SaveNarrative()\n"},
+		"u2": {Text: "@@\n+func TestNarrative()\n"},
+	})
+
+	got := usecase.DescribeGroups(context.Background(), d, domain.Session{Prompt: "cache the story"}, groups, nil)
+
+	if len(got) != 1 {
+		t.Fatalf("described %d groups, want 1", len(got))
+	}
+	if got[groups[0].ID] != "Persists a session's story so it survives a restart." {
+		t.Errorf("meaning = %q", got[groups[0].ID])
+	}
+	// The schema is used where available, so the reply is JSON by construction.
+	if len(d.schema) != 1 {
+		t.Errorf("asked with %d schemas, want the description constrained", len(d.schema))
+	}
+	// The prompt must carry enough to say something meaningful: the files, and
+	// some of what changed in them.
+	if !strings.Contains(d.asked[0], "jsonl.go") || !strings.Contains(d.asked[0], "SaveNarrative") {
+		t.Errorf("prompt should carry files and diff content:\n%s", d.asked[0])
+	}
+}
+
+func TestDescribeGroupsSkipsWhatItCannotDescribe(t *testing.T) {
+	// A model that fails must leave the group undescribed rather than filling it
+	// with a mechanical sentence dressed up as meaning.
+	d := &describer{err: errors.New("offline")}
+	groups := usecase.GroupChanges([]domain.Unit{{ID: "u1", Files: []string{"a/x.go"}}}, nil)
+
+	got := usecase.DescribeGroups(context.Background(), d, domain.Session{}, groups, nil)
+
+	if len(got) != 0 {
+		t.Errorf("got %v, want nothing described when the model is unavailable", got)
+	}
+}
+
+func TestDescribeGroupsIsBounded(t *testing.T) {
+	// One model call per group is fine for twenty groups and not for four
+	// hundred; the cost has to have a ceiling.
+	var units []domain.Unit
+	for i := 0; i < 200; i++ {
+		units = append(units, domain.Unit{
+			ID: fmt.Sprintf("u%03d", i), Files: []string{fmt.Sprintf("pkg%03d/a.go", i)},
+		})
+	}
+	d := &describer{reply: `{"meaning":"x"}`}
+
+	usecase.DescribeGroups(context.Background(), d, domain.Session{}, usecase.GroupChanges(units, nil), nil)
+
+	if len(d.asked) > 32 {
+		t.Errorf("made %d calls, want a bounded number", len(d.asked))
+	}
+}
