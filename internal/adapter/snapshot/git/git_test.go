@@ -79,6 +79,30 @@ func TestBaselineNetChangesAndDiff(t *testing.T) {
 	}
 }
 
+func TestResolveRefResolvesCommitBranchOrTag(t *testing.T) {
+	dir := newRepo(t)
+	head := gitCmd(t, dir, "rev-parse", "HEAD")
+	gitCmd(t, dir, "branch", "feature")
+	gitCmd(t, dir, "tag", "v1")
+
+	s := gitsnap.New(dir, "sess")
+	ctx := context.Background()
+
+	for _, ref := range []string{"HEAD", "feature", "v1", head} {
+		got, err := s.ResolveRef(ctx, ref)
+		if err != nil {
+			t.Fatalf("ResolveRef(%q): %v", ref, err)
+		}
+		if got.Commit != head {
+			t.Errorf("ResolveRef(%q).Commit = %q, want %q", ref, got.Commit, head)
+		}
+	}
+
+	if _, err := s.ResolveRef(ctx, "does-not-exist"); err == nil {
+		t.Error("ResolveRef with an unknown ref should error")
+	}
+}
+
 func gitCmd(t *testing.T, dir string, args ...string) string {
 	t.Helper()
 	cmd := exec.Command("git", args...)

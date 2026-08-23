@@ -118,6 +118,17 @@ func (s *Snapshotter) Baseline(ctx context.Context, before time.Time) (domain.Sn
 	return domain.SnapshotRef{Commit: out, Label: "baseline"}, nil
 }
 
+// ResolveRef resolves any commit-ish (a commit hash, branch, or tag) to a
+// SnapshotRef, so a caller-supplied `--since`/`--until` can be diffed the same
+// way as any other snapshot.
+func (s *Snapshotter) ResolveRef(ctx context.Context, ref string) (domain.SnapshotRef, error) {
+	out, err := s.run(ctx, os.Environ(), "rev-parse", ref)
+	if err != nil {
+		return domain.SnapshotRef{}, fmt.Errorf("resolving ref %q: %w", ref, err)
+	}
+	return domain.SnapshotRef{Commit: out, Label: ref}, nil
+}
+
 // ChangedFiles lists the files whose net content differs from `from` to the
 // current working tree, including new untracked files.
 func (s *Snapshotter) ChangedFiles(ctx context.Context, from domain.SnapshotRef) ([]string, error) {
