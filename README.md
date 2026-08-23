@@ -67,6 +67,12 @@ download the archive for your platform, extract it, and put
 `mondspace-reviewer` on your `PATH`. Each release also ships a
 `checksums.txt` to verify the download.
 
+With Homebrew (macOS):
+
+```sh
+brew install mondial7/tap/mondspace-reviewer
+```
+
 Or install with Go:
 
 ```sh
@@ -78,6 +84,8 @@ This installs a binary named `mondspace-reviewer`. Most people alias it:
 ```sh
 alias msr=mondspace-reviewer
 ```
+
+`msr help` lists every command; `msr help <command>` shows one command's flags.
 
 Or build from source:
 
@@ -494,7 +502,7 @@ MSR_SUMMARIZER_URL=http://localhost:1234/v1 MSR_MODEL=qwen/qwen3.5-9b \
 
 ## Status
 
-**v3.0.0** — everything below is built, tested, and shippable:
+**v3.1.0** — everything below is built, tested, and shippable:
 
 - **Web app** (`msr web`) — the primary interface: a single-page cockpit with
   the story, the diffs, annotation and re-analysis side by side; a live

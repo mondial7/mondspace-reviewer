@@ -42,10 +42,16 @@ func main() {
 }
 
 func run(ctx context.Context, args []string, stdin io.Reader, stdout io.Writer) error {
+	// No arguments is a request for help, not an error: someone typing `msr` is
+	// asking what it does.
 	if len(args) == 0 {
-		return fmt.Errorf("usage: msr <web|review|ask|export|ingest|install-hooks|gc> ...")
+		return runHelp(nil, stdout)
 	}
 	switch args[0] {
+	case "help", "--help", "-h":
+		return runHelp(args[1:], stdout)
+	case "version", "--version":
+		return runVersion(stdout)
 	case "review":
 		return runReview(ctx, args, stdout)
 	case "ingest":
@@ -61,7 +67,7 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout io.Writer) 
 	case "gc":
 		return runGC(ctx, args, stdout)
 	default:
-		return fmt.Errorf("unknown command %q", args[0])
+		return fmt.Errorf("unknown command %q — try `msr help`", args[0])
 	}
 }
 

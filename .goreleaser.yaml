@@ -15,7 +15,9 @@ builds:
       - amd64
       - arm64
     ldflags:
-      - -s -w
+      # Stamp the version so `msr version` reports the release rather than
+      # falling back to the module's build info.
+      - -s -w -X main.version={{ .Version }}
 
 archives:
   - id: mondspace-reviewer
@@ -39,6 +41,40 @@ changelog:
       - "^test:"
       - "^ci:"
       - "^docs:"
+
+# Homebrew, published to mondial7/homebrew-tap:
+#
+#   brew install mondial7/tap/mondspace-reviewer
+#
+# A cask rather than a formula: GoReleaser has deprecated `brews`, and Homebrew
+# now takes casks for binaries too. Casks are a macOS mechanism, so the tarballs
+# and `go install` remain the route on Linux.
+#
+# The default GITHUB_TOKEN cannot write to another repository, so publishing
+# needs a personal access token with `contents: write` on the tap, exposed to
+# the release workflow as HOMEBREW_TAP_TOKEN. Absent that secret the cask is
+# skipped rather than failing the release: a missing tap must not stop the
+# binaries from shipping.
+homebrew_casks:
+  - name: mondspace-reviewer
+    ids: [mondspace-reviewer]
+    repository:
+      owner: mondial7
+      name: homebrew-tap
+      branch: main
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    skip_upload: '{{ if index .Env "HOMEBREW_TAP_TOKEN" }}false{{ else }}true{{ end }}'
+    directory: Casks
+    homepage: https://github.com/mondial7/mondspace-reviewer
+    description: A review companion for autonomous coding agents.
+    commit_author:
+      name: mondspace-reviewer
+      email: noreply@github.com
+    commit_msg_template: "Bump mondspace-reviewer to {{ .Tag }}"
+    caveats: |
+      The binary is installed as `mondspace-reviewer`. The docs use `msr`:
+
+        alias msr=mondspace-reviewer
 
 release:
   github:

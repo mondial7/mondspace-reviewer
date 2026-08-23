@@ -1,0 +1,151 @@
+package main
+
+import (
+	"fmt"
+	"io"
+	"runtime/debug"
+	"strings"
+)
+
+// version is stamped by goreleaser at build time; a `go build` leaves it empty
+// and the module's own build info answers instead.
+var version = ""
+
+// command is one thing msr can do, and the one-line summary help shows for it.
+// Keeping the list here rather than in a printf means `help` cannot drift from
+// what the dispatcher accepts — the test walks this table.
+var commands = []struct {
+	name    string
+	summary string
+	usage   string
+	flags   []string
+}{
+	{
+		"web", "Review in the browser — the cockpit, and the primary interface.",
+		"msr web [--repo=<path> …] [--session=<id>] [--addr=127.0.0.1:7777]",
+		[]string{
+			"--repo=<path>    repository to review; repeatable. With none given, msr",
+			"                 opens the checkout it is in, or offers the checkouts",
+			"                 one level below it.",
+			"--session=<id>   which review to open; the newest if omitted",
+			"--addr=<addr>    where to listen (localhost only by default)",
+			"--out=<dir>      store root, per repository (default .mondspace-reviewer)",
+			"--pg-schema=<s>  Postgres schema when MSR_POSTGRES_DSN is set",
+			"--summarizer-url, --model   the OpenAI-compatible endpoint to narrate with",
+		},
+	},
+	{
+		"review", "Review a session in the terminal, live or after the fact.",
+		"msr review [--tui|--plain] [--source=replay|hooks|opencode] [--session=<id>]",
+		[]string{
+			"--tui / --plain  interactive queue, or line-oriented output",
+			"--source=<src>   replay a file, tail Claude Code hooks, or tail OpenCode",
+			"--since=<ref>    review a commit range instead of a session",
+			"--until=<ref>    the far end of that range (default: the working tree)",
+			"--verbose, -v    list each unit's member events and snapshot refs",
+		},
+	},
+	{
+		"ask", "Ask a question answered only from the log, diffs and your notes.",
+		`msr ask [--scope=session|unit] --session=<id> "did the retry have a stated reason?"`,
+		[]string{"--scope=<s>      session (default) or unit", "--unit=<id>      which unit, for --scope=unit"},
+	},
+	{
+		"export", "Write the review up: markdown, JSON, or one Slack message.",
+		"msr export --format=md|json|slack --session=<id>",
+		[]string{"--format=<f>     md (default), json, or slack"},
+	},
+	{
+		"ingest", "Append one agent event. Reads hook JSON on stdin and always exits 0.",
+		"msr ingest --kind=<kind> < event.json",
+		[]string{"--kind=<k>       which hook fired"},
+	},
+	{
+		"install-hooks", "Write the agent hooks into .claude/settings.json (merges, never clobbers).",
+		"msr install-hooks --dir=.",
+		[]string{"--dir=<path>     project to install into", "--command=<path> the msr binary the hooks should call"},
+	},
+	{
+		"gc", "Delete the throwaway review refs left under refs/mondspace/review/.",
+		"msr gc [--session=<id>] [--repo=.] [--dry-run]",
+		[]string{"--dry-run        print what would be removed, remove nothing"},
+	},
+	{"version", "Print the version.", "msr version", nil},
+	{"help", "Show this, or the flags for one command.", "msr help [command]", nil},
+}
+
+// runHelp prints the whole list, or one command's flags.
+func runHelp(args []string, stdout io.Writer) error {
+	if len(args) > 0 {
+		for _, c := range commands {
+			if c.name == args[0] {
+				fmt.Fprintf(stdout, "%s\n\n  %s\n\n", c.summary, c.usage)
+				for _, f := range c.flags {
+					fmt.Fprintf(stdout, "  %s\n", f)
+				}
+				fmt.Fprintln(stdout)
+				return nil
+			}
+		}
+		return fmt.Errorf("unknown command %q — try `msr help`", args[0])
+	}
+
+	fmt.Fprint(stdout, `msr — a review companion for autonomous coding agents.
+
+It watches an agent work and turns what it did into a review you can read: the
+session as a story, beside the real diffs. It never writes to the agent.
+
+USAGE
+
+  msr <command> [flags]
+
+COMMANDS
+
+`)
+	width := 0
+	for _, c := range commands {
+		if len(c.name) > width {
+			width = len(c.name)
+		}
+	}
+	for _, c := range commands {
+		fmt.Fprintf(stdout, "  %-*s  %s\n", width, c.name, c.summary)
+	}
+
+	fmt.Fprintf(stdout, `
+GETTING STARTED
+
+  msr install-hooks --dir=.     let msr see what your agent does
+  msr web                       review it in the browser
+
+  Try it with no agent, terminal or network:
+  msr review --source=replay --file=testdata/sessions/basic.jsonl --plain
+
+  msr help <command>            flags for one command
+
+ENVIRONMENT
+
+  MSR_API_KEY         bearer token for an authenticated summarizer endpoint
+  MSR_POSTGRES_DSN    use PostgreSQL instead of the JSONL store
+  MSR_NO_THINKING=1   ask the model to skip its reasoning phase
+
+Docs: https://github.com/mondial7/mondspace-reviewer#readme
+`)
+	return nil
+}
+
+// runVersion reports the build. goreleaser stamps `version`; a plain `go build`
+// or `go install` falls back to the module's own build info.
+func runVersion(stdout io.Writer) error {
+	v := version
+	if v == "" {
+		if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" {
+			v = info.Main.Version
+		}
+	}
+	if v == "" || v == "(devel)" {
+		v = "dev"
+	}
+	fmt.Fprintln(stdout, "msr "+strings.TrimPrefix(v, "v"))
+	return nil
+}

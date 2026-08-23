@@ -4,6 +4,39 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.0] — 2026-08-23
+
+### Added
+
+- **`msr help`** — every command with a one-line summary, and `msr help <command>`
+  for one command's flags. Typing `msr` with no arguments now shows it rather
+  than an error: someone typing the bare name is asking what it does. **`msr
+  version`** reports the build, stamped at release time.
+- **Homebrew**: `brew install mondial7/tap/mondspace-reviewer`, published to
+  `mondial7/homebrew-tap` on each release. Publishing needs a token with write
+  access to the tap; without it the cask is skipped rather than failing the
+  release.
+- **The reviewer assistant keeps its conversation.** Exchanges are stored in
+  both the JSONL and Postgres stores and reloaded, so a thread can be picked up
+  tomorrow. Answers render as markdown, and a question is a mode: the story
+  steps aside, the field grows, and the wait is explicit.
+- **Groups can be described on demand.** The automatic pass is bounded, so most
+  groups in a large session read "not yet described"; each now carries a control
+  to ask, and the result is saved with the story.
+
+### Fixed
+
+- **The assistant was showing its own thinking as the answer.** A reasoning
+  model that runs out of budget mid-thought leaves `content` empty and a
+  monologue in `reasoning_content`, and the fallback added for schema replies
+  took it. That fallback now applies only when a schema was in force; otherwise
+  an empty answer is reported as one, naming the finish reason and the reasoning
+  tokens spent. Questions also get a roomier token budget than headlines.
+- **A session-scoped question carried no diffs**, so the assistant correctly
+  answered that it could not say what changed. It now receives a bounded digest
+  of the actual changes, capped per file, built from the units the page shows
+  rather than whatever the store happened to hold.
+
 ## [3.0.0] — 2026-08-23
 
 One page to review a session, across as many repositories as you like.
@@ -167,6 +200,7 @@ First public release. Watching one agent, one session, one repo.
 - Session identifiers are validated to prevent path traversal outside the store
   root.
 
+[3.1.0]: https://github.com/mondial7/mondspace-reviewer/releases/tag/v3.1.0
 [3.0.0]: https://github.com/mondial7/mondspace-reviewer/releases/tag/v3.0.0
 [2.0.0]: https://github.com/mondial7/mondspace-reviewer/releases/tag/v2.0.0
 [1.0.0]: https://github.com/mondial7/mondspace-reviewer/releases/tag/v1.0.0
