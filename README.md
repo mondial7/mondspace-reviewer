@@ -1,22 +1,11 @@
 # mondspace-reviewer (`msr`)
 
-**A review companion for autonomous coding agents — in your browser or your terminal.**
+**Review what your coding agent actually did — in your browser, while it works.**
 
-While an agent works in auto mode, `msr` turns its raw activity into a
-**reviewable storyline of change** — one unit per changed file, each with its
-real diff, a concise summary, deterministic flags, and one-click annotation. It
-watches; it never writes to the agent.
-
-Run `msr web` for the full experience: a cockpit that reads the session as a
-story beside its diffs, live while the agent is still working — across as many
-repositories as you like.
-
-> The **review log is the product.** Narration and interrogation exist only to
-> help you produce annotations.
-
-<p align="center">
-  <img src="docs/img/tui-review.png" alt="msr review queue" width="720">
-</p>
+`msr` reads a repository's git history and turns any part of it into a review you
+can actually read: the change told as a story, beside the real diffs, with a
+local model explaining what each piece is *for*. It watches; it never writes to
+your code or your agent.
 
 [![CI](https://github.com/mondial7/mondspace-reviewer/actions/workflows/ci.yml/badge.svg)](https://github.com/mondial7/mondspace-reviewer/actions/workflows/ci.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/mondial7/mondspace-reviewer.svg)](https://pkg.go.dev/github.com/mondial7/mondspace-reviewer)
@@ -24,409 +13,161 @@ repositories as you like.
 
 ---
 
-## Why
-
-While a coding agent works, the human has no cheap way to stay oriented. Reading
-the raw agent stream is high cognitive load; waiting for the final diff means all
-feedback arrives too late to be cheap. `msr` sits in between: it clusters the
-agent's actions into units of meaning, flags the ones worth a second look with no
-model at all, and keeps them in an **unread queue with a cursor** — designed for
-being behind. Nothing scrolls away, nothing auto-advances.
-
-Three ideas do most of the work:
-
-- **Units, not tool calls.** Consecutive edits are clustered into one reviewable
-  unit. A unit dismissed in one keystroke is cheap; 200 micro-edits is unusable.
-- **`stated` vs `inferred` is load-bearing.** A rationale taken verbatim from the
-  agent's own words is shown differently — different colour *and* different label —
-  from one a model guessed. A single confabulated rationale presented as fact
-  destroys trust in the whole feed, so when in doubt it's marked `inferred`.
-- **Deterministic flags first.** `no-test`, `new-dep`, `swallowed-err`, and friends
-  are what make you stop and look. They run with no model, offline, instantly.
-
-Expand a unit and you get the **story of that change** — a concise headline, the
-`stated`/`inferred` rationale, and the **actual diff** — so you can review and
-annotate even when a change is too big for line-by-line reading.
-
-## Screenshots
-
-| Ask the log (`a` / `A`) | Export a review report |
-|---|---|
-| ![ask](docs/img/ask.png) | ![export](docs/img/export.png) |
-
-Scriptable, no terminal required — the `replay` source + `plain` presenter give
-full end-to-end output with no agent, no TUI, and no network:
-
-<p align="center"><img src="docs/img/plain-review.png" alt="plain output" width="620"></p>
-
-## Install
-
-Prebuilt binaries (darwin/linux, amd64/arm64) are attached to every
-[GitHub Release](https://github.com/mondial7/mondspace-reviewer/releases) —
-download the archive for your platform, extract it, and put
-`mondspace-reviewer` on your `PATH`. Each release also ships a
-`checksums.txt` to verify the download.
-
-With Homebrew (macOS):
+## Install and run
 
 ```sh
-brew install mondial7/tap/mondspace-reviewer
+brew install mondial7/tap/mondspace-reviewer   # macOS
+# or: go install github.com/mondial7/mondspace-reviewer/cmd/mondspace-reviewer@latest
+
+cd ~/your-project
+msr web
 ```
 
-Or install with Go:
+That's it. It opens `http://127.0.0.1:7777` on the newest thing worth reviewing.
+No configuration, no database, no account, and **no session to record first** —
+it reads the git history that is already there.
+
+Everything works offline. The prose is optional: point `msr` at any
+OpenAI-compatible endpoint — a local [LM Studio](https://lmstudio.ai) server by
+default — and it degrades to a mechanical grouping when there is none.
+
+## Why you would want it
+
+Reviewing an agent's work is a specific kind of miserable. The diff is large, it
+arrives all at once, and the *why* is buried in a transcript you no longer want
+to read. `msr` attacks exactly that:
+
+- **Net change, not keystrokes.** One reviewable unit per changed file, so an
+  agent editing the same file eleven times reads as one change with one diff —
+  and you can still open the eleven if you want them.
+- **Meaning, not filenames.** Files that changed together are grouped, and each
+  group gets one sentence about what the change is *for*. "edited jsonl.go" is
+  never shown: the filename above it already said that.
+- **`stated` vs `inferred`, always.** A rationale in the agent's own words looks
+  different — different colour *and* label — from one a model guessed. A model
+  can sharpen a headline; it can never assert a reason nobody gave.
+- **Flags with no model at all.** `no-test`, `new-dep`, `swallowed-err`,
+  `public-api`, `large`, `todo` — offline, instant, and what make you stop.
+- **Every number is a git fact.** Files, lines, commits, tags, pull requests.
+  Nothing on the panel is model-derived, which is the point of putting it beside
+  a narration feature.
+
+## What you can review
+
+Anything in git, not just recorded agent runs:
+
+| | |
+| --- | --- |
+| **a commit** | `parent..commit` — what that one commit did |
+| **a tag** | everything since the previous tag — "what shipped in v4.1.0" |
+| **a pull request** | the commits that reference it, together |
+| **your working tree** | uncommitted work, offered first when it is dirty |
+| **an agent session** | a recorded run, if you installed the hooks |
+
+Pick from the selector at the top left. A recorded session is *one kind among
+them*, not the index — and every other target lists the sessions that overlap
+it, so the intent behind a commit is one click away ([ADR 0017](ADR/0017-git-first-review.md)).
+
+## Using the cockpit
+
+One page, three columns. Only the two right-hand ones scroll.
+
+| | |
+| --- | --- |
+| **panel** (fixed) | what this change is, in a sentence; a live isometric field; the numbers |
+| **story** | the change as chapters of prose, and the reviewer assistant |
+| **changes** | every file, folded, with its diff, history and annotation |
+
+**Read.** Click a chapter and its files come up beside it. Click a filename to
+open its diff; long diffs are compacted with the hunk headers kept, and
+`open full history` steps through that file's git history with `←`/`→`.
+
+**Annotate.** Every change takes a note and one of `ok` · `question` ·
+`objection` · `debt` · `note`. **The review log is the product** — the prose and
+the assistant exist only to help you produce it. Export it when you are done.
+
+**Ask.** The assistant answers only from this review: the diffs, the log, and
+your own notes. Never a re-read of the repo, never the open internet.
+
+**Keys.** `⌘K` a palette over every page and every changed file · `⌘Z` zen mode,
+which hides the shell · `⌘J` dark, light, or follow the system.
+
+Every model call is slow on a local model, so the waiting is visible: a spinner
+on the rail from any page, and `/status` showing what is running, what it cost,
+and a button to run it again.
+
+### The other pages
+
+- **`/activity`** — every model call and every change to the review, across the
+  whole workspace.
+- **`/status`** — is your model online, what it has spent (split into prompt,
+  completion and *of which reasoning*), which repositories are open, and one
+  click to watch another.
+
+## Several repositories at once
 
 ```sh
-go install github.com/mondial7/mondspace-reviewer/cmd/mondspace-reviewer@latest
+msr web --repo=. --repo=../api --repo=../web
 ```
 
-This installs a binary named `mondspace-reviewer`. Most people alias it:
+With no `--repo`, `msr` opens the checkout you are in — or, if you are in a
+directory *of* checkouts, the first few of them. The rest appear on `/status`
+under *found nearby*, one click from being watched. Nothing is asked at launch:
+choosing belongs where it can change without a restart.
+
+Each repository keeps its own store under `<repo>/.mondspace-reviewer`, and a
+review remembers which repository it belongs to.
+
+## Watching an agent live
+
+Reviewing git needs nothing. To also capture an agent's **stated intent** — its
+own words about why it did something — install the hooks:
 
 ```sh
-alias msr=mondspace-reviewer
+msr install-hooks --dir=.
 ```
 
-`msr help` lists every command; `msr help <command>` shows one command's flags.
+Four hooks, each an atomic append of one JSON line that exits immediately: your
+agent runs fine whether or not `msr` is attached, and attaching later replays the
+whole log. `--source=opencode` tails an OpenCode log instead.
 
-Or build from source:
+That is the only thing sessions add — and it is why they are worth having, not
+why they should be the index.
+
+## The command line
+
+The web app is the product. The CLI is there for scripting and for looking at a
+review without a browser.
 
 ```sh
-git clone https://github.com/mondial7/mondspace-reviewer
-cd mondspace-reviewer
-go build -o msr ./cmd/mondspace-reviewer
+msr help                      # every command
+msr help <command>            # one command's flags
+
+msr export --format=md --session=<id>       # write the review up
+msr export --format=slack --session=<id>    # one message, ready to post
+msr ask --session=<id> "did the retry change have a stated reason?"
+msr review --plain --since=v4.0.0           # line-oriented, scriptable
+msr gc --dry-run                            # tidy throwaway review refs
 ```
 
-Requires **Go 1.25+**, `git`, and no CGO. The optional headline/interrogation
-features talk to any OpenAI-compatible endpoint (defaulting to a local
-[LM Studio](https://lmstudio.ai) server) and degrade gracefully when it is absent.
-
-## Quick start
-
-### Try it with zero setup
-
-The whole app is exercisable from a recorded log — no agent, terminal, or network:
+Try the whole pipeline with no agent, terminal or network:
 
 ```sh
 msr review --source=replay --file=testdata/sessions/basic.jsonl --plain
 ```
 
-### Watch a live Claude Code session
+<details>
+<summary><strong>The terminal UI (unmaintained)</strong></summary>
 
-1. Install the hooks into your project (merges into `.claude/settings.json`):
+`msr review --tui` still opens the original bubbletea queue: `j`/`k` to move,
+`enter` to expand, `o`/`q`/`x`/`d`/`n` to annotate, `a`/`A` to ask, `f` to filter
+flagged, `e` to export.
 
-   ```sh
-   msr install-hooks --dir=.
-   ```
+It works, and it is **no longer developed**. Everything since v3 — the cockpit,
+git-first review, workspaces, grouped changes, the assistant — is web only, and
+the TUI will not catch up. Use `msr web`; use `--plain` when you want text.
 
-   Hooks run under `/bin/sh` (no shell aliases, bare PATH), so `install-hooks`
-   embeds the **absolute path** to the binary — no PATH or alias setup needed.
-   Each hook does an atomic append of one JSON line and exits 0 immediately —
-   **the agent runs fine whether or not the reviewer is attached**, and attaching
-   later replays the whole log. Override the invoked command with
-   `--command` if you keep the binary elsewhere.
-
-2. Review the session in the interactive queue:
-
-   ```sh
-   msr review --tui --session=<session-id> --repo=.                  # retroactive: net change per file
-   msr review --tui --source=hooks --session=<session-id> --repo=.   # live: units stream in as the agent works
-   msr review --source=hooks --plain --session=<session-id>          # line-oriented, scriptable
-   ```
-
-   `--source=opencode` works the same way, tailing an OpenCode session log
-   instead of Claude Code's hooks — `msr review --tui --source=opencode
-   --session=<session-id> --repo=.`. The domain never knows which agent it is
-   watching; only the adapter changes. See [ADR
-   0006](ADR/0006-opencode-event-source.md) for the assumed OpenCode payload
-   shape and its mapping onto `domain.Event`.
-
-   **Retroactive review** reconstructs the session's *net* change from git — one
-   reviewable unit per file, diffed against the commit just before the session —
-   so an agent's back-and-forth on a file collapses into a single, clear change
-   (`auth/token.go · replace Validate with a TokenValidator interface  +9 -3`)
-   with its real diff on expand. It reads like `git diff` / a PR, not a keystroke log.
-
-   **Live review** starts empty and fills as each unit seals — the cursor stays
-   where you are (the agent outruns you by construction).
-
-### Review an arbitrary range, no session required
-
-`--since` reviews the net change from any commit, branch, or tag — no hooks,
-no recorded session, and no `--session` flag needed:
-
-```sh
-msr review --tui   --since=main --repo=.                 # net change from main to the working tree
-msr review --plain --since=v1.2.0 --until=v1.3.0          # net change between two tags
-```
-
-It reuses the same per-file net-diff engine as retroactive session review: one
-unit per changed file, real diff, deterministic flags. Baseline is `--since`;
-the far end is `--until` if given, otherwise the current working tree. With no
-`--session`, unit ids are seeded from a synthesized `since-<ref>` handle, so
-annotations still have a stable home.
-
-3. Ask questions and export your review:
-
-   ```sh
-   msr ask --scope=session --session=<session-id> "did the retry change have a stated reason?"
-   msr export --format=md --session=<session-id> > review.md
-   msr export --format=slack --session=<session-id>   # one concise message, ready to post
-   ```
-
-## Commands
-
-| Command | Purpose |
-|---|---|
-| `msr install-hooks --dir=.` | Write the four agent hooks into `.claude/settings.json` (merges, never clobbers). |
-| `msr ingest --kind=…` | Append one hook event (reads hook JSON on stdin, always exits 0). |
-| `msr review --source=replay\|hooks\|opencode [--plain\|--tui] [--verbose]` | Cluster and present the session. `--verbose` (`-v`) lists each unit's member events and snapshot refs. |
-| `msr review --since=<ref> [--until=<ref>] [--plain\|--tui] [--repo=.]` | Review the net change from `--since` to `--until` (default: the working tree) — no `--session` required. |
-| `msr ask --scope=unit\|session --session=… "question"` | Answer a question from the bounded log context. |
-| `msr export --format=md\|json\|slack --session=…` | Produce the review report, debt list, and open agenda — or a concise single Slack message. |
-| `msr web [--session=…] [--repo=… …]` | Serve the review as a localhost web app. `--repo` is repeatable; with no `--session` the newest review opens. |
-| `msr gc [--session=<id>] [--repo=.] [--dry-run]` | Delete throwaway review refs (`refs/mondspace/review/*`) for closed sessions — or one session's ref with `--session`. `--dry-run` prints what would be removed. |
-
-## Flags (deterministic, no model)
-
-Run before any model call, offline and instantly:
-
-| Flag | Fires when |
-|---|---|
-| `no-test` | a unit touches non-test source with no `*_test.*` file |
-| `new-dep` | an `import` / `require` / dependency line is added |
-| `swallowed-err` | a returned error is dropped with `_ = call()` |
-| `public-api` | an exported declaration is removed or changed |
-| `large` | more than 150 lines change in one unit |
-| `todo` | a `TODO` / `FIXME` / `XXX` is added |
-| `solo-iface` | a new Go interface is declared with no implementing method added in the same diff ([diff-local heuristic](ADR/0011-solo-iface-diff-heuristic.md), can over/under-flag) |
-| `failed` | a member tool call failed (live review only — see [ADR 0010](ADR/0010-failed-tool-calls.md)) |
-
-## Keybindings (TUI)
-
-```
-j / k     next / prev unit        enter   expand / collapse
-g / G     top / bottom            /       filter (flag, file, note kind)
-tab       toggle unread-only      a / A   ask (unit / session)
-o ? x d n annotate                q       quit
-```
-
-Annotations: `o` ok (accept + mark read + advance), `?` question, `x` objection,
-`d` debt, `n` note. Annotations anchor to **unit IDs**, never file/line — the
-working tree is live, but unit IDs are immutable history. When a later unit
-rewrites the same file as an annotated one, the earlier note is surfaced as
-**superseded**, never silently resolved.
-
-## How it works
-
-Ports and adapters; dependencies point inward only. The `domain`, `usecase`, and
-`port` packages import nothing from `internal/adapter/...` — [enforced by a test](arch/arch_test.go).
-
-```
-internal/
-  domain/    Event, Unit, Note, Session, Headline, Flag — types + invariants, zero I/O
-  usecase/   Cluster, Flag, Summarize, Ask, Supersede, Export — pure functions over the log
-  port/      EventSource, Snapshotter, Summarizer, Store, Presenter
-  adapter/
-    source/hooks     tails events.jsonl from Claude Code (fsnotify + poll fallback)
-    source/opencode  tails an OpenCode session log — same tailing, different payload shape
-    source/replay    replays a recorded log — the test source
-    snapshot/git   throwaway snapshot commits; never touches HEAD/index/worktree
-    summarizer/openai  LM Studio / any OpenAI-compatible endpoint
-    summarizer/null    passthrough, used offline
-    store/jsonl        append-only events/units/notes JSONL
-    presenter/tui      bubbletea queue
-    presenter/plain    line-oriented, scriptable output
-cmd/mondspace-reviewer/
-```
-
-All state lives under `.mondspace-reviewer/<session-id>/` as three append-only
-JSONL files (`events`, `units`, `notes`) — crash-safe, tail-able, and inspectable
-with `jq`. Snapshots are throwaway commits under `refs/mondspace/review/<session>`,
-so every unit's diff stays stable even after the file is rewritten.
-
-## Web app
-
-```sh
-msr web                                        # http://127.0.0.1:7777
-```
-
-A localhost web application (ADR 0004) served by the same binary: the same
-net-change-per-file review, read as a story beside its diffs. It is
-server-rendered Go templates with hand-written BEM CSS — no build step and no
-client framework, and Three.js is vendored rather than fetched. It binds to
-localhost only, holds no credentials, and works with no model at all.
-
-Annotations persist through the same store as the CLI. By default that is the
-append-only JSONL log; set `MSR_POSTGRES_DSN` to use PostgreSQL instead, which
-creates its tables in a dedicated schema (`--pg-schema`, default
-`mondspace_reviewer`) and never in `public` (ADR 0007).
-
-```sh
-export MSR_POSTGRES_DSN='postgres://user:pass@localhost:5432/db?sslmode=disable'
-msr web --pg-schema=mondspace_reviewer
-```
-
-The web app is becoming the primary interface; the TUI remains supported.
-
-## The cockpit
-
-```sh
-msr web                                        # newest review in this repo
-msr web --session=<id>                         # a particular review
-msr web --repo=. --repo=../api --repo=../web   # one workspace, several repositories
-```
-
-`msr web` opens the **cockpit** at `/`. What it reviews is a **target** — and
-git supplies most of them:
-
-| kind | the range it reviews |
-| --- | --- |
-| **commit** | `parent..commit` — what that one commit did |
-| **tag** | everything since the previous tag — what shipped in `v3.1.0` |
-| **pull request** | the commits that reference it, together |
-| **working tree** | uncommitted work against `HEAD`, offered first when dirty |
-| **session** | a recorded agent run, from just before it started |
-
-A session is **one kind among them**, not the index (ADR 0017). It still answers
-what an agent run did and still holds the stated intent nothing else has — and
-every other target lists the sessions overlapping it, so the intent behind a
-commit is one click away.
-
-Reviewing a target is what the engine always did: the net change per file
-between two refs. Only what supplies the refs changed.
-
-One page, three columns, and only the two right-hand ones scroll:
-
-| | |
-|---|---|
-| **panel** (fixed) | the model's title and brief for the session, an isometric field, and the numbers |
-| **story** | the session as chapters of prose, plus the reviewer assistant |
-| **changes** | every change, with diffs, notes, annotation and re-analysis |
-
-Clicking a chapter brings its files up beside it; scrolling the changes lights
-the chapter that covers them. Nothing scrolls on its own.
-
-**The isometric field is an instrument, not decoration.** One block per changed
-file: height is lines changed (log-scaled), colour is growth / deletion /
-flagged, depth is recency, and it only moves while the session is live —
-strongest at the newest end. A still field means nothing is happening.
-
-**Every number comes from git or the event log.** Time open, files, lines,
-commits, pull requests, tokens. Nothing on the panel is model-derived, which is
-the point of putting it beside a narration feature. The prose and the per-group
-descriptions are labelled `inferred` and name the model that wrote them.
-
-### Reading the changes
-
-Files that changed together in a directory are shown together — five files added
-under one package is one act of work, not five entries. Each group carries one
-model-written sentence about what the change is **for**; a group the model could
-not describe says so rather than inventing something.
-
-A mechanical headline ("edited jsonl.go") is never shown: the filename above it
-already says that. Per-file headlines appear only when a model wrote one, which
-is what **re-analyse** produces.
-
-Long diffs are compacted, never silently truncated — hunk headers survive so the
-shape of the change does, git's per-file plumbing is dropped, and the elision
-says what it left out (`… 37 more lines`). **open full history** puts the whole
-diff in an overlay and steps through that file's git history with `←`/`→`,
-showing each version's commit, date and author.
-
-A **tree** toggle shows the same changes as an indented folder listing with just
-churn and flags.
-
-### The shell
-
-Every page shares one backdrop and one nav rail.
-
-| | |
-|---|---|
-| `⌘K` | command palette — pages, and every changed file |
-| `⌘Z` | zen mode: hide the shell, leaving only the work (`Esc` leaves) |
-| `⌘J` | theme: dark → light → follow the system |
-
-Zen hides the rail, which is why navigation does not depend on it.
-
-### Watching the assistant
-
-Every model call takes seconds to minutes locally, so the waiting is made
-visible rather than left to look like a hung page. While anything is in flight
-the nav rail carries a spinner on **every** page, and `/status` lists what the
-assistant is doing now and what it was just asked — with how long each took, why
-any failed, and a control to run it again.
-
-### Other pages
-
-- **`/activity`** — every model call: which model, how long, whether it failed,
-  and every change to the review while it was open.
-- **`/status`** — is the reviewer's model online (re-probed every 20s), what it
-  has spent, split into prompt / completion / *of which reasoning*, and every
-  session in the workspace.
-- **`/sessions`** — the workspace as a list.
-
-`/review` and `/story` were folded into the cockpit and permanently redirect.
-
-## Working across several repositories
-
-`--repo` is repeatable, so a workspace can hold as many projects as you like:
-
-```sh
-msr web --repo=. --repo=../api --repo=../web --repo=../worker
-```
-
-With **no `--repo`**, `msr` looks around. A directory that is itself a checkout
-opens itself — running inside a project should not offer up its vendored
-dependencies. A directory *of* checkouts offers its children, one level down: a
-deep walk of a home directory is slow and turns up repositories nobody meant to
-review.
-
-**Nothing is asked at launch.** The first few are opened and the rest are listed
-on `/status` under *found nearby*, one click from being watched — choosing
-belongs in the app, where it can be changed without a restart and where a script
-never has to answer a question. A path that is not a checkout is reported there
-rather than silently doing nothing.
-
-**No session is required.** A repository with years of history and no recorded
-runs is a perfectly good thing to review: its commits and tags are targets like
-any other.
-
-The logic is deliberately simple:
-
-- **Each repository keeps its own store**, at `<repo>/.mondspace-reviewer`, so
-  two projects never collide. (An absolute `--out` overrides this and is shared.)
-- **The workspace is the union** of every session found, newest first. The
-  session switcher at the top of the panel lists them as `repo · prompt`.
-- **A session remembers which repository it belongs to.** Opening one reads
-  *that* repository's git tree, store and stored story — `--repo` order only
-  decides which session opens first.
-- **Sessions load on demand and are cached.** Building all of them at start-up
-  would be a git diff per file per session; the first visit pays and later ones
-  do not.
-- **Opening a session never calls a model.** It reuses that session's stored
-  story, or falls back to deterministic grouping.
-- **A directory with no events is not a session** and is skipped, so a stray
-  audit log cannot masquerade as one.
-
-With no `--session`, the newest review opens. With no `--repo`, the current
-directory is used.
-
-## Where the model calls go
-
-`msr web` shows every model call at **`/activity`**: what was asked, which model
-served it, how long it took, and whether it failed. Narration, the one call a
-reviewer never triggers, is recorded there too — otherwise it is invisible.
-
-Narration is also the most expensive thing the app does, so it runs **once per
-review**. The story is stored beside the session with a fingerprint of the
-review it describes (file names and their snapshot commits, order-independent),
-and reused while that matches. Re-opening the page, navigating away and back, or
-restarting `msr web` costs nothing.
-
-If narration falls back — the endpoint was down, the model rambled — the
-fallback is stored too, so it is not silently retried by navigation. The story
-page offers an explicit **"ask the model to narrate this session"** button
-instead. It runs at most one narration at a time, so two tabs or an impatient
-double click cannot start two.
+</details>
 
 ## Summarizer configuration
 
@@ -518,25 +259,21 @@ MSR_SUMMARIZER_URL=http://localhost:1234/v1 MSR_MODEL=qwen/qwen3.5-9b \
 
 ## Status
 
-**v4.1.0** — everything below is built, tested, and shippable:
+**v5.0.0** — the web app is the product.
 
-- **Web app** (`msr web`) — the primary interface: a single-page cockpit with
-  the story, the diffs, annotation and re-analysis side by side; a live
-  isometric field driven by the real changes; a workspace spanning any number of
-  repositories; zen mode and a `⌘K` palette; live updates over SSE; and
-  `/activity` and `/status` pages accounting for every model call and token.
-- **Net-change review** — one unit per changed file against the pre-session git
-  baseline, so an agent's back-and-forth collapses into one clear change
-  (ADR 0002). Also available for any range via `--since` / `--until`.
-- Real ingestion (`ingest`, `install-hooks`, fsnotify tailing, git snapshots),
-  from Claude Code `hooks` or `opencode`.
-- Deterministic flags (`no-test`, `new-dep`, `swallowed-err`, `public-api`,
-  `large`, `todo`, `failed`, `solo-iface`), supersession, and TDD-aware `no-test`.
-- LM Studio headlines with `stated`/`inferred` discipline and async fill-in.
-- Interrogation (`a` / `A`, the web chat, and a scriptable `ask`).
-- Export to Markdown, JSON, and a single Slack message; `msr gc` for review refs.
-- Storage: append-only JSONL by default, or PostgreSQL in a dedicated schema.
-- The bubbletea TUI remains supported (ADR 0004 plans its eventual deprecation).
+- **Cockpit** (`msr web`) — one page: the change as a story, the diffs,
+  annotation, re-analysis, a live isometric field, and a workspace spanning any
+  number of repositories.
+- **Git-first review** — commits, tags, pull requests, the working tree, and
+  recorded sessions, all reviewed by the same net-change-per-file engine
+  ([ADR 0017](ADR/0017-git-first-review.md)).
+- **Schema-enforced model output**, on-demand descriptions, persisted
+  conversations, and full accounting of every call and token at `/activity` and
+  `/status`.
+- **Deterministic flags** and the `stated`/`inferred` discipline, both offline.
+- **Storage**: append-only JSONL by default, or PostgreSQL in a dedicated schema.
+- **Ingestion** from Claude Code hooks or OpenCode, for stated intent.
+- **The TUI is unmaintained.** It still works; it will not gain anything new.
 
 Decisions are recorded in [`ADR/`](ADR); planned work in
 [issues](https://github.com/mondial7/mondspace-reviewer/issues).

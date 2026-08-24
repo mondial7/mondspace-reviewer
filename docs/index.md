@@ -2,106 +2,120 @@
 title: mondspace-reviewer
 ---
 
-**`msr` turns an autonomous coding agent's activity into a review you can
-actually read** — the session told as a story, beside the real diffs, live while
-the agent is still working. It watches; it never writes to the agent.
+**Review what your coding agent actually did — in your browser, while it works.**
 
-> The **review log is the product.** Narration and interrogation exist only to
-> help you produce annotations.
+`msr` reads a repository's git history and turns any part of it into a review you
+can actually read: the change told as a story, beside the real diffs, with a
+local model explaining what each piece is *for*. It watches; it never writes to
+your code or your agent.
 
-<p align="center">
-  <img src="img/tui-review.png" alt="msr review queue" width="760">
-</p>
+## Install and run
 
-## The problem
+```sh
+brew install mondial7/tap/mondspace-reviewer
 
-While a coding agent works in auto mode, you have no cheap way to stay oriented.
-Reading the raw stream is high cognitive load; waiting for the final diff means
-every piece of feedback arrives too late to be cheap. `msr` sits in the middle:
-it reconstructs what actually changed, flags what is worth a second look **with
-no model at all**, and lets a model explain the rest — clearly labelled as
-inference.
+cd ~/your-project
+msr web
+```
+
+It opens `http://127.0.0.1:7777` on the newest thing worth reviewing. No
+configuration, no database, no account, and **no session to record first** — it
+reads the git history that is already there.
+
+Everything runs offline. The prose is optional: point it at any
+OpenAI-compatible endpoint — a local [LM Studio](https://lmstudio.ai) server by
+default — and it falls back to a mechanical grouping when there is none.
+
+## Why
+
+Reviewing an agent's work is a specific kind of miserable. The diff is large, it
+arrives all at once, and the *why* is buried in a transcript you no longer want
+to read.
+
+- **Net change, not keystrokes.** One reviewable unit per changed file, so an
+  agent editing the same file eleven times reads as one change — and you can
+  still open the eleven if you want them.
+- **Meaning, not filenames.** Files that changed together are grouped, and each
+  group gets one sentence about what it is *for*. "edited jsonl.go" is never
+  shown: the filename above it already said that.
+- **`stated` vs `inferred`, always.** A rationale in the agent's own words looks
+  different — different colour *and* label — from one a model guessed. A model
+  can sharpen a headline; it can never assert a reason nobody gave.
+- **Flags with no model at all.** `no-test`, `new-dep`, `swallowed-err`,
+  `public-api`, `large`, `todo` — offline, instant, and what make you stop.
+- **Every number is a git fact.** Files, lines, commits, tags, pull requests.
+  Nothing on the panel is model-derived, which is the point of putting it beside
+  a narration feature.
+
+## What you can review
+
+Anything in git — not just recorded agent runs:
+
+| | |
+| --- | --- |
+| **a commit** | `parent..commit` — what that one commit did |
+| **a tag** | everything since the previous tag |
+| **a pull request** | the commits that reference it, together |
+| **your working tree** | uncommitted work, offered first when it is dirty |
+| **an agent session** | a recorded run, if you installed the hooks |
+
+A recorded session is *one kind among them*, not the index — and every other
+target lists the sessions overlapping it, so the intent behind a commit is one
+click away.
 
 ## The cockpit
 
-`msr web` opens one page with three columns: a fixed panel, the story, and the
-changes. Only the two right-hand columns scroll, and clicking a chapter brings
-its files up beside it.
+One page, three columns: a fixed panel with what this change is and the numbers;
+the change as chapters of prose; and every file, folded, with its diff, its git
+history and a place to annotate it.
 
-- **The panel** carries a model-written title and brief for the session, the
-  numbers, and an isometric field where **every block is a changed file** —
-  height is lines changed, colour is growth or deletion or flagged, depth is
-  recency. It moves only while the session is live. A still field means nothing
-  is happening.
-- **The changes** group files that changed together, because five files added
-  under one package is one act of work. Each group gets one sentence about what
-  the change is *for* — not a restatement of the filename.
-- **`⌘K`** is a palette over every page and every changed file; **`⌘Z`** hides
-  the shell entirely; **`⌘J`** switches dark, light, or follow-the-system.
+Click a chapter and its files come up beside it. Click a filename for its diff.
+`open full history` steps through that file's past with the arrow keys. `⌘K` is
+a palette over every page and every changed file, `⌘Z` hides the shell, `⌘J`
+switches theme.
 
-## What makes it trustworthy
+**The review log is the product.** The prose and the assistant exist only to help
+you produce it — annotate as `ok`, `question`, `objection`, `debt` or `note`, and
+export when you are done.
 
-- **Net change, not keystrokes.** Review reconstructs the session's *net* diff
-  from git — one unit per file, against the commit just before the session — so
-  an agent's back-and-forth collapses into a single clear change. Each file
-  still opens into its own history, so the collapse is visible, not silent.
-- **`stated` vs `inferred`, always.** A rationale in the agent's own words looks
-  different — different colour *and* label — from one a model guessed. When in
-  doubt it is marked inferred. A model can sharpen a headline's *what*; it can
-  never assert a stated reason.
-- **Deterministic flags first.** `no-test`, `new-dep`, `swallowed-err`,
-  `public-api`, `large`, `todo` — offline, instant, and what make you stop and
-  look.
-- **Every number is a git fact.** Time open, files, lines, commits, pull
-  requests. Nothing on the panel is model-derived, which is the point of putting
-  it beside a narration feature.
-- **Model output is enforced, not hoped for.** Where the endpoint supports it,
-  the story is requested as schema-constrained JSON with the real area names as
-  an enum — so an invented area cannot be emitted at all.
-- **Every model call is accounted for.** `/activity` shows which model answered,
-  how long it took and whether it failed; `/status` shows whether it is online
-  right now and what it has spent, down to how many tokens went on *reasoning*.
+Model calls are slow locally, so the waiting is visible: a spinner on the rail
+from any page, and a `/status` page showing what is running, what it cost, and a
+button to run it again.
 
-## Many repositories, one workspace
+## Several repositories at once
 
 ```sh
 msr web --repo=. --repo=../api --repo=../web
 ```
 
-Each repository keeps its own store; the workspace is the union of every session
-found. A session remembers which repository it belongs to, so opening one reads
-that repository's git tree — and sessions load on demand, so a large workspace
-costs nothing until you look at it.
+Each keeps its own store; a review remembers which repository it belongs to.
+Checkouts found nearby are listed in the app, one click from being watched.
 
-## Interrogate the log, then export your review
+## Watching an agent live
 
-Ask questions answered only from the bounded context — the event log, unit
-diffs, the task prompt, and your notes — never a re-read of the repo. Then
-export a report: units grouped by note kind, a debt task list, and an open
-agenda phrased as the next agent prompt.
-
-<p align="center">
-  <img src="img/ask.png" alt="ask the log" width="620">
-  <img src="img/export.png" alt="export a review report" width="620">
-</p>
-
-## Get started
+Reviewing git needs nothing. To also capture an agent's **stated intent** — its
+own words about why it did something — install the hooks:
 
 ```sh
-go install github.com/mondial7/mondspace-reviewer/cmd/mondspace-reviewer@latest
-
-# Try it with zero setup — no agent, terminal, or network:
-mondspace-reviewer review --source=replay \
-  --file=testdata/sessions/basic.jsonl --plain
+msr install-hooks --dir=.
 ```
 
-Runs fully offline. The optional narration talks to any OpenAI-compatible
-endpoint — a local [LM Studio](https://lmstudio.ai) server by default — and
-degrades gracefully when there is none.
+Each hook is an atomic append of one JSON line that exits immediately: your agent
+runs fine whether or not `msr` is attached, and attaching later replays the whole
+log.
 
-Full documentation, install options, and the command reference are in the
-[README on GitHub](https://github.com/mondial7/mondspace-reviewer#readme).
+## Also there
+
+A small CLI for scripting — `msr export` to Markdown, JSON or a Slack message,
+`msr ask` for one question, `msr review --plain` for line-oriented output. Run
+`msr help` for the list.
+
+The original terminal UI (`msr review --tui`) still works and is **no longer
+developed**; everything since v3 is web only.
 
 ---
+
+Full documentation and the command reference are in the
+[README on GitHub](https://github.com/mondial7/mondspace-reviewer#readme).
 
 <p align="center"><em>Stay oriented while the agent works.</em></p>

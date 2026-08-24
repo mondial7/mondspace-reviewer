@@ -95,6 +95,10 @@ func runReview(ctx context.Context, args []string, stdout io.Writer) error {
 	}
 
 	if *useTUI {
+		// The TUI predates the cockpit and is no longer developed. It still works;
+		// it will not gain anything added since v3.
+		fmt.Fprintln(os.Stderr,
+			"msr: the terminal UI is unmaintained — `msr web` has the current review")
 		if *session == "" {
 			return fmt.Errorf("--session is required for --tui")
 		}

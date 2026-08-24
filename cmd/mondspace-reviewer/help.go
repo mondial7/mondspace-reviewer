@@ -35,10 +35,11 @@ var commands = []struct {
 		},
 	},
 	{
-		"review", "Review a session in the terminal, live or after the fact.",
+		"review", "Review in the terminal. --plain is scriptable; --tui is unmaintained.",
 		"msr review [--tui|--plain] [--source=replay|hooks|opencode] [--session=<id>]",
 		[]string{
-			"--tui / --plain  interactive queue, or line-oriented output",
+			"--plain          line-oriented output, scriptable",
+			"--tui            the original terminal queue — unmaintained, use `msr web`",
 			"--source=<src>   replay a file, tail Claude Code hooks, or tail OpenCode",
 			"--since=<ref>    review a commit range instead of a session",
 			"--until=<ref>    the far end of that range (default: the working tree)",

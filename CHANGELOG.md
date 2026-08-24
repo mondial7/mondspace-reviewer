@@ -4,6 +4,28 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.0.0] — 2026-08-24
+
+The web app is the product.
+
+### Changed
+
+- **The documentation leads with the web app.** README and the site now open on
+  install-and-run, what the tool is for, and how to use the cockpit. The CLI is a
+  secondary section for scripting; everything else was reorganised around the
+  question a new reader actually has, which is "what does this do and why would
+  I want it".
+- **The terminal UI is unmaintained.** It still works and is still shipped, but
+  it will not gain anything added since v3 — the cockpit, git-first review,
+  workspaces, grouped changes and the assistant are web only. `msr review --tui`
+  now says so on start-up, and `msr help review` says so in its flags.
+
+### Note
+
+No behaviour changed in this release beyond that notice. It is a major version
+because standing a supported interface down is the kind of thing a version
+number should say out loud rather than leave in a changelog footnote.
+
 ## [4.1.0] — 2026-08-24
 
 ### Fixed
@@ -273,6 +295,7 @@ First public release. Watching one agent, one session, one repo.
 - Session identifiers are validated to prevent path traversal outside the store
   root.
 
+[5.0.0]: https://github.com/mondial7/mondspace-reviewer/releases/tag/v5.0.0
 [4.1.0]: https://github.com/mondial7/mondspace-reviewer/releases/tag/v4.1.0
 [4.0.0]: https://github.com/mondial7/mondspace-reviewer/releases/tag/v4.0.0
 [3.1.0]: https://github.com/mondial7/mondspace-reviewer/releases/tag/v3.1.0
