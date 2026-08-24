@@ -887,9 +887,9 @@ func TestStatusListsOpenRepositoriesAndAbsorbsTheSessionsPage(t *testing.T) {
 func TestAddingARepositoryWithoutRestarting(t *testing.T) {
 	var asked string
 	h := web.NewServer(testSession(), nil).WithRepos(nil,
-		func(path string) ([]web.SessionSummary, []web.RepoStatus, error) {
+		func(path string) ([]web.TargetSummary, []web.RepoStatus, error) {
 			asked = path
-			return []web.SessionSummary{{ID: "new", Repo: "worker", Prompt: "retry the queue"}},
+			return []web.TargetSummary{{ID: "new", Repo: "worker", Title: "retry the queue"}},
 				[]web.RepoStatus{{Name: "worker", Path: "/w/worker", Sessions: 1}}, nil
 		})
 
@@ -904,9 +904,9 @@ func TestAddingARepositoryWithoutRestarting(t *testing.T) {
 	if asked != "/w/worker" {
 		t.Errorf("asked to open %q", asked)
 	}
-	// The new repository's sessions are immediately reachable.
-	if !strings.Contains(get(t, h, "/status").Body.String(), "retry the queue") {
-		t.Error("a newly opened repository's sessions should appear at once")
+	// The new repository's targets are immediately reachable.
+	if !strings.Contains(get(t, h, "/").Body.String(), "retry the queue") {
+		t.Error("a newly opened repository's targets should appear at once")
 	}
 }
 
@@ -914,7 +914,7 @@ func TestAddingARepositoryReportsWhyItFailed(t *testing.T) {
 	// A typo'd path must say so, not fail silently and leave the reviewer
 	// wondering whether it worked.
 	h := web.NewServer(testSession(), nil).WithRepos(nil,
-		func(string) ([]web.SessionSummary, []web.RepoStatus, error) {
+		func(string) ([]web.TargetSummary, []web.RepoStatus, error) {
 			return nil, nil, errors.New("/w/nope is not a git repository")
 		})
 
@@ -973,5 +973,61 @@ func TestDescribeButtonIsOfferedOnlyWhenItCanDoSomething(t *testing.T) {
 		func(context.Context, string, string) (string, error) { return "x", nil })
 	if !strings.Contains(get(t, h, "/").Body.String(), "/describe") {
 		t.Error("a wired describer should offer the control")
+	}
+}
+
+func TestWorkInFlightIsVisibleWhileItRuns(t *testing.T) {
+	// Every model call takes seconds to minutes on a local model. A page that
+	// shows nothing while one runs is indistinguishable from a broken one.
+	h := web.NewServer(testSession(), nil)
+
+	done := h.BeginWork("narrate", "t1", "reading v3.1.0")
+	if h.InFlight() != 1 {
+		t.Fatalf("InFlight = %d, want 1 while the call runs", h.InFlight())
+	}
+	if body := get(t, h, "/").Body.String(); !strings.Contains(body, "reading v3.1.0") {
+		t.Errorf("work in flight should be visible on the page:\n%s", body[:600])
+	}
+
+	done(nil)
+	if h.InFlight() != 0 {
+		t.Errorf("InFlight = %d, want 0 once it finished", h.InFlight())
+	}
+	// Finished work stays on the record, so a reviewer can see what was asked.
+	if !strings.Contains(get(t, h, "/status").Body.String(), "reading v3.1.0") {
+		t.Error("finished work should still be listed on the status page")
+	}
+}
+
+func TestFailedWorkSaysSoAndOffersARetry(t *testing.T) {
+	h := web.NewServer(testSession(), nil).
+		WithNarrate(func(context.Context, string) {})
+
+	done := h.BeginWork("narrate", "t1", "reading v3.1.0")
+	done(errors.New("the model spent its whole budget on reasoning"))
+
+	body := get(t, h, "/status").Body.String()
+	if !strings.Contains(body, "budget on reasoning") {
+		t.Errorf("a failure should say why:\n%s", body)
+	}
+	if !strings.Contains(body, "/story/narrate?target=t1") {
+		t.Errorf("failed work should be retriggerable:\n%s", body)
+	}
+}
+
+func TestWorkKeepsOnlyRecentHistory(t *testing.T) {
+	// A long session must not grow an unbounded list in memory, or a status page
+	// that takes a second to render.
+	h := web.NewServer(testSession(), nil)
+	for i := 0; i < 100; i++ {
+		h.BeginWork("ask", "t", fmt.Sprintf("question %d", i))(nil)
+	}
+
+	if n := len(h.Work()); n > 30 {
+		t.Errorf("kept %d work entries, want a bounded recent history", n)
+	}
+	// The newest is kept, not the oldest.
+	if !strings.Contains(fmt.Sprint(h.Work()), "question 99") {
+		t.Error("the most recent work should survive the bound")
 	}
 }

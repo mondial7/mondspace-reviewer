@@ -40,43 +40,50 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
 	}
-	// With no --session, open the newest review in the workspace: a reviewer
-	// arriving at a repository should not have to look up an id first.
 	// With no --repo, look around: a checkout opens itself, and a directory of
-	// checkouts offers its children. Beyond a handful, ask rather than guess.
+	// checkouts offers its children. Nothing is prompted for at launch — the
+	// repositories in the workspace are chosen in the app, on /status, where the
+	// choice can also be changed without a restart.
+	candidates := repos
 	if len(repos) == 0 {
-		found := gitsnap.DiscoverRepos(".")
-		if len(found) == 0 {
-			found = []string{"."}
+		candidates = gitsnap.DiscoverRepos(".")
+		if len(candidates) == 0 {
+			candidates = []string{"."}
 		}
-		chosen, err := selectRepos(found, os.Stdin, stdout, onTerminal())
-		if err != nil {
-			return err
+		repos = candidates
+		if len(repos) > openAtLaunch {
+			// Opening forty checkouts costs a git crawl each. Open the first few
+			// and offer the rest in the app rather than asking a question the
+			// terminal may not be there to answer.
+			repos = repos[:openAtLaunch]
 		}
-		repos = chosen
 	}
-	workspace := discoverWorkspace(repos, *out)
+
 	targets := discoverTargets(ctx, repos, *out)
-	if *session == "" {
-		if len(workspace) == 0 {
-			return fmt.Errorf("no reviews found — run `msr review` first, or pass --session")
-		}
-		*session = workspace[0].ID
+	if len(targets) == 0 {
+		return fmt.Errorf("nothing to review: no git history found in %s",
+			strings.Join(repos, ", "))
 	}
 
-	// The session being served decides which repository and store to read. With
-	// several repositories in the workspace, --repo is only the starting point:
-	// using it for a session that lives elsewhere reads the wrong git tree and
-	// finds no changes at all.
-	// --out is the *pattern* for finding a store ("<repo>/.mondspace-reviewer"
-	// unless absolute); storeRoot is where this particular session's store
-	// actually is. Overwriting the pattern with one session's resolved path
-	// makes every later discovery look in that one repository.
-	repo, storeRoot := repos[0], *out
-	if entry, known := workspaceIndex[*session]; known {
-		repo, storeRoot = entry.repo, entry.out
+	// A session is no longer required, or even special: the newest thing worth
+	// reviewing is whatever git says it is (ADR 0017). --session still names one,
+	// because a session is still a target.
+	initial := targets[0].ID
+	if *session != "" {
+		initial = *session
+	}
+	entry, known := targetIndex[initial]
+	if !known {
+		return fmt.Errorf("no such target %q in this workspace", initial)
 	}
 
+	load := targetLoader()
+	view, err := load(ctx, initial)
+	if err != nil {
+		return err
+	}
+
+	repo, storeRoot := entry.repo, entry.out
 	// Postgres is opt-in via MSR_POSTGRES_DSN; otherwise the JSONL store is used.
 	store, closeStore, err := openStore(ctx, storeRoot, *schema)
 	if err != nil {
@@ -84,154 +91,64 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 	}
 	defer closeStore()
 
-	sess, err := store.Load(*session)
-	if err != nil {
-		return err
-	}
-
-	snap := gitsnap.New(repo, *session)
-	baseline, err := snap.Baseline(ctx, firstEventTime(sess))
-	if err != nil {
-		return err
-	}
-	storeRel := storeRelativeTo(repo, storeRoot)
-	units, diffs, err := usecase.BuildFileUnits(ctx, snap, *session, baseline, domain.SnapshotRef{}, func(f string) bool {
-		return f == storeRel || strings.HasPrefix(f, storeRel+"/")
-	})
-	if err != nil {
-		return err
-	}
-
-	view := web.Session{
-		ID:     *session,
-		Prompt: sess.Prompt,
-		Repo:   repo,
-		Units:  units,
-		Notes:  usecase.MarkSuperseded(units, sess.Notes),
-		Diffs:  diffs,
-	}
-
-	firstStats, err := snap.Numstat(ctx, baseline, domain.SnapshotRef{})
+	snap := gitsnap.New(repo, initial)
+	firstStats, err := snap.Numstat(ctx, entry.target.From, entry.target.To)
 	if err != nil {
 		firstStats = nil // a review that cannot be measured still renders
 	}
 
 	sum := chooseSummarizer(*summarizerURL, *model)
-	mechanical := domain.Narrative{
-		SessionID:   *session,
-		Title:       sess.Prompt,
-		Chapters:    usecase.GroupByPath(units),
-		Source:      domain.NarrativeMechanical,
-		Fingerprint: usecase.Fingerprint(units),
+	var sess domain.Session
+	if entry.session != "" {
+		sess, _ = store.Load(entry.session)
 	}
 
-	// A story already written for this exact review is reused as it stands.
-	// Narration costs several model calls, so re-opening the page must not pay
-	// for them again — the retry button on the story page is the way to ask.
-	cache, cacheable := store.(narrativeCache)
-	shown := mechanical
-	if cacheable {
-		if stored, err := cache.LoadNarrative(*session); err == nil &&
-			stored.Fingerprint == mechanical.Fingerprint && len(stored.Chapters) > 0 {
-			shown = stored
-		}
-	}
-
-	// The cockpit's numbers are git facts, gathered once now and refreshed while
-	// the page is open. A repository that cannot list commits still gets every
-	// other stat rather than an empty panel.
-	commits, _ := snap.CommitsSince(ctx, firstEventTime(sess))
-
-	handler := web.NewServer(view, store).
-		WithStats(usecase.ComputeStats(sess, units, diffs, commits, time.Now())).
+	handler := web.NewServer(view, targetNotes{}).
 		WithAgent(agentStatus(ctx, sum, *summarizerURL, *model)).
-		WithHistories(usecase.FileHistories(sess.Events, units)).
-		WithNarrative(shown).
-		WithWorkspace(workspace).
+		WithWorkspace(discoverWorkspace(repos, *out)).
 		WithTargets(targets).
-		WithLoader(targetLoader()).
+		WithLoader(load).
 		WithVersions(snap.FileVersions, snap.DiffAt).
 		WithRepos(openRepos(), addRepo(*out)).
+		WithCandidates(unopenedRepos(candidates)).
 		WithDescribe(describeAnyTarget(sum)).
 		WithExchanges(exchangeStore(store), sess.Exchanges).
-		WithAsk(webAskFunc(sess, units, diffs, snap, sum)).
+		WithAsk(webAskFunc(sess, view.Units, view.Diffs, snap, sum)).
 		WithReanalyse(webReanalyseFunc(snap, sum, *model)).
-		WithAudit(workspaceAudit{writeTo: filepath.Join(storeRoot, *session, "audit.jsonl")})
+		WithAudit(workspaceAudit{writeTo: filepath.Join(storeRoot, initial, "audit.jsonl")})
 
-	// narrateOnce is the only thing in the app that calls the model unbidden, and
-	// it runs at most once per review: on first sight of it, or when the reviewer
-	// asks again. Whatever it produces — model story or fallback — is stored with
-	// the review's fingerprint, so a failure is not retried by navigating.
-	narrateOnce := func(ctx context.Context, targetID string) {
-		if targetID != "" && targetID != *session {
-			narrateTarget(ctx, handlerRef(), sum, targetID, *model)
-			return
+	// Narration is the only thing that calls the model unbidden, and it runs at
+	// most once per review. Any target can be narrated now, so there is one path
+	// rather than a special case for whichever was served first.
+	narrate := func(ctx context.Context, targetID string) {
+		if targetID == "" {
+			targetID = initial
 		}
-		narrateCtx, cancel := context.WithTimeout(ctx, 20*time.Minute)
-		defer cancel()
-
-		started := time.Now()
-		narrative, err := usecase.NarrateProgressively(narrateCtx, sum, sess, units,
-			handler.SetNarrative) // publish each chapter as the model writes it
-		narrative.Fingerprint = mechanical.Fingerprint
-		narrative.Model = *model
-
-		// Narration is the one model call the reviewer never triggers, so it is
-		// the one most worth recording: without this it is invisible.
-		entry := web.AuditEntry{
-			SessionID: *session, Action: "narrate", Model: *model,
-			Millis: time.Since(started).Milliseconds(),
-			Detail: fmt.Sprintf("%d chapters, %s", len(narrative.Chapters), narrative.Source),
-		}
-		if err != nil {
-			entry.Failed = true
-			entry.Detail = err.Error()
-			fmt.Fprintln(os.Stderr, "msr: story fell back to mechanical grouping:", err)
-		}
-		// What each group of changes is FOR. Same budget rules as narration:
-		// bounded, cached with the story, never triggered by navigation.
-		groups := usecase.GroupChanges(units, diffs)
-		narrative.Meanings = usecase.DescribeGroups(narrateCtx, sum, sess, groups,
-			func(partial map[string]string) {
-				live := narrative
-				live.Meanings = partial
-				handler.SetNarrative(live)
-			})
-		entry.Detail += fmt.Sprintf(", %d/%d groups described",
-			len(narrative.Meanings), len(groups))
-
-		handler.Record(entry)
-		handler.SetNarrative(narrative)
-
-		if cacheable {
-			if err := cache.SaveNarrative(narrative); err != nil {
-				fmt.Fprintln(os.Stderr, "msr: could not store the story:", err)
-			}
-		}
+		narrateTarget(ctx, handlerRef(), sum, targetID, *model)
 	}
-	handler = handler.WithNarrate(narrateOnce)
+	handler = handler.WithNarrate(narrate)
 	setHandler(handler)
 
 	srv := &http.Server{
 		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
-	if shown.Source != domain.NarrativeModel {
-		// Never narrated, or the stored story is stale. Write it once now; from
-		// here on it is the reviewer's call. Going through the server means this
-		// and a retry click can never overlap.
-		handler.NarrateNow(context.Background(), *session)
+	if view.Narrative.Source != domain.NarrativeModel {
+		// Never read, or the stored story is stale. Read it once now; from here
+		// on it is the reviewer's call. Going through the server means this and a
+		// retry click can never overlap.
+		handler.NarrateNow(context.Background(), initial)
 	}
 
-	// A cockpit left open on a second screen must not go stale: the session it is
-	// watching may still be running, so the numbers are recomputed on a tick and
-	// pushed to open pages. Reading git every 15s is cheap; a model is never
-	// involved.
+	// A cockpit left open on a second screen must not go stale: what it watches
+	// may still be moving, so the numbers are recomputed on a tick and pushed to
+	// open pages. Reading git every 15s is cheap; a model is never involved.
 	go refreshReview(ctx, reviewRefresher{
 		handler: handler, snap: snap, store: store, sum: sum,
-		sessionID: *session, repo: repo, storeRel: storeRel,
-		baseline: baseline, model: *model,
-		fingerprint: usecase.ReviewFingerprint(firstStats), narrate: narrateOnce,
+		sessionID: initial, repo: repo,
+		storeRel: storeRelativeTo(repo, storeRoot),
+		baseline: entry.target.From, model: *model,
+		fingerprint: usecase.ReviewFingerprint(firstStats), narrate: narrate,
 	})
 	go refreshAgent(ctx, handler, sum, *summarizerURL, *model)
 
@@ -239,7 +156,8 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(stdout, "reviewing %s — http://%s\n", *session, ln.Addr())
+	fmt.Fprintf(stdout, "reviewing %s %q — http://%s\n",
+		entry.target.Kind, usecase.Brief(entry.target.Title, 48), ln.Addr())
 
 	go func() {
 		<-ctx.Done()
@@ -732,6 +650,11 @@ func discoverTargets(ctx context.Context, repos []string, out string) []web.Targ
 	return summaries
 }
 
+// openAtLaunch bounds how many discovered repositories are opened without being
+// asked for. The rest are offered in the app, where choosing them costs a click
+// rather than a restart.
+const openAtLaunch = 5
+
 // How much history to offer. Enough to cover recent work without turning the
 // picker into an unreadable wall or the launch into a git crawl.
 const (
@@ -896,12 +819,51 @@ func sessionLoader(workspace []web.SessionSummary, out string) web.Loader {
 	}
 }
 
+// targetNotes writes an annotation to the store of whatever it was made against.
+// One store cannot serve a workspace: a note on a commit in another repository
+// belongs in that repository's store, not the one the server happened to start
+// with.
+type targetNotes struct{}
+
+func (targetNotes) AppendNote(n domain.Note) error {
+	entry, known := targetIndex[n.SessionID]
+	if !known {
+		return fmt.Errorf("no such review %q", n.SessionID)
+	}
+	return jsonl.New(entry.out).AppendNote(n)
+}
+
+// unopenedRepos lists checkouts found nearby that are not in the workspace, so
+// the app can offer them rather than the launch prompting for them.
+func unopenedRepos(candidates []string) []web.RepoStatus {
+	open := map[string]bool{}
+	for _, entry := range targetIndex {
+		open[mustAbs(entry.repo)] = true
+	}
+
+	var out []web.RepoStatus
+	seen := map[string]bool{}
+	for _, path := range candidates {
+		abs := mustAbs(path)
+		if open[abs] || seen[abs] {
+			continue
+		}
+		seen[abs] = true
+		out = append(out, web.RepoStatus{Name: filepath.Base(abs), Path: abs})
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
+}
+
 // openRepos lists what the workspace currently holds, for the status page.
 func openRepos() []web.RepoStatus {
 	seen := map[string]web.RepoStatus{}
-	for _, entry := range workspaceIndex {
+	// Counted from the targets, not the sessions: a repository with history and
+	// no recorded runs is still open, and reading the session index made every
+	// such repository look absent.
+	for _, entry := range targetIndex {
 		st := seen[entry.repo]
-		st.Path = entry.repo
+		st.Path = mustAbs(entry.repo)
 		st.Name = filepath.Base(mustAbs(entry.repo))
 		st.Sessions++
 		seen[entry.repo] = st
@@ -919,7 +881,7 @@ func openRepos() []web.RepoStatus {
 // anything that is not a git checkout: the path comes from a form, and a typo
 // that silently added an empty entry would be harder to notice than an error.
 func addRepo(out string) web.AddRepoFunc {
-	return func(path string) ([]web.SessionSummary, []web.RepoStatus, error) {
+	return func(path string) ([]web.TargetSummary, []web.RepoStatus, error) {
 		abs, err := filepath.Abs(strings.TrimSpace(path))
 		if err != nil {
 			return nil, nil, fmt.Errorf("%q is not a usable path", path)
@@ -928,23 +890,23 @@ func addRepo(out string) web.AddRepoFunc {
 		if err != nil || info == nil {
 			return nil, nil, fmt.Errorf("%s is not a git repository", abs)
 		}
-		for _, entry := range workspaceIndex {
+		for _, entry := range targetIndex {
 			if mustAbs(entry.repo) == abs {
 				return nil, nil, fmt.Errorf("%s is already open", filepath.Base(abs))
 			}
 		}
 
-		// discoverWorkspace adds to the shared index and returns everything, so
-		// the caller gets the whole workspace back rather than a fragment.
-		known := make([]string, 0, len(workspaceIndex)+1)
+		// discoverTargets adds to the shared index and returns everything, so the
+		// caller gets the whole workspace back rather than a fragment.
+		known := make([]string, 0, len(targetIndex)+1)
 		seen := map[string]bool{}
-		for _, entry := range workspaceIndex {
+		for _, entry := range targetIndex {
 			if !seen[entry.repo] {
 				seen[entry.repo] = true
 				known = append(known, entry.repo)
 			}
 		}
-		return discoverWorkspace(append(known, abs), out), openRepos(), nil
+		return discoverTargets(context.Background(), append(known, abs), out), openRepos(), nil
 	}
 }
 

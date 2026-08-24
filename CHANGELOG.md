@@ -4,6 +4,36 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.1.0] — 2026-08-24
+
+### Fixed
+
+- **`msr web` no longer needs a session to start.** Opening repositories that
+  had never been recorded failed with "no reviews found — run `msr review`
+  first", which contradicted the whole point of v4: a repository with years of
+  history and no recorded runs is a perfectly good thing to review. The bootstrap
+  now opens the newest **target**, and a session is not special.
+- Open repositories were counted from the session index, so a repository with
+  history and no recorded runs looked absent on `/status`.
+
+### Changed
+
+- **Repositories are chosen in the app, not at launch.** The prompt is gone: the
+  first few discovered are opened and the rest are listed on `/status` under
+  *found nearby*, one click from being watched. Choosing belongs where it can be
+  changed without a restart, and a script never has to answer a question.
+- Annotations are written to the store of whatever they were made against. One
+  store cannot serve a workspace: a note on a commit in another repository
+  belongs in that repository's store.
+
+### Added
+
+- **The assistant's work is visible from everywhere.** While any model call is in
+  flight the nav rail carries a spinner on every page, and `/status` gains an
+  *assistant activity* card: what is running now, what was just asked, how long
+  each took, why any failed, and a control to run it again. Narration, group
+  description, questions and re-analysis all register.
+
 ## [4.0.0] — 2026-08-23
 
 Git is the subject of a review. A session is a lens on it.
@@ -243,6 +273,7 @@ First public release. Watching one agent, one session, one repo.
 - Session identifiers are validated to prevent path traversal outside the store
   root.
 
+[4.1.0]: https://github.com/mondial7/mondspace-reviewer/releases/tag/v4.1.0
 [4.0.0]: https://github.com/mondial7/mondspace-reviewer/releases/tag/v4.0.0
 [3.1.0]: https://github.com/mondial7/mondspace-reviewer/releases/tag/v3.1.0
 [3.0.0]: https://github.com/mondial7/mondspace-reviewer/releases/tag/v3.0.0

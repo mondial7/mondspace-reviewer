@@ -18,6 +18,9 @@
     <a class="storynav__link" href="/activity">activity</a>
     <a class="storynav__link" href="/status">status</a>
     <span class="storynav__spacer"></span>
+    {{ if .Work }}{{ range .Work }}{{ if .Running }}
+    <span class="storynav__busy" title="{{ .Detail }}"><span class="ask__spinner" aria-hidden="true"></span>{{ .Kind }}</span>
+    {{ end }}{{ end }}{{ end }}
     <button class="storynav__zen" type="button" data-theme-toggle
             title="Theme">auto</button>
     <button class="storynav__zen" type="button" data-zen-toggle

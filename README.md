@@ -347,6 +347,14 @@ Every page shares one backdrop and one nav rail.
 
 Zen hides the rail, which is why navigation does not depend on it.
 
+### Watching the assistant
+
+Every model call takes seconds to minutes locally, so the waiting is made
+visible rather than left to look like a hung page. While anything is in flight
+the nav rail carries a spinner on **every** page, and `/status` lists what the
+assistant is doing now and what it was just asked — with how long each took, why
+any failed, and a control to run it again.
+
 ### Other pages
 
 - **`/activity`** — every model call: which model, how long, whether it failed,
@@ -372,25 +380,15 @@ dependencies. A directory *of* checkouts offers its children, one level down: a
 deep walk of a home directory is slow and turns up repositories nobody meant to
 review.
 
-Beyond five, it asks rather than guessing, because quietly opening forty
-checkouts is not a default anyone would have picked:
-
-```
-Found 8 repositories:
-
-  1) api
-  2) billing
-  …
-
-Which to open? (e.g. 1,3,5 or 2-4 or all):
-```
-
-With no terminal to ask — a script, CI — it stops and tells you to pass `--repo`
-explicitly rather than choosing for you.
-
-Repositories can also be opened **while the app is running**, from the
-repositories card on `/status`. A path that is not a checkout is reported there
+**Nothing is asked at launch.** The first few are opened and the rest are listed
+on `/status` under *found nearby*, one click from being watched — choosing
+belongs in the app, where it can be changed without a restart and where a script
+never has to answer a question. A path that is not a checkout is reported there
 rather than silently doing nothing.
+
+**No session is required.** A repository with years of history and no recorded
+runs is a perfectly good thing to review: its commits and tags are targets like
+any other.
 
 The logic is deliberately simple:
 
@@ -520,7 +518,7 @@ MSR_SUMMARIZER_URL=http://localhost:1234/v1 MSR_MODEL=qwen/qwen3.5-9b \
 
 ## Status
 
-**v4.0.0** — everything below is built, tested, and shippable:
+**v4.1.0** — everything below is built, tested, and shippable:
 
 - **Web app** (`msr web`) — the primary interface: a single-page cockpit with
   the story, the diffs, annotation and re-analysis side by side; a live

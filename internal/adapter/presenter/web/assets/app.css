@@ -1039,3 +1039,24 @@
 .brief__kind--worktree { color: var(--inferred); }
 .brief__kind--session { color: var(--fg-dim); }
 .brief__sub { margin: 0.15rem 0 0; font-size: 0.72rem; color: var(--fg-dim); }
+
+/* What the assistant is doing, visible from every page. */
+.storynav__busy {
+  display: flex; align-items: center; gap: 0.4rem;
+  color: var(--inferred); font-size: 0.68rem; letter-spacing: 0.06em;
+}
+.work {
+  display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap;
+  padding: 0.4rem 0; border-bottom: 1px solid var(--rule); font-size: 0.82rem;
+}
+.work:last-of-type { border-bottom: none; }
+.work__kind { color: var(--accent); min-width: 5rem; }
+.work__detail {
+  color: var(--fg); flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.work__state { color: var(--inferred); }
+.work__state--failed { color: var(--del); }
+.work__took { color: var(--add); font-variant-numeric: tabular-nums; }
+.work--running .work__kind { color: var(--inferred); }
+.work__retry { display: inline; }

@@ -154,7 +154,7 @@ type RepoStatus struct {
 
 // AddRepoFunc starts watching another repository without a restart, returning
 // the whole workspace and repository list afterwards rather than a fragment.
-type AddRepoFunc func(path string) ([]SessionSummary, []RepoStatus, error)
+type AddRepoFunc func(path string) ([]TargetSummary, []RepoStatus, error)
 
 // DescribeFunc writes what one group of changes is for, on demand. The
 // automatic pass is bounded (ADR 0014), so most groups in a large session are
@@ -185,23 +185,25 @@ type Server struct {
 	versions  VersionLister
 	versionOf VersionDiffer
 	describe  DescribeFunc
+	work      []Work
 	exchanges ExchangeStore
 	// loaded caches sessions opened during this run, so switching back and forth
 	// costs nothing after the first visit.
-	loaded    map[string]Session
-	workspace []SessionSummary
-	targets   []TargetSummary
-	repos     []RepoStatus
-	addRepo   AddRepoFunc
-	repoErr   string
-	thread    []Exchange
-	models    map[string]string // unit ID -> model that produced its headline
-	ask       AskFunc
-	reanalyse ReanalyseFunc
-	audit     AuditLog
-	narrate   NarrateFunc
-	narrating bool
-	agent     AgentStatus
+	loaded     map[string]Session
+	workspace  []SessionSummary
+	targets    []TargetSummary
+	repos      []RepoStatus
+	candidates []RepoStatus
+	addRepo    AddRepoFunc
+	repoErr    string
+	thread     []Exchange
+	models     map[string]string // unit ID -> model that produced its headline
+	ask        AskFunc
+	reanalyse  ReanalyseFunc
+	audit      AuditLog
+	narrate    NarrateFunc
+	narrating  bool
+	agent      AgentStatus
 
 	// subs are live subscribers (server-sent events). Each gets a buffered
 	// channel so a slow reader can never block a request handler.
@@ -262,6 +264,14 @@ func (s *Server) WithNarrate(fn NarrateFunc) *Server {
 	return s
 }
 
+// WithCandidates supplies checkouts found nearby that are not open. Offering
+// them in the app is what replaced asking at launch: choosing costs a click
+// rather than a restart, and a script never has to answer a question.
+func (s *Server) WithCandidates(repos []RepoStatus) *Server {
+	s.candidates = repos
+	return s
+}
+
 // WithTargets supplies everything worth reviewing across the workspace, newest
 // first. It is what the picker lists and what the palette searches.
 func (s *Server) WithTargets(targets []TargetSummary) *Server {
@@ -288,14 +298,22 @@ func (s *Server) handleAddRepo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	workspace, repos, err := add(r.FormValue("path"))
+	targets, repos, err := add(r.FormValue("path"))
 
 	s.mu.Lock()
 	if err != nil {
 		s.repoErr = err.Error()
 	} else {
 		s.repoErr = ""
-		s.workspace, s.repos = workspace, repos
+		s.targets, s.repos = targets, repos
+		// A repository that just joined is no longer a candidate for joining.
+		var still []RepoStatus
+		for _, c := range s.candidates {
+			if c.Path != r.FormValue("path") {
+				still = append(still, c)
+			}
+		}
+		s.candidates = still
 	}
 	s.mu.Unlock()
 
@@ -338,7 +356,9 @@ func (s *Server) handleDescribe(w http.ResponseWriter, r *http.Request) {
 	target := s.openSession(r).ID
 	groupID := r.PathValue("id")
 	started := time.Now()
+	finish := s.BeginWork("describe", target, "what this change is for")
 	meaning, err := describe(context.WithoutCancel(r.Context()), target, groupID)
+	finish(err)
 
 	entry := AuditEntry{Action: "describe", Detail: groupID,
 		Millis: time.Since(started).Milliseconds()}
@@ -483,6 +503,15 @@ func (s *Server) SetStats(st domain.SessionStats) {
 func (s *Server) WithNarrative(n domain.Narrative) *Server {
 	s.sess.Narrative = n
 	return s
+}
+
+// workLocked is Work() for a caller that already holds the read lock.
+func (s *Server) workLocked() []Work {
+	out := make([]Work, 0, len(s.work))
+	for i := len(s.work) - 1; i >= 0; i-- {
+		out = append(out, s.work[i])
+	}
+	return out
 }
 
 // describedGroup records one group's meaning against whichever target it
@@ -870,7 +899,9 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 		history := append([]Exchange(nil), s.thread...)
 		s.mu.RUnlock()
 
+		finish := s.BeginWork("ask", s.sess.ID, question)
 		got, err := s.ask(context.WithoutCancel(r.Context()), question, history)
+		finish(err)
 		if err != nil {
 			answer = err.Error()
 		} else {
@@ -913,7 +944,9 @@ func (s *Server) handleReanalyse(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	headline, model, err := s.reanalyse(r.Context(), unit)
+	finishWork := s.BeginWork("reanalyse", unit.SessionID, strings.Join(unit.Files, ", "))
+	headline, model, err := s.reanalyse(context.WithoutCancel(r.Context()), unit)
+	finishWork(err)
 	if err != nil {
 		// A failing model must not lose the existing headline.
 		s.record(AuditEntry{SessionID: unit.SessionID, UnitID: unit.ID,
@@ -1014,7 +1047,9 @@ func (s *Server) NarrateNow(ctx context.Context, targetID string) bool {
 	}
 	go func() {
 		defer s.endNarration()
+		finish := s.BeginWork("narrate", targetID, "reading the review")
 		s.narrate(ctx, targetID)
+		finish(nil) // the narrator records its own outcome in the audit log
 	}()
 	s.broadcast("narrative") // tell open pages it has started
 	return true
@@ -1066,6 +1101,7 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 	stats := sess.Stats
 	usage := s.agent.Usage
 	narrative := sess.Narrative
+	work := s.workLocked()
 	canDescribe := s.describe != nil
 	workspace := s.workspace
 	targets := s.targets
@@ -1138,6 +1174,7 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 		Groups      []groupView
 		Tree        []domain.TreeNode
 		CanDescribe bool
+		Work        []Work
 		Thread      []Exchange
 		HasAsk      bool
 		HasReanal   bool
@@ -1154,8 +1191,8 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 		},
 		Narrative: narrative, Chapters: chapters, Groups: groups,
 		Tree:        usecase.FileTree(sess.Units, sess.Diffs),
-		CanDescribe: canDescribe,
-		Thread:      thread, HasAsk: hasAsk, HasReanal: hasReanal,
+		CanDescribe: canDescribe, Work: work,
+		Thread: thread, HasAsk: hasAsk, HasReanal: hasReanal,
 		CanRetry: canRetry, Narrating: narrating,
 	}
 
@@ -1197,6 +1234,8 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	s.mu.RLock()
 	agent := s.agent
 	repos := s.repos
+	work := s.workLocked()
+	candidates := s.candidates
 	repoErr := s.repoErr
 	canAddRepo := s.addRepo != nil
 	sessions := s.workspace
@@ -1224,6 +1263,8 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		Average, Checked   string
 		Sessions           []SessionSummary
 		Repos              []RepoStatus
+		Candidates         []RepoStatus
+		Work               []Work
 		RepoErr            string
 		CanAddRepo         bool
 	}{
@@ -1232,7 +1273,8 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		Prompt: thousands(u.Prompt), Completion: thousands(u.Completion),
 		Reasoning: thousands(u.Reasoning), Total: thousands(u.Prompt + u.Completion),
 		Average: avg, Checked: checked,
-		Sessions: sessions, Repos: repos, RepoErr: repoErr, CanAddRepo: canAddRepo,
+		Sessions: sessions, Repos: repos, Candidates: candidates, Work: work,
+		RepoErr: repoErr, CanAddRepo: canAddRepo,
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -1314,12 +1356,14 @@ func (s *Server) handleActivity(w http.ResponseWriter, r *http.Request) {
 
 	s.mu.RLock()
 	sessionID := s.sess.ID
+	work := s.workLocked()
 	s.mu.RUnlock()
 
 	data := struct {
 		SessionID string
 		Entries   []activityView
-	}{SessionID: sessionID, Entries: rows}
+		Work      []Work
+	}{SessionID: sessionID, Entries: rows, Work: work}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := s.tmpl.ExecuteTemplate(w, "activity.html", data); err != nil {
