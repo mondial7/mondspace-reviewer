@@ -86,6 +86,8 @@ to read. `msr` attacks exactly that:
   can sharpen a headline; it can never assert a reason nobody gave.
 - **Flags with no model at all.** `no-test`, `new-dep`, `swallowed-err`,
   `public-api`, `large`, `todo` — offline, instant, and what make you stop.
+  `new-dep` means a dependency **manifest** changed (`go.mod`, `package.json`,
+  a lock file), not that a file gained an import.
 - **Every number is a git fact.** Files, lines, commits, tags, pull requests.
   Nothing on the panel is model-derived, which is the point of putting it beside
   a narration feature.

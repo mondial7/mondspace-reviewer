@@ -28,7 +28,7 @@ func Flags(u domain.Unit, d domain.Diff) []domain.Flag {
 	if anyAddedLine(d.Text, hasTodo) {
 		flags = append(flags, domain.FlagTodo)
 	}
-	if anyAddedLine(d.Text, isNewDep) {
+	if takesOnDependency(u.Files, d.Text) {
 		flags = append(flags, domain.FlagNewDep)
 	}
 	if anyAddedLine(d.Text, isSwallowedErr) {
@@ -131,22 +131,71 @@ func isSwallowedErr(line string) bool {
 	return swallowedErr.MatchString(strings.TrimSpace(line))
 }
 
+// dependencyManifests are the files whose job is to declare what a project
+// depends on. The flag asks a supply-chain question — "does this change take on
+// something new" — and only these files can answer it.
+var dependencyManifests = map[string]bool{
+	"go.mod": true, "package.json": true, "Cargo.toml": true,
+	"requirements.txt": true, "requirements.in": true, "Pipfile": true,
+	"pyproject.toml": true, "Gemfile": true, "composer.json": true,
+	"pom.xml": true, "build.gradle": true, "build.gradle.kts": true,
+	"pubspec.yaml": true, "mix.exs": true, "Package.swift": true,
+}
+
+// dependencyLocks pin what a manifest asked for. Their contents are generated
+// and look nothing like a manifest's, so any addition to one is a dependency
+// change by definition — that is the only thing they contain.
+var dependencyLocks = map[string]bool{
+	"go.sum": true, "package-lock.json": true, "yarn.lock": true,
+	"pnpm-lock.yaml": true, "Cargo.lock": true, "Gemfile.lock": true,
+	"composer.lock": true, "poetry.lock": true, "Pipfile.lock": true,
+	"pubspec.lock": true, "mix.lock": true, "Package.resolved": true,
+}
+
 // goModRequire matches a go.mod dependency line, e.g. "github.com/x/y v1.2.3".
 var goModRequire = regexp.MustCompile(`^[\w.\-/]+ v\d`)
 
-// importPath matches a quoted external import path, e.g. "github.com/x/y".
-var importPath = regexp.MustCompile(`^"[\w.\-/]*[./][\w.\-/]*"$`)
+// namedVersion matches a dependency named with a version in the formats the
+// other manifests use: `"lodash": "^4.17.21"`, `serde = "1.0"`, `requests==2.31.0`,
+// `gem "rails", "~> 7.0"`.
+var namedVersion = regexp.MustCompile(
+	`^(?:"[^"]+"\s*:\s*"[^"]*"|[\w.\-]+\s*=\s*[\["]|[\w.\-]+\s*(?:[=~^><]=?|@)\s*[\dv"]|gem\s+["'])`)
 
-func isNewDep(line string) bool {
+// takesOnDependency reports whether a change adds a dependency.
+//
+// It is scoped to the files that manage dependencies. It used to fire on any
+// added `import` line anywhere, which meant every source file that gained an
+// internal import carried the flag — and a flag that fires constantly is one a
+// reviewer learns to scroll past, which costs more than the flag was worth.
+func takesOnDependency(files []string, diff string) bool {
+	manifest, lock := false, false
+	for _, f := range files {
+		base := filepath.Base(filepath.ToSlash(f))
+		if dependencyManifests[base] {
+			manifest = true
+		}
+		if dependencyLocks[base] {
+			lock = true
+		}
+	}
+
+	// A lock file holds nothing but pinned dependencies.
+	if lock && anyAddedLine(diff, func(string) bool { return true }) {
+		return true
+	}
+	return manifest && anyAddedLine(diff, isDependencyLine)
+}
+
+// isDependencyLine reports whether a manifest line names a dependency, as
+// opposed to a language version, a module name, or a section header.
+func isDependencyLine(line string) bool {
 	t := strings.TrimSpace(line)
 	switch {
-	case strings.HasPrefix(t, "import "):
-		return true
 	case strings.HasPrefix(t, "require "):
 		return true
-	case importPath.MatchString(t):
-		return true
 	case goModRequire.MatchString(t):
+		return true
+	case namedVersion.MatchString(t):
 		return true
 	default:
 		return false
