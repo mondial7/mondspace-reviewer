@@ -26,18 +26,9 @@ func BuildTargets(repo string, commits []domain.Commit, tags []domain.Tag, sessi
 	var targets []domain.Target
 
 	// Work in progress leads: it is the most likely thing a reviewer wants, and
-	// it is the only target that disappears the moment it is committed.
-	if dirty {
-		var head domain.SnapshotRef
-		if len(commits) > 0 {
-			head = domain.SnapshotRef{Commit: commits[0].Hash, Label: "HEAD"}
-		}
-		targets = append(targets, withID(repo, domain.Target{
-			Repo: repo, Kind: domain.TargetWorktree, Ref: "worktree",
-			Title: "Uncommitted work", Subtitle: "the working tree against HEAD",
-			From: head,
-		}))
-	}
+	// it is offered on a clean tree too — choosing it is how a reviewer says
+	// "show me changes as they happen" before there are any (ADR 0018).
+	targets = append(targets, liveTarget(repo, commits, dirty))
 
 	for _, tag := range tagTargets(repo, tags, commits) {
 		targets = append(targets, tag)
@@ -66,6 +57,34 @@ func BuildTargets(repo string, commits []domain.Commit, tags []domain.Tag, sessi
 
 	attachSessions(targets, sessions)
 	return targets
+}
+
+// liveTarget is the working tree against whatever HEAD is now.
+//
+// Every other target's id is a hash of the range it names, which is exactly
+// right for a fixed point in history and exactly wrong for one that follows
+// HEAD. If the id moved when a commit landed, the reviewer watching their agent
+// work would be silently swapped onto a different review — losing the story and
+// every note — at the moment they were watching most closely. So this id is
+// derived from the repository alone, and the range is resolved fresh each time.
+func liveTarget(repo string, commits []domain.Commit, dirty bool) domain.Target {
+	subtitle := "watching HEAD — nothing uncommitted yet"
+	if dirty {
+		subtitle = "the working tree against HEAD"
+	}
+	t := domain.Target{
+		Repo: repo, Kind: domain.TargetLive, Ref: LiveRef,
+		Title: "Live · uncommitted work", Subtitle: subtitle,
+	}
+	if len(commits) > 0 {
+		t.From = domain.SnapshotRef{Commit: commits[0].Hash, Label: "HEAD"}
+	}
+
+	sum := sha256.Sum256([]byte(strings.Join([]string{
+		repo, string(domain.TargetLive),
+	}, "\x00")))
+	t.ID = hex.EncodeToString(sum[:8])
+	return t
 }
 
 // parentRef is the baseline for one commit. A root commit diffs against the
@@ -215,7 +234,15 @@ func stripPullRequestRef(subject string) string {
 
 // SortTargets orders targets newest first, which is how a reviewer reads them.
 func SortTargets(targets []domain.Target) {
-	sort.SliceStable(targets, func(i, j int) bool { return targets[i].TS.After(targets[j].TS) })
+	sort.SliceStable(targets, func(i, j int) bool {
+		// The live target is not a point in history and has no timestamp, so
+		// sorting by recency alone sinks it below every commit ever made —
+		// exactly the wrong place for the thing being worked on right now.
+		if a, b := targets[i].Kind == domain.TargetLive, targets[j].Kind == domain.TargetLive; a != b {
+			return a
+		}
+		return targets[i].TS.After(targets[j].TS)
+	})
 }
 
 // RangeTarget is an arbitrary range a reviewer asked for, rather than one git

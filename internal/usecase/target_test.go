@@ -118,24 +118,57 @@ func TestASessionIsOneTargetAmongTheOthers(t *testing.T) {
 	}
 }
 
-func TestADirtyTreeIsOfferedFirst(t *testing.T) {
-	// Work in progress is the most likely thing a reviewer wants, so it leads.
+func TestTheLiveTargetIsAlwaysOfferedFirst(t *testing.T) {
+	// Work in progress is the most likely thing a reviewer wants, so it leads —
+	// and unlike every other target it is offered on a clean tree too, because
+	// choosing it is how you say "show me changes as they happen".
 	commits, _ := targetFixtures()
 
-	got := usecase.BuildTargets("repo", commits, nil, nil, true)
-
-	if len(got) == 0 || got[0].Kind != domain.TargetWorktree {
-		t.Fatalf("first target = %+v, want the working tree", got[0])
-	}
-	if got[0].To.Commit != "" {
-		t.Errorf("the working tree has no far end, got %q", got[0].To.Commit)
-	}
-	// And it is not offered when there is nothing uncommitted.
-	clean := usecase.BuildTargets("repo", commits, nil, nil, false)
-	for _, tgt := range clean {
-		if tgt.Kind == domain.TargetWorktree {
-			t.Error("a clean tree should not be offered as a target")
+	for _, dirty := range []bool{true, false} {
+		got := usecase.BuildTargets("repo", commits, nil, nil, dirty)
+		if len(got) == 0 || got[0].Kind != domain.TargetLive {
+			t.Fatalf("dirty=%v: first target = %+v, want the live target", dirty, got[0])
 		}
+		if got[0].Ref != usecase.LiveRef {
+			t.Errorf("dirty=%v: ref = %q, want %q", dirty, got[0].Ref, usecase.LiveRef)
+		}
+		if got[0].To.Commit != "" {
+			t.Errorf("dirty=%v: the working tree has no far end, got %q", dirty, got[0].To.Commit)
+		}
+		if got[0].From.Commit != commits[0].Hash {
+			t.Errorf("dirty=%v: the live target diffs from HEAD, got %q", dirty, got[0].From.Commit)
+		}
+	}
+}
+
+func TestTheLiveTargetKeepsItsIdentityWhenHeadMoves(t *testing.T) {
+	// This is the whole point of the live target. Every other id is derived
+	// from the range it names, which is right for a fixed point in history and
+	// wrong for one that follows HEAD: a commit landing would otherwise swap
+	// the reviewer onto a different review — losing the story and the notes at
+	// exactly the moment they are watching most closely.
+	commits, _ := targetFixtures()
+	before := usecase.BuildTargets("repo", commits, nil, nil, true)[0]
+
+	moved := append([]domain.Commit{{
+		Hash: "newhead0000", Subject: "Land it", Parent: commits[0].Hash,
+	}}, commits...)
+	after := usecase.BuildTargets("repo", moved, nil, nil, false)[0]
+
+	if before.ID != after.ID {
+		t.Errorf("the live target changed id when HEAD moved: %q → %q", before.ID, after.ID)
+	}
+	if after.From.Commit != "newhead0000" {
+		t.Errorf("it should follow HEAD, got %q", after.From.Commit)
+	}
+}
+
+func TestTheLiveTargetIsDistinctPerRepository(t *testing.T) {
+	commits, _ := targetFixtures()
+	a := usecase.BuildTargets("repo-a", commits, nil, nil, true)[0]
+	b := usecase.BuildTargets("repo-b", commits, nil, nil, true)[0]
+	if a.ID == b.ID {
+		t.Error("two repositories must not share one live review")
 	}
 }
 

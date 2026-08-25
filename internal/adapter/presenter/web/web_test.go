@@ -1454,3 +1454,161 @@ func TestAllThreeInputsShareOneList(t *testing.T) {
 		}
 	}
 }
+
+func TestPulseReachesAnOpenPageWithItsWords(t *testing.T) {
+	// A pulse is the only event that carries content: every other one just says
+	// "something changed, re-fetch". A toast has to be able to say what
+	// happened without a round trip, or it cannot appear promptly.
+	h := web.NewServer(testSession(), nil)
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL+"/events", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("subscribing: %v", err)
+	}
+	defer resp.Body.Close()
+
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		h.Pulse([]domain.Pulse{
+			{Kind: domain.PulseCommit, Text: "New commit · Fix the parser", Ref: "abc12345"},
+		})
+	}()
+
+	var event, data string
+	sc := bufio.NewScanner(resp.Body)
+	for sc.Scan() {
+		switch line := sc.Text(); {
+		case strings.HasPrefix(line, "event: "):
+			event = strings.TrimPrefix(line, "event: ")
+		case strings.HasPrefix(line, "data: ") && event == "pulse":
+			data = strings.TrimPrefix(line, "data: ")
+		}
+		if data != "" {
+			break
+		}
+	}
+
+	if event != "pulse" {
+		t.Fatalf("event = %q, want pulse", event)
+	}
+	if !strings.Contains(data, "Fix the parser") || !strings.Contains(data, "abc12345") {
+		t.Errorf("the pulse should carry its words and its ref, got %s", data)
+	}
+	// One line of data, or EventSource will not parse it.
+	if strings.Contains(data, "\n") {
+		t.Error("data must be a single line")
+	}
+}
+
+func TestAnEmptyPulseIsNotBroadcast(t *testing.T) {
+	// Silence is the common case: the watcher looks every couple of seconds and
+	// almost always finds nothing. Waking every open page for that would undo
+	// the point of pushing rather than polling.
+	h := web.NewServer(testSession(), nil)
+	before := h.PulsesSent()
+	h.Pulse(nil)
+	h.Pulse([]domain.Pulse{})
+	if h.PulsesSent() != before {
+		t.Errorf("nothing to say should send nothing, sent %d", h.PulsesSent()-before)
+	}
+}
+
+func TestTheLiveTargetIsNeverServedFromCache(t *testing.T) {
+	// Caching a loaded target is right for a commit or a tag: the range is
+	// fixed, so rebuilding it would produce the same answer. The live target is
+	// the exception — its whole purpose is that it changed since you last
+	// looked, and a cache would make it the one thing on the page that lies.
+	loads := 0
+	files := "before.go"
+
+	h := web.NewServer(testSession(), nil).
+		WithTargets([]web.TargetSummary{{
+			ID: "live-1", Ref: "live", Kind: domain.TargetLive, Title: "Live",
+		}}).
+		WithLoader(func(_ context.Context, id string) (web.Session, error) {
+			loads++
+			return web.Session{
+				ID: "live-1",
+				Units: []domain.Unit{{
+					ID: "live-1-f001", Files: []string{files},
+					Headline: domain.Headline{Text: "working"},
+				}},
+			}, nil
+		})
+
+	if body := get(t, h, "/?target=live").Body.String(); !strings.Contains(body, "before.go") {
+		t.Fatalf("the live target should render:\n%s", body)
+	}
+
+	files = "after.go"
+	body := get(t, h, "/?target=live").Body.String()
+
+	if loads != 2 {
+		t.Errorf("loaded %d times, want 2 — the live target is rebuilt each look", loads)
+	}
+	if !strings.Contains(body, "after.go") {
+		t.Errorf("the live target served a stale working tree:\n%s", body)
+	}
+}
+
+func TestOrdinaryTargetsAreStillCached(t *testing.T) {
+	// The exception above must stay an exception: rebuilding a fixed range on
+	// every request would make every pulse cost a full diff of history.
+	loads := 0
+	h := web.NewServer(testSession(), nil).
+		WithTargets([]web.TargetSummary{{
+			ID: "c1", Ref: "abc12345", Kind: domain.TargetCommit, Title: "A commit",
+		}}).
+		WithLoader(func(_ context.Context, id string) (web.Session, error) {
+			loads++
+			return web.Session{ID: "c1", Units: []domain.Unit{{
+				ID: "c1-f001", Files: []string{"fixed.go"},
+			}}}, nil
+		})
+
+	get(t, h, "/?target=abc12345")
+	get(t, h, "/?target=abc12345")
+	if loads != 1 {
+		t.Errorf("loaded %d times, want once", loads)
+	}
+}
+
+func TestTheLiveTargetIsRebuiltEvenWhenItIsTheOpenOne(t *testing.T) {
+	// msr opens on the live target by default, which makes it the current
+	// session — and the current session is served straight from memory. That
+	// short-circuit is right for every fixed range and wrong for this one: it
+	// meant the live review showed whatever the working tree held at start-up
+	// and never moved again.
+	loads := 0
+	files := "before.go"
+
+	live := testSession()
+	live.ID = "live-1"
+	h := web.NewServer(live, nil).
+		WithTargets([]web.TargetSummary{{
+			ID: "live-1", Ref: "live", Kind: domain.TargetLive, Title: "Live",
+		}}).
+		WithLoader(func(_ context.Context, id string) (web.Session, error) {
+			loads++
+			return web.Session{ID: "live-1", Units: []domain.Unit{{
+				ID: "live-1-f001", Files: []string{files},
+				Headline: domain.Headline{Text: "working"},
+			}}}, nil
+		})
+
+	files = "after.go"
+	for _, path := range []string{"/", "/?target=live", "/?target=live-1"} {
+		body := get(t, h, path).Body.String()
+		if !strings.Contains(body, "after.go") {
+			t.Errorf("%s served a frozen working tree:\n%s", path, body)
+		}
+	}
+	if loads != 3 {
+		t.Errorf("rebuilt %d times, want one per look", loads)
+	}
+}

@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"context"
 	"embed"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"io/fs"
@@ -225,7 +226,8 @@ type Server struct {
 
 	// subs are live subscribers (server-sent events). Each gets a buffered
 	// channel so a slow reader can never block a request handler.
-	subs   map[chan string]struct{}
+	subs   map[chan sseEvent]struct{}
+	pulses int
 	nextID int
 
 	newID func() string
@@ -242,7 +244,7 @@ func NewServer(sess Session, notes Annotator) *Server {
 		notes:  notes,
 		models: map[string]string{},
 		loaded: map[string]Session{},
-		subs:   map[chan string]struct{}{},
+		subs:   map[chan sseEvent]struct{}{},
 		newID:  func() string { return ulid.Make().String() },
 		now:    func() time.Time { return time.Now().UTC() },
 	}
@@ -295,6 +297,19 @@ func (s *Server) WithCandidates(repos []RepoStatus) *Server {
 func (s *Server) WithTargets(targets []TargetSummary) *Server {
 	s.targets = targets
 	return s
+}
+
+// SetTargets replaces what the picker offers while the server is running.
+//
+// The list is discovered once at start-up, which was fine when nothing could
+// change it. It is not fine now: a commit that lands while a cockpit is open
+// becomes a target the reviewer is told about, and a toast pointing at a target
+// the picker has never heard of goes nowhere.
+func (s *Server) SetTargets(targets []TargetSummary) {
+	s.mu.Lock()
+	s.targets = targets
+	s.mu.Unlock()
+	s.broadcast("targets")
 }
 
 // WithRepos supplies the repositories the workspace holds, and optionally a way
@@ -637,22 +652,44 @@ func (s *Server) openSession(r *http.Request) Session {
 
 	s.mu.RLock()
 	current := s.sess
-	cached, isCached := s.loaded[want]
 	loader := s.loader
 	s.mu.RUnlock()
 
-	if want == "" || want == current.ID || !validSessionID(want) {
+	// No target named means the one already open — which may itself be the live
+	// target, and must then be as fresh as any other look at it.
+	if want == "" {
+		want = current.ID
+	}
+	if !validSessionID(want) {
 		return current
 	}
 	// A person names a point in history by its ref. Resolve that to an id first,
-	// so everything downstream keeps one way of being addressed.
+	// so everything downstream keeps one way of being addressed — the cache
+	// included: it is written under the id, so looking it up under the ref
+	// missed every time and rebuilt the review on every request.
 	if id, ok := s.targetByRef(want); ok {
 		want = id
-		if want == current.ID {
-			return current
-		}
 	}
-	if isCached {
+	live := s.isLive(want)
+
+	// Serving the open session from memory is right for every fixed range and
+	// wrong for this one: it would show whatever the working tree held when msr
+	// started and never move again.
+	if want == current.ID && !live {
+		return current
+	}
+
+	s.mu.RLock()
+	cached, isCached := s.loaded[want]
+	s.mu.RUnlock()
+	if !isCached && want == current.ID {
+		cached, isCached = current, true
+	}
+
+	// The live target is the one thing a cache must not answer for. Its whole
+	// purpose is that it changed since the last look; served from memory it
+	// would be the only part of the page that lies.
+	if isCached && !live {
 		return cached
 	}
 	if loader == nil {
@@ -661,12 +698,41 @@ func (s *Server) openSession(r *http.Request) Session {
 
 	loadedSess, err := loader(r.Context(), want)
 	if err != nil || loadedSess.ID == "" {
+		if isCached {
+			return cached // a transient failure must not blank a live page
+		}
 		return current
 	}
+	if isCached && loadedSess.Narrative.Source == "" {
+		// Rebuilding gets fresh units and diffs; it must not throw away a story
+		// the model has already written about them.
+		loadedSess.Narrative = cached.Narrative
+	}
+
 	s.mu.Lock()
-	s.loaded[want] = loadedSess
+	if want == s.sess.ID {
+		// The open session is what annotating, narrating and asking all read.
+		// Refreshing the page's copy without refreshing theirs would let a
+		// reviewer act on a file the rest of the server no longer believes in.
+		s.sess = loadedSess
+	} else {
+		s.loaded[want] = loadedSess
+	}
 	s.mu.Unlock()
 	return loadedSess
+}
+
+// isLive reports whether a target id follows HEAD rather than naming a fixed
+// point in history (ADR 0018).
+func (s *Server) isLive(id string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, t := range s.targets {
+		if t.ID == id {
+			return t.Kind == domain.TargetLive
+		}
+	}
+	return false
 }
 
 // validSessionID guards the ?session= parameter. It arrives from a URL and is
@@ -1002,14 +1068,53 @@ func (s *Server) Subscribers() int {
 // subscriber that is not keeping up simply misses this nudge, and the next one
 // (or its own reload) brings it back in sync.
 func (s *Server) broadcast(event string) {
+	s.send(sseEvent{Name: event, Data: "{}"})
+}
+
+// sseEvent is one message on the wire. Most events are a bare nudge — the page
+// re-fetches itself and swaps what changed — but a pulse carries its words, so
+// a toast can appear without a round trip first.
+type sseEvent struct {
+	Name string
+	Data string // a single line of JSON: EventSource will not parse more
+}
+
+func (s *Server) send(ev sseEvent) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	for ch := range s.subs {
 		select {
-		case ch <- event:
+		case ch <- ev:
 		default:
 		}
 	}
+}
+
+// Pulse tells every open page what just moved in the repository. Nothing to
+// say sends nothing: the watcher looks every couple of seconds and almost
+// always finds silence, and waking every page for that would undo the point of
+// pushing rather than polling.
+func (s *Server) Pulse(pulses []domain.Pulse) {
+	if len(pulses) == 0 {
+		return
+	}
+	data, err := json.Marshal(pulses)
+	if err != nil {
+		return
+	}
+
+	s.mu.Lock()
+	s.pulses++
+	s.mu.Unlock()
+
+	s.send(sseEvent{Name: "pulse", Data: string(data)})
+}
+
+// PulsesSent is how many pulse events have gone out, for tests and /status.
+func (s *Server) PulsesSent() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.pulses
 }
 
 // handleEvents streams server-sent events so an open page updates itself as the
@@ -1022,7 +1127,7 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ch := make(chan string, 8)
+	ch := make(chan sseEvent, 8)
 	s.mu.Lock()
 	s.subs[ch] = struct{}{}
 	s.mu.Unlock()
@@ -1049,8 +1154,8 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 		select {
 		case <-r.Context().Done():
 			return
-		case event := <-ch:
-			if _, err := fmt.Fprintf(w, "event: %s\ndata: {}\n\n", event); err != nil {
+		case ev := <-ch:
+			if _, err := fmt.Fprintf(w, "event: %s\ndata: %s\n\n", ev.Name, ev.Data); err != nil {
 				return
 			}
 			flusher.Flush()
@@ -1463,6 +1568,11 @@ func statsFor(kind domain.TargetKind, st domain.SessionStats, subtitle string) c
 		}
 	case domain.TargetWorktree:
 		add(statTile{Value: "—", Label: "uncommitted", Hint: "not committed yet"})
+	case domain.TargetLive:
+		// "Watching" rather than a number: this review has no fixed size, and a
+		// count that changes under the reader is worse than no count at all.
+		add(statTile{Value: "live", Label: "watching HEAD",
+			Hint: "updates as files change, and follows HEAD when you commit"})
 	case domain.TargetTag, domain.TargetPR, domain.TargetRange:
 		add(statTile{Value: thousands(st.Commits), Label: plural("commit", st.Commits)})
 		if st.PullRequests > 0 || kind == domain.TargetTag {

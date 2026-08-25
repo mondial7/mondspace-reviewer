@@ -14,6 +14,11 @@ const (
 	TargetSession  TargetKind = "session"
 	TargetWorktree TargetKind = "worktree"
 	TargetRange    TargetKind = "range"
+	// TargetLive follows HEAD instead of naming a point in history: it is
+	// always "the working tree against whatever HEAD is now". It is the only
+	// target whose range moves under it, which is why its identity is derived
+	// from the repository alone (ADR 0018).
+	TargetLive TargetKind = "live"
 )
 
 // Target is the thing under review: a range of history with a name. Reviewing

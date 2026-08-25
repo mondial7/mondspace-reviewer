@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/config"
@@ -88,7 +89,7 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 	if *session != "" {
 		initial = *session
 	}
-	entry, known := targetIndex[initial]
+	entry, known := lookupTarget(initial)
 	if !known {
 		return fmt.Errorf("no such target %q in this workspace", initial)
 	}
@@ -175,6 +176,11 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 	})
 	go refreshAgent(ctx, handler, sum, &agent)
 
+	// The refresher above watches one review. This watches the repository
+	// itself, which is how a commit or a tag that belongs to some *other*
+	// target still reaches the reviewer looking at this one.
+	go watchRepo(ctx, handler, snap, storeRelativeTo(repo, storeRoot), repos, *out)
+
 	ln, err := net.Listen("tcp", *addr)
 	if err != nil {
 		return err
@@ -235,7 +241,7 @@ func webAskFunc(sess domain.Session, units []domain.Unit, diffs map[string]domai
 		// Answer about whatever is being read. Closing over the review the server
 		// started with meant a question asked while looking at one target was
 		// answered from another.
-		if entry, known := targetIndex[targetID]; known && targetID != sess.ID {
+		if entry, known := lookupTarget(targetID); known && targetID != sess.ID {
 			if u, d, err := unitsFor(ctx, entry); err == nil {
 				askUnits, askDiffs = u, d
 			}
@@ -503,9 +509,7 @@ func refreshReview(ctx context.Context, r reviewRefresher) {
 			}
 
 			units, diffs, err := usecase.BuildFileUnits(ctx, r.snap, r.sessionID,
-				r.baseline, domain.SnapshotRef{}, func(f string) bool {
-					return f == r.storeRel || strings.HasPrefix(f, r.storeRel+"/")
-				})
+				r.baseline, domain.SnapshotRef{}, usecase.InStore(r.storeRel))
 			if err != nil {
 				continue
 			}
@@ -663,7 +667,32 @@ type targetEntry struct {
 	session string
 }
 
-var targetIndex = map[string]targetEntry{}
+// targetIndex is every target this process can open, by id.
+//
+// It is read from request handlers and written from three places — start-up,
+// a reviewer comparing two refs, and the repository watcher noticing a commit
+// — so it is guarded. Before the watcher existed the writes happened to be
+// rare enough to get away with; that was luck, not a design.
+var (
+	targetsMu   sync.RWMutex
+	targetIndex = map[string]targetEntry{}
+)
+
+// lookupTarget resolves an id to what is needed to review it.
+func lookupTarget(id string) (targetEntry, bool) {
+	targetsMu.RLock()
+	defer targetsMu.RUnlock()
+	entry, known := targetIndex[id]
+	return entry, known
+}
+
+// registerTarget adds a target that was not there when the index was built —
+// a range a reviewer asked to compare, or a commit that has just landed.
+func registerTarget(id string, entry targetEntry) {
+	targetsMu.Lock()
+	defer targetsMu.Unlock()
+	targetIndex[id] = entry
+}
 
 // discoverTargets asks each repository what it has worth reviewing — commits,
 // tags, pull requests, the working tree — and folds in the sessions recorded
@@ -703,6 +732,7 @@ func discoverTargets(ctx context.Context, repos []string, out string) []web.Targ
 			})
 		}
 
+		targetsMu.Lock()
 		for _, t := range usecase.BuildTargets(repo, commits, tags, sessions, dirty) {
 			if _, clash := targetIndex[t.ID]; clash {
 				continue
@@ -712,9 +742,18 @@ func discoverTargets(ctx context.Context, repos []string, out string) []web.Targ
 				entry.session = t.ID
 			}
 			targetIndex[t.ID] = entry
-			all = append(all, t)
 		}
+		targetsMu.Unlock()
 	}
+
+	// Everything known, not only what this pass added: re-running discovery
+	// after a commit must produce the whole list, or the picker would be left
+	// holding just the one new target.
+	targetsMu.RLock()
+	for _, entry := range targetIndex {
+		all = append(all, entry.target)
+	}
+	targetsMu.RUnlock()
 
 	usecase.SortTargets(all)
 
@@ -785,7 +824,7 @@ func discoverWorkspace(repos []string, out string) []web.SessionSummary {
 // from: a session has an event log, and nothing else does.
 func targetLoader() web.Loader {
 	return func(ctx context.Context, targetID string) (web.Session, error) {
-		entry, known := targetIndex[targetID]
+		entry, known := lookupTarget(targetID)
 		if !known {
 			return web.Session{}, fmt.Errorf("nothing here to review under %q", targetID)
 		}
@@ -803,11 +842,18 @@ func targetLoader() web.Loader {
 		}
 
 		snap := gitsnap.New(entry.repo, targetID)
+
+		// The target list was built once; HEAD has moved every time the agent
+		// committed since. Only the live target follows it.
+		if t.Kind == domain.TargetLive {
+			if head, err := snap.RecentCommits(ctx, 1); err == nil && len(head) > 0 {
+				t = usecase.ResolveLive(t, domain.SnapshotRef{Commit: head[0].Hash, Label: "HEAD"})
+			}
+		}
+
 		storeRel := storeRelativeTo(entry.repo, entry.out)
 		units, diffs, err := usecase.BuildFileUnits(ctx, snap, targetID, t.From, t.To,
-			func(f string) bool {
-				return f == storeRel || strings.HasPrefix(f, storeRel+"/")
-			})
+			usecase.InStore(storeRel))
 		if err != nil {
 			return web.Session{}, err
 		}
@@ -867,9 +913,7 @@ func sessionLoader(workspace []web.SessionSummary, out string) web.Loader {
 		}
 		storeRel := storeRelativeTo(entry.repo, entry.out)
 		units, diffs, err := usecase.BuildFileUnits(ctx, snap, sessionID, baseline,
-			domain.SnapshotRef{}, func(f string) bool {
-				return f == storeRel || strings.HasPrefix(f, storeRel+"/")
-			})
+			domain.SnapshotRef{}, usecase.InStore(storeRel))
 		if err != nil {
 			return web.Session{}, err
 		}
@@ -906,7 +950,7 @@ func sessionLoader(workspace []web.SessionSummary, out string) web.Loader {
 type targetNotes struct{}
 
 func (targetNotes) AppendNote(n domain.Note) error {
-	entry, known := targetIndex[n.SessionID]
+	entry, known := lookupTarget(n.SessionID)
 	if !known {
 		return fmt.Errorf("no such review %q", n.SessionID)
 	}
@@ -1011,7 +1055,7 @@ func handlerRef() *web.Server  { return liveHandler }
 // a commit, a tag, a pull request — and stores the story against it. Reviewing
 // any of them is the point of ADR 0017; narrating only one would undercut it.
 func narrateTarget(ctx context.Context, handler *web.Server, sum port.Summarizer, targetID, model string) {
-	entry, known := targetIndex[targetID]
+	entry, known := lookupTarget(targetID)
 	if !known || handler == nil {
 		return
 	}
@@ -1070,9 +1114,7 @@ func unitsFor(ctx context.Context, entry targetEntry) ([]domain.Unit, map[string
 	snap := gitsnap.New(entry.repo, entry.target.ID)
 	storeRel := storeRelativeTo(entry.repo, entry.out)
 	return usecase.BuildFileUnits(ctx, snap, entry.target.ID, entry.target.From, entry.target.To,
-		func(f string) bool {
-			return f == storeRel || strings.HasPrefix(f, storeRel+"/")
-		})
+		usecase.InStore(storeRel))
 }
 
 // compareRefs turns two refs a reviewer typed into a target and registers it, so
@@ -1100,7 +1142,7 @@ func compareRefs() web.CompareFunc {
 
 		title := from + " … " + firstNonEmpty(to, "working tree")
 		target := usecase.RangeTarget(entry.repo, title, fromRef, toRef)
-		targetIndex[target.ID] = targetEntry{target: target, repo: entry.repo, out: entry.out}
+		registerTarget(target.ID, targetEntry{target: target, repo: entry.repo, out: entry.out})
 		return target.ID, nil
 	}
 }
@@ -1121,7 +1163,7 @@ func anyEntryFor(name string) (targetEntry, bool) {
 // it is asked deliberately rather than run in bulk.
 func describeOneFile(sum port.Summarizer) web.DescribeFileFunc {
 	return func(ctx context.Context, targetID, unitID string) (string, []string, error) {
-		entry, known := targetIndex[targetID]
+		entry, known := lookupTarget(targetID)
 		if !known {
 			return "", nil, fmt.Errorf("nothing here to review under %q", targetID)
 		}
@@ -1206,7 +1248,7 @@ func removeRepo(out string) web.AddRepoFunc {
 // is open — not only the one the server started with.
 func describeAnyTarget(sum port.Summarizer) web.DescribeFunc {
 	return func(ctx context.Context, targetID string, unitIDs []string) (string, error) {
-		entry, known := targetIndex[targetID]
+		entry, known := lookupTarget(targetID)
 		if !known {
 			return "", fmt.Errorf("nothing here to review under %q", targetID)
 		}
@@ -1246,4 +1288,129 @@ func describeAnyTarget(sum port.Summarizer) web.DescribeFunc {
 		}
 		return "", fmt.Errorf("the model did not describe this change")
 	}
+}
+
+// ── Watching the repository ────────────────────────────────────────────────
+
+// The cadence of the repository watcher. This is server-side polling — git has
+// nothing to subscribe to — but it is deliberately not what the *browser* does:
+// pages are pushed to over SSE, so one watcher serves every open cockpit no
+// matter how many there are.
+//
+// It slows right down when nobody is listening. A cockpit left open on a second
+// screen should feel immediate; an msr running with no browser attached should
+// not spin a git process every two seconds for an audience of nobody.
+const (
+	pulseTick     = 2 * time.Second
+	pulseIdleTick = 20 * time.Second
+)
+
+// watchRepo asks git what moved and tells every open page. It is the only thing
+// that makes "new commit" or "three files changed" arrive without a reload.
+func watchRepo(ctx context.Context, handler *web.Server, snap *gitsnap.Snapshotter,
+	storeRel string, repos []string, out string) {
+	var prev domain.RepoState
+	inStore := usecase.InStore(storeRel)
+
+	for {
+		state, err := observeRepo(ctx, snap, prev, inStore)
+		if err == nil {
+			pulses := usecase.Pulses(prev, state)
+
+			// A commit or a tag is a new thing to review. Discovering it before
+			// announcing it is what makes the toast a link rather than a claim:
+			// otherwise the reviewer clicks "New commit" and the picker has
+			// never heard of it.
+			if newHistory(pulses) {
+				handler.SetTargets(discoverTargets(ctx, repos, out))
+			}
+
+			// Pulses is silent for the first observation, so opening a page
+			// never greets the reviewer with news about what was already there.
+			handler.Pulse(pulses)
+			prev = state
+		}
+		// A transient git failure (an index.lock during a commit, most often)
+		// must not kill the watcher or, worse, be reported as a change.
+
+		wait := pulseIdleTick
+		if handler.Subscribers() > 0 {
+			wait = pulseTick
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(wait):
+		}
+	}
+}
+
+// newHistory reports whether anything happened that adds a target. A working
+// tree that moved does not: the live target already covers it, and it is the
+// one target that is never rediscovered because it never changes id.
+func newHistory(pulses []domain.Pulse) bool {
+	for _, p := range pulses {
+		if p.Kind == domain.PulseCommit || p.Kind == domain.PulseTag {
+			return true
+		}
+	}
+	return false
+}
+
+// observeRepo takes one cheap look at a repository.
+//
+// Cheap matters: this runs every couple of seconds. Reading HEAD and diffing
+// the working tree against it happens every time; walking the log and listing
+// tags only when HEAD has actually moved, which is the expensive pair.
+func observeRepo(ctx context.Context, snap *gitsnap.Snapshotter, prev domain.RepoState, inStore func(string) bool) (domain.RepoState, error) {
+	head, err := snap.RecentCommits(ctx, 1)
+	if err != nil {
+		return domain.RepoState{}, err
+	}
+
+	var state domain.RepoState
+	if len(head) > 0 {
+		state.Head, state.Subject = head[0].Hash, head[0].Subject
+	}
+
+	// Tags are their own axis: `git tag v6.0.0` moves nothing else, so this
+	// cannot be folded into the HEAD check. Listing them is a packed-refs read.
+	if tags, err := snap.Tags(ctx, 50); err == nil {
+		state.Tags = make([]string, 0, len(tags))
+		for _, t := range tags {
+			state.Tags = append(state.Tags, t.Name)
+		}
+	} else {
+		// Keep what we knew rather than reporting every tag as deleted and then
+		// re-added on the next successful read.
+		state.Tags = prev.Tags
+	}
+
+	if state.Head != "" {
+		stats, err := snap.Numstat(ctx, domain.SnapshotRef{Commit: state.Head}, domain.SnapshotRef{})
+		if err != nil {
+			return domain.RepoState{}, err
+		}
+		// msr writes its own store inside the repository by default. Counting
+		// it would announce msr's bookkeeping to the reviewer as though the
+		// agent had done it — and it saves on exactly the ticks it is watching.
+		mine := stats[:0]
+		for _, f := range stats {
+			if !inStore(f.Path) {
+				mine = append(mine, f)
+			}
+		}
+		state.DirtyFiles = len(mine)
+		state.DirtyPrint = usecase.ReviewFingerprint(mine)
+	}
+
+	if state.Head != "" && prev.Head != "" && state.Head != prev.Head {
+		state.Commits = 1 // conservative: a rebase can leave the old HEAD unreachable
+		if landed, err := snap.CommitsBetween(ctx,
+			domain.SnapshotRef{Commit: prev.Head}, domain.SnapshotRef{}); err == nil && len(landed) > 0 {
+			state.Commits = len(landed)
+		}
+	}
+
+	return state, nil
 }

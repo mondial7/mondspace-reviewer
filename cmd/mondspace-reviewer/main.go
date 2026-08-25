@@ -607,9 +607,10 @@ func excludeStore(files []string, repo, out string) []string {
 			}
 		}
 	}
+	inStore := usecase.InStore(storeRel)
 	kept := files[:0]
 	for _, f := range files {
-		if f == storeRel || strings.HasPrefix(f, storeRel+"/") {
+		if inStore(f) {
 			continue
 		}
 		kept = append(kept, f)

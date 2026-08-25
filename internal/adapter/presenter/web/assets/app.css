@@ -1164,3 +1164,88 @@
   color: var(--inferred);
   border-left: 2px solid var(--inferred); padding-left: 0.6rem;
 }
+
+/* ── Pulses ─────────────────────────────────────────────────────────────────
+   What just moved in the repository, said where a reviewer deep in a diff will
+   see it. Bottom-right: out of the way of the story and the change list, and
+   away from the nav rail. Fixed, so it is visible in zen mode too — the whole
+   reason it exists is that the numbers are elsewhere. */
+
+.toasts {
+  position: fixed;
+  right: var(--gutter);
+  bottom: var(--gutter);
+  z-index: 60; /* above the panel, below the command palette */
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-width: min(24rem, calc(100vw - 2 * var(--gutter)));
+  pointer-events: none; /* the page underneath stays usable */
+}
+
+.toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  padding: 0.6rem 0.7rem 0.6rem 0.85rem;
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--kind, var(--accent));
+  border-radius: 7px;
+  background: var(--bg-raised);
+  box-shadow: 0 6px 20px rgb(0 0 0 / 28%), var(--panel-glow);
+  color: var(--fg);
+  font-size: 0.82rem;
+  line-height: 1.35;
+  text-decoration: none;
+  animation: toast-in 220ms ease-out;
+}
+
+.toast[data-kind='commit'] { --kind: var(--hunk); }
+.toast[data-kind='tag']    { --kind: var(--accent); }
+.toast[data-kind='files']  { --kind: var(--add); }
+
+.toast[data-leaving] {
+  opacity: 0;
+  transform: translateX(0.5rem);
+  transition: opacity 200ms ease, transform 200ms ease;
+}
+
+a.toast:hover { border-color: var(--kind, var(--accent)); }
+
+.toast__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere; /* a long commit subject must not widen the toast */
+}
+
+.toast__go {
+  flex: none;
+  color: var(--kind, var(--accent));
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.toast__close {
+  flex: none;
+  padding: 0 0.15rem;
+  border: 0;
+  background: none;
+  color: var(--fg-dim);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.toast__close:hover { color: var(--fg); }
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(0.4rem); }
+  to   { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast { animation: none; }
+  .toast[data-leaving] { transition: none; }
+}

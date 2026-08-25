@@ -7,8 +7,13 @@
 const stream = new EventSource('/events');
 
 // Which parts of the page each event can affect.
+//
+// #refs is the picker's option list. It is swapped on its own rather than with
+// the panel around it: the panel holds the isometric canvas, and replacing that
+// would restart the animation every time a commit landed.
 const REGIONS = ['.cockpit__story', '.cockpit__changes', '.cockpit__stats',
-  '.cockpit__status', '.reviewcard', '.brief', '.board', '.activity', '.queue', '.storynav'];
+  '.cockpit__status', '.reviewcard', '.brief', '.board', '.activity', '.queue',
+  '.storynav', '#refs'];
 
 let pending = false;
 
@@ -55,9 +60,102 @@ async function refresh() {
   }
 }
 
-for (const event of ['narrative', 'note', 'headline', 'answer']) {
+for (const event of ['narrative', 'note', 'headline', 'answer', 'targets']) {
   stream.addEventListener(event, refresh);
 }
+
+// ── Pulses ──────────────────────────────────────────────────────────────────
+//
+// A pulse is the one event that carries content: what just moved in the
+// repository, in the words it will be read in. It does two things — it updates
+// the page like any other event, and it says so, because a reviewer deep in a
+// diff will not notice a number changing three columns away.
+
+const TOAST_LIFE = 9000; // long enough to read a sentence and decide
+const MAX_TOASTS = 4; // beyond this it stops being information
+
+let toasts = null;
+
+function toastHost() {
+  if (!toasts) {
+    toasts = document.createElement('div');
+    toasts.className = 'toasts';
+    // polite, not assertive: this must never interrupt a screen reader
+    // mid-sentence for something the reviewer did not ask for.
+    toasts.setAttribute('role', 'status');
+    toasts.setAttribute('aria-live', 'polite');
+    document.body.appendChild(toasts);
+  }
+  return toasts;
+}
+
+function dismiss(el) {
+  if (!el.isConnected) return;
+  el.dataset.leaving = 'true';
+  setTimeout(() => el.remove(), 200);
+}
+
+function toast(pulse) {
+  const host = toastHost();
+  while (host.children.length >= MAX_TOASTS) host.firstElementChild.remove();
+
+  // Clicking a pulse opens what it is talking about — unless that is already
+  // what is on screen, in which case there is nowhere to go and the words are
+  // the whole message.
+  const here = new URL(window.location.href).searchParams.get('target');
+  const goes = pulse.ref && pulse.ref !== here;
+
+  const el = document.createElement(goes ? 'a' : 'div');
+  el.className = 'toast';
+  el.dataset.kind = pulse.kind || 'files';
+  if (goes) el.href = `/?target=${encodeURIComponent(pulse.ref)}`;
+
+  const text = document.createElement('span');
+  text.className = 'toast__text';
+  text.textContent = pulse.text; // never innerHTML: this is git data
+  el.appendChild(text);
+
+  if (goes) {
+    const go = document.createElement('span');
+    go.className = 'toast__go';
+    go.textContent = 'open';
+    el.appendChild(go);
+  }
+
+  const close = document.createElement('button');
+  close.className = 'toast__close';
+  close.type = 'button';
+  close.setAttribute('aria-label', 'dismiss');
+  close.textContent = '×';
+  close.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dismiss(el);
+  });
+  el.appendChild(close);
+
+  host.appendChild(el);
+  setTimeout(() => dismiss(el), TOAST_LIFE);
+}
+
+stream.addEventListener('pulse', (e) => {
+  let pulses = [];
+  try {
+    pulses = JSON.parse(e.data);
+  } catch {
+    return; // a malformed pulse is not worth breaking the page over
+  }
+
+  // The content is the substance; the toast only points at it. Refresh either
+  // way, so a page left open is correct even if nobody reads the toast.
+  refresh();
+
+  // Only announce what someone is there to see. Anything missed while the tab
+  // was hidden is already in the content by the time they come back, and a
+  // wall of stale toasts on return is worse than none.
+  if (document.hidden) return;
+  for (const p of pulses) toast(p);
+});
 
 // Catch up on anything missed while the tab was in the background.
 document.addEventListener('visibilitychange', () => {
