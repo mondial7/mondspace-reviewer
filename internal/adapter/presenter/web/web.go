@@ -1577,6 +1577,20 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	s.mu.RUnlock()
 
 	u := agent.Usage
+	// How much of what the model produced was it thinking to itself. This is the
+	// number that decides whether a context window is big enough, and it is also
+	// the evidence for whether "skip reasoning" did anything.
+	reasoningShare := ""
+	skipIgnored := false
+	if u.Completion > 0 {
+		share := u.Reasoning * 100 / u.Completion
+		reasoningShare = fmt.Sprintf("%d%%", share)
+		// msr always sends the request to skip it; whether the model's chat
+		// template reads it is decided inside the server. If reasoning is still
+		// being spent, that answers the question — no guessing required.
+		skipIgnored = agent.NoThinking && u.Reasoning > 0
+	}
+
 	avg := "—"
 	if u.Calls > 0 {
 		avg = fmt.Sprintf("%.1fs", float64(u.Millis)/float64(u.Calls)/1000)
@@ -1594,6 +1608,8 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		Prompt, Completion string
 		Reasoning, Total   string
 		Average, Checked   string
+		ReasoningShare     string
+		SkipIgnored        bool
 		Sessions           []SessionSummary
 		Repos              []RepoStatus
 		Candidates         []RepoStatus
@@ -1609,6 +1625,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		Prompt: thousands(u.Prompt), Completion: thousands(u.Completion),
 		Reasoning: thousands(u.Reasoning), Total: thousands(u.Prompt + u.Completion),
 		Average: avg, Checked: checked,
+		ReasoningShare: reasoningShare, SkipIgnored: skipIgnored,
 		Sessions: sessions, Repos: repos, Candidates: candidates, Work: work,
 		RepoErr: repoErr, AgentErr: agentErr,
 		CanAddRepo: canAddRepo, CanRemoveRepo: s.removeRepo != nil,

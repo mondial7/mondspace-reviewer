@@ -1279,3 +1279,58 @@ func TestDescribingAGroupOnASwitchedTarget(t *testing.T) {
 		t.Errorf("asked to describe %v, want the switched review's unit", asked)
 	}
 }
+
+func TestStatusReportsWhetherSkippingReasoningActuallyWorked(t *testing.T) {
+	// "only some chat templates honour this" left the reviewer to guess. msr
+	// always sends the request; whether the model's chat template reads it is
+	// decided inside the server. That is measurable, so it should be measured.
+	h := web.NewServer(testSession(), nil).WithAgent(web.AgentStatus{
+		Model: "qwen/qwen3.5-9b", NoThinking: true,
+		Usage: port.TokenUsage{Calls: 4, Completion: 400, Reasoning: 380},
+	})
+
+	body := get(t, h, "/status").Body.String()
+
+	if !strings.Contains(body, "ignoring") {
+		t.Errorf("a model still reasoning with the setting on should say so:\n%s", body)
+	}
+	// And say how much, because "most of it" and "a trace" are different problems.
+	if !strings.Contains(body, "95%") {
+		t.Errorf("the reasoning share should be shown:\n%s", body)
+	}
+}
+
+func TestStatusSaysNothingWhenSkippingIsWorking(t *testing.T) {
+	h := web.NewServer(testSession(), nil).WithAgent(web.AgentStatus{
+		Model: "some/model", NoThinking: true,
+		Usage: port.TokenUsage{Calls: 4, Completion: 400, Reasoning: 0},
+	})
+
+	if strings.Contains(get(t, h, "/status").Body.String(), "ignoring") {
+		t.Error("a model that stopped reasoning should not be accused of ignoring the setting")
+	}
+}
+
+func TestStatusDoesNotAccuseAModelBeforeItHasBeenAsked(t *testing.T) {
+	// With no calls yet there is no evidence either way, and guessing would be
+	// exactly the vagueness this replaced.
+	h := web.NewServer(testSession(), nil).WithAgent(web.AgentStatus{
+		Model: "some/model", NoThinking: true,
+	})
+
+	if strings.Contains(get(t, h, "/status").Body.String(), "ignoring") {
+		t.Error("nothing has been asked yet, so nothing can be concluded")
+	}
+}
+
+func TestReasoningShareIsShownEvenWhenNotSkipping(t *testing.T) {
+	// It is the number that decides whether a context window is big enough, so
+	// it is worth seeing whatever the setting says.
+	h := web.NewServer(testSession(), nil).WithAgent(web.AgentStatus{
+		Usage: port.TokenUsage{Calls: 2, Completion: 200, Reasoning: 50},
+	})
+
+	if !strings.Contains(get(t, h, "/status").Body.String(), "25%") {
+		t.Error("the reasoning share should be shown regardless of the setting")
+	}
+}

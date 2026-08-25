@@ -67,9 +67,13 @@
 
         <label class="agentform__check">
           <input type="checkbox" name="no_thinking" {{ if .Agent.NoThinking }}checked{{ end }}>
-          skip the model's reasoning phase
-          <span class="agentform__note">only some chat templates honour this</span>
+          ask the model to skip its reasoning phase
+          <span class="agentform__note">
+            msr always sends the request; whether it does anything is decided by
+            the model's own chat template, inside your server
+          </span>
         </label>
+
 
         <button class="addrepo__btn" type="submit">apply</button>
       </form>
@@ -98,11 +102,19 @@
         <span class="board__key">completion tokens</span><span class="board__val">{{ .Completion }}</span>
       </div>
       <div class="board__row">
-        <span class="board__key">of which reasoning</span><span class="board__val">{{ .Reasoning }}</span>
+        <span class="board__key">of which reasoning</span>
+        <span class="board__val">{{ .Reasoning }}{{ with .ReasoningShare }} · {{ . }}{{ end }}</span>
       </div>
       <div class="board__row">
         <span class="board__key">total tokens</span><span class="board__val">{{ .Total }}</span>
       </div>
+      {{ if .SkipIgnored }}
+      <p class="agentform__warn">
+        Asked to skip reasoning, this model is ignoring it — {{ .ReasoningShare }}
+        of everything it produced was still reasoning. Nothing is broken: msr
+        sends the request, and this model's chat template does not read it.
+      </p>
+      {{ end }}
     </section>
 
     </div>

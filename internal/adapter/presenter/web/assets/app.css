@@ -1144,3 +1144,9 @@
   background: var(--bg); border: 1px solid var(--rule); border-radius: 3px;
   padding: 0.05rem 0.35rem;
 }
+
+.agentform__warn {
+  margin: 0.5rem 0 0; font-size: 0.75rem; line-height: 1.5;
+  color: var(--inferred);
+  border-left: 2px solid var(--inferred); padding-left: 0.6rem;
+}
