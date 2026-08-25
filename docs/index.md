@@ -58,6 +58,7 @@ Anything in git — not just recorded agent runs:
 | **a pull request** | the commits that reference it, together |
 | **your working tree** | uncommitted work, offered first when it is dirty |
 | **an agent session** | a recorded run, if you installed the hooks |
+| **any two points** | compare a tag against a tag, a branch against a commit, anything against your working tree |
 
 A recorded session is *one kind among them*, not the index — and every other
 target lists the sessions overlapping it, so the intent behind a commit is one
@@ -69,18 +70,31 @@ One page, three columns: a fixed panel with what this change is and the numbers;
 the change as chapters of prose; and every file, folded, with its diff, its git
 history and a place to annotate it.
 
-Click a chapter and its files come up beside it. Click a filename for its diff.
-`open full history` steps through that file's past with the arrow keys. `⌘K` is
-a palette over every page and every changed file, `⌘Z` hides the shell, `⌘J`
-switches theme.
+A card across the top says whether the assistant has read what you are looking
+at, how long ago, how far it got, and gives you the button to read it again —
+which is the first thing you want after switching to something else.
+
+**Folder, then file.** Files that changed together are grouped, and each group
+gets one sentence about what the change is *for*. Ask the same of any single
+file in it. That is the reading path: *what happened in this folder* → *what
+happened to this one*.
+
+Click a chapter and its files come up beside it. Click a filename for its diff;
+`open full history` steps through that file's past with the arrow keys, and a
+**tree** toggle swaps the diffs for an indented folder listing when you want the
+shape rather than the detail.
 
 **The review log is the product.** The prose and the assistant exist only to help
 you produce it — annotate as `ok`, `question`, `objection`, `debt` or `note`, and
 export when you are done.
 
+`⌘K` is a palette over every page and every changed file, `⌘Z` hides the shell,
+`⌘J` switches theme.
+
 Model calls are slow locally, so the waiting is visible: a spinner on the rail
-from any page, and a `/status` page showing what is running, what it cost, and a
-button to run it again.
+from **every** page, and `/status` showing what is running, what it cost, why
+anything failed, and a button to run it again. `/activity` keeps the whole
+trail — every model call and every change to the review, across the workspace.
 
 ## Several repositories at once
 
@@ -89,7 +103,12 @@ msr web --repo=. --repo=../api --repo=../web
 ```
 
 Each keeps its own store; a review remembers which repository it belongs to.
-Checkouts found nearby are listed in the app, one click from being watched.
+Checkouts found nearby are listed in the app, one click from being watched — and
+one click from being unwatched again, which closes a window without touching
+anything on disk.
+
+Nothing is asked at launch: choosing belongs where it can change without a
+restart.
 
 ## Watching an agent live
 

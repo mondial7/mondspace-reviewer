@@ -126,7 +126,9 @@ which is the first thing you want to know after switching target.
 file in it — both are a click, and both are one sentence about what the change
 is *for*. Click a chapter and its files come up beside it. Click a filename to
 open its diff; long diffs are compacted with the hunk headers kept, and
-`open full history` steps through that file's git history with `←`/`→`.
+`open full history` steps through that file's git history with `←`/`→`. A
+**tree** toggle swaps the diffs for an indented folder listing when you want the
+shape rather than the detail.
 
 **Annotate.** Every change takes a note and one of `ok` · `question` ·
 `objection` · `debt` · `note`. **The review log is the product** — the prose and
@@ -147,8 +149,9 @@ and a button to run it again.
 - **`/activity`** — every model call and every change to the review, across the
   whole workspace.
 - **`/status`** — is your model online, what it has spent (split into prompt,
-  completion and *of which reasoning*), which repositories are open, and one
-  click to watch another.
+  completion and *of which reasoning*), what the assistant is doing right now,
+  and the repositories you are watching — one click to add another or stop
+  watching one. Unwatching closes a window; nothing on disk is touched.
 
 ## Several repositories at once
 
@@ -201,6 +204,14 @@ Try the whole pipeline with no agent, terminal or network:
 ```sh
 msr review --source=replay --file=testdata/sessions/basic.jsonl --plain
 ```
+
+<p align="center">
+  <img src="docs/img/plain-review.png" alt="msr review --plain output" width="680">
+</p>
+
+Note the two colours on the `WHY` lines: green where the agent said why in its
+own words, amber where a model inferred it. That distinction is the same
+everywhere, including the web app.
 
 <details>
 <summary><strong>The terminal UI (unmaintained)</strong></summary>
