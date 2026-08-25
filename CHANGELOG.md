@@ -4,6 +4,27 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.1.1] — 2026-08-25
+
+### Fixed
+
+- **macOS refused to run the installed binary.** `msr` is not signed with an
+  Apple Developer ID, so anything downloaded — a release tarball or the binary
+  inside the Homebrew cask — arrives quarantined, and Gatekeeper kills it with
+  "Apple could not verify … is free of malware", offering only *Move to Bin*.
+  The cask now strips the attribute on install. Verified against the released
+  v5.1.0 binary: quarantined it is killed silently with no output; with the
+  attribute removed it runs.
+
+  This skips Gatekeeper's check for that one file, which is the standard remedy
+  for an unsigned open-source CLI and still a real trade-off. The proper fix is
+  a Developer ID signature and notarisation, which needs a paid Apple account
+  and is not done. The README says all of this, including how to verify the
+  checksum first, and how to do it by hand for a tarball.
+
+- Homebrew now installs the command as **both** `mondspace-reviewer` and `msr`,
+  so the documented name works without writing an alias.
+
 ## [5.1.0] — 2026-08-25
 
 ### Fixed
@@ -326,6 +347,7 @@ First public release. Watching one agent, one session, one repo.
 - Session identifiers are validated to prevent path traversal outside the store
   root.
 
+[5.1.1]: https://github.com/mondial7/mondspace-reviewer/releases/tag/v5.1.1
 [5.1.0]: https://github.com/mondial7/mondspace-reviewer/releases/tag/v5.1.0
 [5.0.0]: https://github.com/mondial7/mondspace-reviewer/releases/tag/v5.0.0
 [4.1.0]: https://github.com/mondial7/mondspace-reviewer/releases/tag/v4.1.0

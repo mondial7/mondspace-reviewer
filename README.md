@@ -23,6 +23,37 @@ cd ~/your-project
 msr web
 ```
 
+<details>
+<summary><strong>macOS: "Apple could not verify mondspace-reviewer…"</strong></summary>
+
+`msr` is **not signed with an Apple Developer ID**, so anything you download —
+a release tarball, or the binary inside the Homebrew cask — arrives carrying a
+quarantine attribute, and macOS refuses to run it. It offers you only *Move to
+Bin*, which is unhelpfully final.
+
+Installing with `brew` handles this: the cask strips the attribute for you.
+
+If you downloaded a tarball by hand, do the same thing yourself:
+
+```sh
+xattr -dr com.apple.quarantine ./mondspace-reviewer
+```
+
+Be clear about what that does: it **skips Gatekeeper's check for that file**.
+Only do it for a binary you got from
+[this project's releases](https://github.com/mondial7/mondspace-reviewer/releases)
+and whose checksum matches the `checksums.txt` published alongside it:
+
+```sh
+shasum -a 256 -c checksums.txt --ignore-missing
+```
+
+The proper fix is a Developer ID signature and Apple notarisation, which needs a
+paid Apple developer account. It is not done yet — see
+[issue tracker](https://github.com/mondial7/mondspace-reviewer/issues).
+
+</details>
+
 That's it. It opens `http://127.0.0.1:7777` on the newest thing worth reviewing.
 No configuration, no database, no account, and **no session to record first** —
 it reads the git history that is already there.

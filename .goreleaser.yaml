@@ -71,10 +71,28 @@ homebrew_casks:
       name: mondspace-reviewer
       email: noreply@github.com
     commit_msg_template: "Bump mondspace-reviewer to {{ .Tag }}"
-    caveats: |
-      The binary is installed as `mondspace-reviewer`. The docs use `msr`:
 
-        alias msr=mondspace-reviewer
+    hooks:
+      post:
+        install: |
+          # Gatekeeper blocks an unsigned binary that arrived with a quarantine
+          # attribute, which is every cask download: macOS reports "Apple could
+          # not verify … is free of malware" and offers only Move to Bin.
+          #
+          # Removing the attribute is the standard remedy for an unsigned
+          # open-source CLI, and it is a real trade-off: it skips the
+          # notarisation check for this file. The honest fix is a Developer ID
+          # signature and notarisation, which needs an Apple developer account —
+          # see the release notes.
+          if system_command("/usr/bin/xattr", args: ["-h"]).exit_status == 0
+            system_command "/usr/bin/xattr",
+                           args: ["-dr", "com.apple.quarantine", "#{staged_path}/mondspace-reviewer"]
+          end
+          # The docs call it msr, so brew users should not have to write an alias.
+          FileUtils.ln_sf "#{HOMEBREW_PREFIX}/bin/mondspace-reviewer", "#{HOMEBREW_PREFIX}/bin/msr"
+
+    caveats: |
+      Installed as both `mondspace-reviewer` and `msr`.
 
 release:
   github:
