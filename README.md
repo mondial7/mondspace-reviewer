@@ -101,7 +101,7 @@ Anything in git, not just recorded agent runs:
 | **a commit** | `parent..commit` — what that one commit did |
 | **a tag** | everything since the previous tag — "what shipped in v4.1.0" |
 | **a pull request** | the commits that reference it, together |
-| **your working tree** | uncommitted work, offered first when it is dirty |
+| **live** | the working tree against HEAD, updating as you watch — offered first, always |
 | **an agent session** | a recorded run, if you installed the hooks |
 
 Pick from the selector at the top left — repository first, then what in it. Or
@@ -138,6 +138,18 @@ the assistant exist only to help you produce it. Export it when you are done.
 
 **Ask.** The assistant answers only from this review: the diffs, the log, and
 your own notes. Never a re-read of the repo, never the open internet.
+
+**Watch.** The **live** target is the working tree against HEAD, and it is where
+msr opens. Files change under it as the agent works, and it keeps its identity
+when a commit lands — so your notes and the story survive the commit instead of
+being swapped out from under you ([ADR 0018](ADR/0018-live-target-and-pulses.md)).
+
+Whatever you are looking at, msr tells you when the repository moves: a commit,
+a tag, or files changing. It arrives as a small toast in the corner naming what
+happened, and clicking it opens that commit or tag — which msr has already
+discovered, so the link works. Nothing is announced on arrival, and nothing is
+announced while the tab is in the background; the content is up to date either
+way.
 
 **Keys.** `⌘K` a palette over every page and every changed file · `⌘Z` zen mode,
 which hides the shell · `⌘J` dark, light, or follow the system.
@@ -335,7 +347,7 @@ MSR_SUMMARIZER_URL=http://localhost:1234/v1 MSR_MODEL=qwen/qwen3.5-9b \
 
 ## Status
 
-**v5.2.0** — the web app is the product.
+**v5.3.0** — the web app is the product.
 
 - **Cockpit** (`msr web`) — one page: the change as a story, the diffs,
   annotation, re-analysis, a live isometric field, and a workspace spanning any
@@ -343,6 +355,9 @@ MSR_SUMMARIZER_URL=http://localhost:1234/v1 MSR_MODEL=qwen/qwen3.5-9b \
 - **Git-first review** — commits, tags, pull requests, the working tree, and
   recorded sessions, all reviewed by the same net-change-per-file engine
   ([ADR 0017](ADR/0017-git-first-review.md)).
+- **Live watching** — a target that follows HEAD and keeps its identity across a
+  commit, and a toast when the repository moves
+  ([ADR 0018](ADR/0018-live-target-and-pulses.md)).
 - **Schema-enforced model output**, on-demand descriptions, persisted
   conversations, and full accounting of every call and token at `/activity` and
   `/status`.

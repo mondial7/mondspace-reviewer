@@ -56,7 +56,7 @@ Anything in git — not just recorded agent runs:
 | **a commit** | `parent..commit` — what that one commit did |
 | **a tag** | everything since the previous tag |
 | **a pull request** | the commits that reference it, together |
-| **your working tree** | uncommitted work, offered first when it is dirty |
+| **live** | the working tree against HEAD, updating as you watch — offered first, always |
 | **an agent session** | a recorded run, if you installed the hooks |
 | **any two points** | compare a tag against a tag, a branch against a commit, anything against your working tree |
 
@@ -83,6 +83,13 @@ Click a chapter and its files come up beside it. Click a filename for its diff;
 `open full history` steps through that file's past with the arrow keys, and a
 **tree** toggle swaps the diffs for an indented folder listing when you want the
 shape rather than the detail.
+
+**Watch it happen.** msr opens on the **live** target: the working tree against
+HEAD, updating as the agent works. It keeps its identity when a commit lands, so
+your notes and the story survive the commit rather than being swapped out from
+under you. And whatever you are looking at, a small toast in the corner says
+when the repository moves — a commit, a tag, files changing — and clicking it
+opens what it names.
 
 **The review log is the product.** The prose and the assistant exist only to help
 you produce it — annotate as `ok`, `question`, `objection`, `debt` or `note`, and
