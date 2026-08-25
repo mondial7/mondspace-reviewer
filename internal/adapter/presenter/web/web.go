@@ -159,7 +159,11 @@ type AddRepoFunc func(path string) ([]TargetSummary, []RepoStatus, error)
 // DescribeFunc writes what one group of changes is for, on demand. The
 // automatic pass is bounded (ADR 0014), so most groups in a large session are
 // left undescribed; this is how a reviewer asks for one.
-type DescribeFunc func(ctx context.Context, targetID, groupID string) (string, error)
+// It receives the unit ids the page is actually showing rather than a group id
+// to look up again: the command rebuilds units from git, the page renders the
+// ones it loaded, and on a repository being worked in those drift apart within
+// seconds — which made every description fail with "no such group".
+type DescribeFunc func(ctx context.Context, targetID string, unitIDs []string) (string, error)
 
 // Loader materialises one session's review on demand. A workspace may span
 // several repositories and many sessions; building every one at start-up would
@@ -366,8 +370,14 @@ func (s *Server) handleDescribe(w http.ResponseWriter, r *http.Request) {
 	target := s.openSession(r).ID
 	groupID := r.PathValue("id")
 	started := time.Now()
+	units := s.unitsInGroup(target, groupID)
+	if len(units) == 0 {
+		http.Error(w, "no such group in this review", http.StatusNotFound)
+		return
+	}
+
 	finish := s.BeginWork("describe", target, "what this change is for")
-	meaning, err := describe(context.WithoutCancel(r.Context()), target, groupID)
+	meaning, err := describe(context.WithoutCancel(r.Context()), target, units)
 	finish(err)
 
 	entry := AuditEntry{Action: "describe", Detail: groupID,
@@ -424,6 +434,35 @@ func (s *Server) handleDescribeFile(w http.ResponseWriter, r *http.Request) {
 	s.broadcast("narrative")
 
 	http.Redirect(w, r, "/?target="+target+"#unit-"+unitID, http.StatusSeeOther)
+}
+
+// unitsInGroup resolves a rendered group back to the units it holds, from the
+// same session the page rendered — never by recomputing from git.
+func (s *Server) unitsInGroup(targetID, groupID string) []string {
+	sess := s.sess
+	if targetID != "" && targetID != sess.ID {
+		s.mu.RLock()
+		if cached, ok := s.loaded[targetID]; ok {
+			sess = cached
+		}
+		s.mu.RUnlock()
+	}
+
+	ordered := make([]domain.Unit, 0, len(sess.Units))
+	for i := len(sess.Units) - 1; i >= 0; i-- {
+		ordered = append(ordered, sess.Units[i])
+	}
+	for _, g := range usecase.GroupChanges(ordered, sess.Diffs) {
+		if g.ID != groupID {
+			continue
+		}
+		ids := make([]string, 0, len(g.Units))
+		for _, u := range g.Units {
+			ids = append(ids, u.ID)
+		}
+		return ids
+	}
+	return nil
 }
 
 // fileKey is where a file's description lives in the same map a group's does.
@@ -1207,6 +1246,41 @@ func (s *Server) NarrateNow(ctx context.Context, targetID string) bool {
 	return true
 }
 
+// reviewStatus answers, for whatever is open: has the assistant read this, when,
+// how far has it got, and can I ask it to. Switching target is exactly when a
+// reviewer needs all four, and before this they were spread across three pages.
+type reviewStatus struct {
+	State     string // read | reading | unread
+	When      string
+	Model     string
+	Chapters  int
+	Described int
+	Groups    int
+	CanRead   bool
+}
+
+// describeReview builds that answer. It is presentation only: every fact comes
+// from the stored story or from work already in flight.
+func describeReview(n domain.Narrative, groups int, reading, canRead bool, now time.Time) reviewStatus {
+	st := reviewStatus{
+		Model: n.Model, Chapters: len(n.Chapters),
+		Described: len(n.Meanings), Groups: groups,
+		CanRead: canRead && !reading,
+	}
+	switch {
+	case reading:
+		st.State = "reading"
+	case n.Source == domain.NarrativeModel:
+		st.State = "read"
+		if !n.WrittenAt.IsZero() {
+			st.When = humanDuration(now.Sub(n.WrittenAt)) + " ago"
+		}
+	default:
+		st.State = "unread"
+	}
+	return st
+}
+
 // cockpitStats is the session's numbers rendered for display: durations and
 // counts as strings, so the template holds no formatting logic.
 type cockpitStats struct {
@@ -1326,6 +1400,7 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 		Targets         []TargetSummary
 		Repos           []RepoStatus
 		CanCompare      bool
+		Review          reviewStatus
 		Stats           cockpitStats
 		Narrative       domain.Narrative
 		Chapters        []chapterView
@@ -1342,6 +1417,7 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 	}{
 		Session: sess, Workspace: workspace, Targets: targets,
 		Repos: repos, CanCompare: canCompare,
+		Review: describeReview(narrative, len(groups), narrating, s.narrate != nil, s.now()),
 		Stats: cockpitStats{
 			Open:  humanDuration(stats.Open),
 			Live:  stats.Live,

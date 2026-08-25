@@ -4,6 +4,32 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.2.0] — 2026-08-25
+
+### Added
+
+- **A review card across the top of the cockpit** — has the assistant read this,
+  how long ago, which model, how many groups it described, and the button to
+  read it again. Switching target is exactly when a reviewer needs all four, and
+  they were spread across three pages.
+
+### Fixed
+
+- **Describing a group failed with "no such group in this review".** The page
+  rendered groups from the units it had loaded while the command recomputed them
+  from git, and on a repository being worked in those drift apart within seconds.
+  The page now passes the units it is actually showing rather than an id to look
+  up again.
+- **Failed descriptions were silent.** `DescribeGroups` skipped anything it could
+  not describe without a word, so "1 of 6 described" was visible but
+  unexplainable. The count of failures and the first reason are recorded in the
+  audit log.
+- **Stats no longer overflow their cards.** They reflow instead of forcing three
+  across, and numbers wrap rather than ellipsing — a clipped `+10301` reads as
+  `+103…`, which is not a truncated number but a wrong one.
+- A read review still offers a re-read. It goes stale as soon as the code moves,
+  and it stays a button rather than anything automatic.
+
 ## [5.1.1] — 2026-08-25
 
 ### Fixed
@@ -353,6 +379,7 @@ First public release. Watching one agent, one session, one repo.
 - Session identifiers are validated to prevent path traversal outside the store
   root.
 
+[5.2.0]: https://github.com/mondial7/mondspace-reviewer/releases/tag/v5.2.0
 [5.1.1]: https://github.com/mondial7/mondspace-reviewer/releases/tag/v5.1.1
 [5.1.0]: https://github.com/mondial7/mondspace-reviewer/releases/tag/v5.1.0
 [5.0.0]: https://github.com/mondial7/mondspace-reviewer/releases/tag/v5.0.0

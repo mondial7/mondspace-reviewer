@@ -952,6 +952,7 @@ func narrateTarget(ctx context.Context, handler *web.Server, sum port.Summarizer
 	}, units, func(partial domain.Narrative) { handler.SetNarrativeFor(targetID, partial) })
 	narrative.Fingerprint = usecase.Fingerprint(units)
 	narrative.Model = model
+	narrative.WrittenAt = time.Now()
 
 	record := web.AuditEntry{
 		SessionID: targetID, Action: "narrate", Model: model,
@@ -966,12 +967,20 @@ func narrateTarget(ctx context.Context, handler *web.Server, sum port.Summarizer
 	}
 
 	groups := usecase.GroupChanges(units, diffs)
-	narrative.Meanings = usecase.DescribeGroups(ctx, sum, domain.Session{Prompt: entry.target.Title},
-		groups, func(partial map[string]string) {
+	meanings, failed, why := usecase.DescribeGroupsReporting(ctx, sum,
+		domain.Session{Prompt: entry.target.Title}, groups,
+		func(partial map[string]string) {
 			live := narrative
 			live.Meanings = partial
 			handler.SetNarrativeFor(targetID, live)
 		})
+	narrative.Meanings = meanings
+	record.Detail += fmt.Sprintf(", %d/%d described", len(meanings), len(groups))
+	if failed > 0 {
+		// A shortfall the page can show but nothing could explain was the whole
+		// problem with this being silent.
+		record.Detail += fmt.Sprintf(" (%d failed: %v)", failed, why)
+	}
 
 	handler.Record(record)
 	handler.SetNarrativeFor(targetID, narrative)
@@ -1113,7 +1122,7 @@ func removeRepo(out string) web.AddRepoFunc {
 // describeAnyTarget writes what one group of changes is for, in whichever target
 // is open — not only the one the server started with.
 func describeAnyTarget(sum port.Summarizer) web.DescribeFunc {
-	return func(ctx context.Context, targetID, groupID string) (string, error) {
+	return func(ctx context.Context, targetID string, unitIDs []string) (string, error) {
 		entry, known := targetIndex[targetID]
 		if !known {
 			return "", fmt.Errorf("nothing here to review under %q", targetID)
@@ -1125,20 +1134,33 @@ func describeAnyTarget(sum port.Summarizer) web.DescribeFunc {
 		if err != nil {
 			return "", err
 		}
-		for _, g := range usecase.GroupChanges(units, diffs) {
-			if g.ID != groupID {
-				continue
+
+		// The page said which units; take exactly those rather than re-deriving a
+		// group from a tree that may have moved since it rendered.
+		wanted := map[string]bool{}
+		for _, id := range unitIDs {
+			wanted[id] = true
+		}
+		var members []domain.Unit
+		for _, u := range units {
+			if wanted[u.ID] {
+				members = append(members, u)
 			}
-			described := usecase.DescribeGroups(ctx, sum,
-				domain.Session{Prompt: entry.target.Title}, []domain.ChangeGroup{g}, nil)
-			meaning, ok := described[groupID]
-			if !ok {
-				return "", fmt.Errorf("the model did not describe this change")
-			}
-			// Saved with that target's story, so it is written once.
-			saveMeaning(entry.out, targetID, groupID, meaning)
+		}
+		if len(members) == 0 {
+			return "", fmt.Errorf("those files are no longer in this review")
+		}
+
+		groups := usecase.GroupChanges(members, diffs)
+		described, failed, why := usecase.DescribeGroupsReporting(ctx, sum,
+			domain.Session{Prompt: entry.target.Title}, groups, nil)
+		for id, meaning := range described {
+			saveMeaning(entry.out, targetID, id, meaning)
 			return meaning, nil
 		}
-		return "", fmt.Errorf("no such group in this review")
+		if failed > 0 && why != nil {
+			return "", why
+		}
+		return "", fmt.Errorf("the model did not describe this change")
 	}
 }

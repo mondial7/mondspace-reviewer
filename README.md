@@ -118,6 +118,10 @@ One page, three columns. Only the two right-hand ones scroll.
 | **story** | the change as chapters of prose, and the reviewer assistant |
 | **changes** | every file, folded, with its diff, history and annotation |
 
+A card across the top says whether the assistant has read what you are looking
+at, how long ago, how far it got, and gives you the button to read it again —
+which is the first thing you want to know after switching target.
+
 **Read.** Start with what happened in a folder, then ask what happened to one
 file in it — both are a click, and both are one sentence about what the change
 is *for*. Click a chapter and its files come up beside it. Click a filename to
@@ -301,7 +305,7 @@ MSR_SUMMARIZER_URL=http://localhost:1234/v1 MSR_MODEL=qwen/qwen3.5-9b \
 
 ## Status
 
-**v5.1.0** — the web app is the product.
+**v5.2.0** — the web app is the product.
 
 - **Cockpit** (`msr web`) — one page: the change as a story, the diffs,
   annotation, re-analysis, a live isometric field, and a workspace spanning any

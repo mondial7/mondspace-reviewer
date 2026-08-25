@@ -98,9 +98,27 @@ const (
 // A group the model could not describe is left undescribed rather than filled
 // with a mechanical sentence dressed up as meaning. Returns groupID → meaning.
 func DescribeGroups(ctx context.Context, n Narrator, sess domain.Session, groups []domain.ChangeGroup, onProgress func(map[string]string)) map[string]string {
+	meanings, _, _ := DescribeGroupsReporting(ctx, n, sess, groups, onProgress)
+	return meanings
+}
+
+// DescribeGroupsReporting is DescribeGroups that also says how many it could not
+// describe, and why the first one failed. Swallowing those silently is what made
+// "1 of 6 described" impossible to act on: the page could show the shortfall but
+// nothing could say what caused it.
+func DescribeGroupsReporting(ctx context.Context, n Narrator, sess domain.Session, groups []domain.ChangeGroup, onProgress func(map[string]string)) (map[string]string, int, error) {
 	meanings := map[string]string{}
+	failed := 0
+	var first error
 	if n == nil {
-		return meanings
+		return meanings, len(groups), fmt.Errorf("no summarizer available")
+	}
+
+	note := func(err error) {
+		failed++
+		if first == nil {
+			first = err
+		}
 	}
 
 	for i, g := range groups {
@@ -109,6 +127,7 @@ func DescribeGroups(ctx context.Context, n Narrator, sess domain.Session, groups
 		}
 		reply, err := ask(ctx, n, describePrompt(sess, g), meaningSchema())
 		if err != nil {
+			note(err)
 			continue
 		}
 		var m struct {
@@ -117,14 +136,17 @@ func DescribeGroups(ctx context.Context, n Narrator, sess domain.Session, groups
 		if start, end := strings.Index(reply, "{"), strings.LastIndex(reply, "}"); start >= 0 && end > start {
 			_ = json.Unmarshal([]byte(reply[start:end+1]), &m)
 		}
-		if text := Brief(m.Meaning, meaningChars); text != "" {
-			meanings[g.ID] = text
-			if onProgress != nil {
-				onProgress(meanings)
-			}
+		text := Brief(m.Meaning, meaningChars)
+		if text == "" {
+			note(fmt.Errorf("the model replied without a description: %.120q", reply))
+			continue
+		}
+		meanings[g.ID] = text
+		if onProgress != nil {
+			onProgress(meanings)
 		}
 	}
-	return meanings
+	return meanings, failed, first
 }
 
 func meaningSchema() port.JSONSchema {

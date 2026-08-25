@@ -685,7 +685,9 @@
 .cockpit__stats {
   min-width: 0;
   display: grid; gap: 0.5rem;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  /* Reflows rather than forcing three across: a narrow panel with "+10301 −189"
+     in it cannot honour a fixed column count without clipping. */
+  grid-template-columns: repeat(auto-fit, minmax(5.5rem, 1fr));
 }
 .stat {
   min-width: 0;
@@ -695,11 +697,19 @@
   display: flex; flex-direction: column; gap: 0.15rem;
 }
 .stat__value {
-  font-size: clamp(0.95rem, 1.5vw, 1.25rem); line-height: 1.15;
+  font-size: clamp(0.85rem, 1.4vw, 1.2rem); line-height: 1.2;
   color: var(--fg); font-variant-numeric: tabular-nums;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  min-width: 0;
+  /* Numbers wrap rather than ellipsing. A clipped "+10301" reads as "+103…",
+     which is not a truncated number — it is a wrong one. */
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
-.stat__value--lines { font-size: 0.9rem; display: flex; gap: 0.35rem; }
+.stat__value--lines {
+  font-size: clamp(0.75rem, 1.1vw, 0.95rem);
+  display: flex; gap: 0.3rem; flex-wrap: wrap;
+}
+.stat__label { overflow-wrap: anywhere; }
 .stat__label {
   font-size: 0.66rem; color: var(--fg-dim);
   text-transform: uppercase; letter-spacing: 0.08em;
@@ -1072,3 +1082,37 @@
 .picker__repo { width: 100%; }
 .picker__compare { margin-top: 0.1rem; }
 .picker__compareform { display: flex; flex-direction: column; gap: 0.3rem; margin-top: 0.35rem; }
+
+/* The review card spans both reading columns: it is about the whole review,
+   not about the story or the changes separately. */
+.cockpit { grid-template-rows: auto minmax(0, 1fr); }
+.cockpit__panel { grid-row: 1 / span 2; }
+.reviewcard { grid-column: 2 / span 2; grid-row: 1; }
+.cockpit__story { grid-column: 2; grid-row: 2; }
+.cockpit__changes { grid-column: 3; grid-row: 2; }
+
+.reviewcard {
+  display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; min-width: 0;
+  padding: 0.6rem 0.9rem;
+  border: 1px solid var(--rule); border-radius: 10px;
+  background: var(--panel); box-shadow: var(--panel-glow);
+  font-size: 0.82rem;
+}
+.reviewcard__state { display: flex; align-items: center; gap: 0.5rem; color: var(--fg); }
+.reviewcard__when { color: var(--fg-dim); }
+.reviewcard__progress { display: flex; gap: 0.8rem; color: var(--fg-dim); flex: 1; min-width: 0; }
+.reviewcard__partial { color: var(--inferred); }
+.reviewcard__go { margin-left: auto; }
+.reviewcard--reading { border-color: var(--inferred); }
+.reviewcard--unread { border-color: color-mix(in srgb, var(--del) 45%, var(--rule)); }
+.reviewcard--read { border-color: color-mix(in srgb, var(--add) 35%, var(--rule)); }
+
+@media (max-width: 1400px) {
+  .reviewcard { grid-column: 2; }
+}
+@media (max-width: 1000px) {
+  .cockpit { grid-template-rows: none; }
+  .cockpit__panel, .reviewcard, .cockpit__story, .cockpit__changes {
+    grid-column: 1; grid-row: auto;
+  }
+}

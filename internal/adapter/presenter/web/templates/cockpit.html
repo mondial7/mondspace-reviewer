@@ -95,13 +95,6 @@
           {{ if eq .Narrative.Source "model" }}<span class="why why--inferred">inferred</span> by {{ .Narrative.Model }}
           {{ else }}<span class="why why--inferred">mechanical</span> · no model has read this yet{{ end }}
         </p>
-        {{ if .Narrating }}
-        <p class="brief__busy">re-reading the session…</p>
-        {{ else if .CanRetry }}
-        <form class="brief__retry" method="post" action="/story/narrate">
-          <button class="hero__retrybtn" type="submit">ask the model to read this session</button>
-        </form>
-        {{ end }}
       </section>
 
       <section class="cockpit__pulse">
@@ -137,6 +130,42 @@
         {{ end }}
       </section>
     </aside>
+
+    <!-- Spanning the two reading columns: has the assistant read this, when,
+         how far it got, and how to ask. Switching target is exactly when a
+         reviewer needs all four at once. -->
+    <section class="reviewcard reviewcard--{{ .Review.State }}">
+      <div class="reviewcard__state">
+        {{ if eq .Review.State "reading" }}
+        <span class="ask__spinner" aria-hidden="true"></span>
+        <strong>reading this review…</strong>
+        {{ else if eq .Review.State "read" }}
+        <strong>reviewed</strong>
+        {{ with .Review.When }}<span class="reviewcard__when">{{ . }}</span>{{ end }}
+        {{ with .Review.Model }}<span class="detail__model">{{ . }}</span>{{ end }}
+        {{ else }}
+        <strong>not read yet</strong>
+        <span class="reviewcard__when">the assistant has not looked at this</span>
+        {{ end }}
+      </div>
+
+      <div class="reviewcard__progress">
+        {{ if .Review.Chapters }}<span>{{ .Review.Chapters }} chapter(s)</span>{{ end }}
+        {{ if .Review.Groups }}
+        <span class="{{ if lt .Review.Described .Review.Groups }}reviewcard__partial{{ end }}">
+          {{ .Review.Described }}/{{ .Review.Groups }} described
+        </span>
+        {{ end }}
+      </div>
+
+      {{ if .Review.CanRead }}
+      <form class="reviewcard__go" method="post" action="/story/narrate?target={{ .Session.ID }}">
+        <button class="hero__retrybtn" type="submit">
+          {{ if eq .Review.State "read" }}review again{{ else }}review this{{ end }}
+        </button>
+      </form>
+      {{ end }}
+    </section>
 
     <!-- Middle: the session read as prose. Text only — the files each chapter
          covers are in the column beside it, and the two scroll together. -->

@@ -243,7 +243,7 @@ type readableAudit struct{ recordingAudit }
 
 func (a *readableAudit) Entries() ([]web.AuditEntry, error) { return a.entries, nil }
 
-func TestCockpitOffersRetryOnlyWhenTheModelHasNotNarrated(t *testing.T) {
+func TestReviewCardAlwaysOffersAReadWhenOneIsPossible(t *testing.T) {
 	mechanical := domain.Narrative{SessionID: "s", Title: "T", Source: domain.NarrativeMechanical,
 		Chapters: []domain.Chapter{{Title: "auth", Prose: "1 file changed under auth.", UnitIDs: []string{"s-f001"}}}}
 
@@ -254,14 +254,15 @@ func TestCockpitOffersRetryOnlyWhenTheModelHasNotNarrated(t *testing.T) {
 		t.Error("a mechanical story should offer a retry")
 	}
 
-	// Already narrated by the model: re-running costs calls for no gain, so the
-	// page must not invite it.
+	// Already read: re-reading is still offered, because a review goes stale as
+	// soon as the code moves. It is a button, not something automatic — the cost
+	// is still the reviewer's to spend (ADR 0014).
 	narrated := mechanical
 	narrated.Source = domain.NarrativeModel
 	h = web.NewServer(testSession(), nil).WithNarrative(narrated).
 		WithNarrate(func(context.Context, string) {})
-	if strings.Contains(get(t, h, "/").Body.String(), "/story/narrate") {
-		t.Error("a model-narrated story should not offer a retry")
+	if !strings.Contains(get(t, h, "/").Body.String(), "/story/narrate") {
+		t.Error("a read review should still offer a re-read")
 	}
 
 	// No narrator wired at all: no button, because pressing it could do nothing.
@@ -933,8 +934,8 @@ func TestDescribingOneGroupOnDemand(t *testing.T) {
 	var asked string
 	h := web.NewServer(testSession(), nil).
 		WithNarrative(domain.Narrative{SessionID: "s", Source: domain.NarrativeModel}).
-		WithDescribe(func(_ context.Context, _, groupID string) (string, error) {
-			asked = groupID
+		WithDescribe(func(_ context.Context, _ string, unitIDs []string) (string, error) {
+			asked = strings.Join(unitIDs, ",")
 			return "Persists the story so a restart costs nothing.", nil
 		})
 
@@ -953,8 +954,9 @@ func TestDescribingOneGroupOnDemand(t *testing.T) {
 	if rec.Code != http.StatusSeeOther {
 		t.Fatalf("POST describe = %d, want 303", rec.Code)
 	}
-	if asked != id[1] {
-		t.Errorf("described %q, want %q", asked, id[1])
+	// The command is told which files, not a group id to look up again.
+	if !strings.Contains(asked, "s-f") {
+		t.Errorf("described %q, want the unit ids the page rendered", asked)
 	}
 	if !strings.Contains(get(t, h, "/").Body.String(), "Persists the story") {
 		t.Error("the new description should appear on the page")
@@ -970,7 +972,7 @@ func TestDescribeButtonIsOfferedOnlyWhenItCanDoSomething(t *testing.T) {
 	}
 
 	h := web.NewServer(testSession(), nil).WithDescribe(
-		func(context.Context, string, string) (string, error) { return "x", nil })
+		func(context.Context, string, []string) (string, error) { return "x", nil })
 	if !strings.Contains(get(t, h, "/").Body.String(), "/describe") {
 		t.Error("a wired describer should offer the control")
 	}
@@ -1083,5 +1085,67 @@ func TestNarrationWorkFinishesEvenWhenTheNarratorPanics(t *testing.T) {
 	}
 	if !failed {
 		t.Error("a panicking narrator should be recorded as a failure")
+	}
+}
+
+func TestReviewCardSaysWhetherTheAssistantHasReadThis(t *testing.T) {
+	// Switching target is exactly when a reviewer needs to know whether what
+	// they are looking at has been read yet, and how long ago.
+	read := domain.Narrative{
+		SessionID: "s", Title: "T", Source: domain.NarrativeModel,
+		Model: "qwen/qwen3.5-9b", WrittenAt: time.Now().Add(-90 * time.Minute),
+		Chapters: []domain.Chapter{{Title: "auth", UnitIDs: []string{"s-f001"}}},
+	}
+	h := web.NewServer(testSession(), nil).WithNarrative(read).
+		WithNarrate(func(context.Context, string) {})
+
+	body := get(t, h, "/").Body.String()
+
+	for _, want := range []string{"reviewcard", "qwen/qwen3.5-9b", "1h 30m ago"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the review card is missing %q", want)
+		}
+	}
+	// Re-reading is always offered, because a review can go stale.
+	if !strings.Contains(body, "/story/narrate") {
+		t.Errorf("a read review should still offer a re-read:\n%s", body)
+	}
+}
+
+func TestReviewCardOffersAFirstReadWhenThereHasBeenNone(t *testing.T) {
+	h := web.NewServer(testSession(), nil).
+		WithNarrative(domain.Narrative{SessionID: "s", Source: domain.NarrativeMechanical}).
+		WithNarrate(func(context.Context, string) {})
+
+	body := get(t, h, "/").Body.String()
+
+	if !strings.Contains(body, "not read yet") {
+		t.Errorf("an unread target should say so:\n%s", body)
+	}
+	if !strings.Contains(body, "/story/narrate") {
+		t.Error("an unread target must offer a read")
+	}
+}
+
+func TestReviewCardShowsProgressWhileReading(t *testing.T) {
+	// A local model takes minutes. Knowing it is working — and roughly how far
+	// along — is the difference between waiting and giving up.
+	h := web.NewServer(testSession(), nil).
+		WithNarrative(domain.Narrative{
+			SessionID: "s", Source: domain.NarrativeModel,
+			Chapters: []domain.Chapter{{Title: "auth", UnitIDs: []string{"s-f001"}}},
+			Meanings: map[string]string{"g1": "one group described"},
+		}).
+		WithNarrate(func(context.Context, string) { time.Sleep(time.Second) })
+
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/story/narrate", nil))
+
+	body := get(t, h, "/").Body.String()
+	if !strings.Contains(body, "reading") {
+		t.Errorf("a read in progress should say so:\n%s", body)
+	}
+	// While it runs, asking again would just queue a second call.
+	if strings.Contains(body, `action="/story/narrate"`) {
+		t.Error("a read already running should not offer another")
 	}
 }
