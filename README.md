@@ -31,7 +31,14 @@ a release tarball, or the binary inside the Homebrew cask — arrives carrying a
 quarantine attribute, and macOS refuses to run it. It offers you only *Move to
 Bin*, which is unhelpfully final.
 
-Installing with `brew` handles this: the cask strips the attribute for you.
+Installing with `brew` handles this: the cask strips the attribute during
+install, **before** the binary is ever run. That ordering matters — once macOS
+has refused a binary it remembers the decision for that path, and clearing the
+attribute afterwards does not lift it. If you hit the dialog once already:
+
+```sh
+brew reinstall mondspace-reviewer
+```
 
 If you downloaded a tarball by hand, do the same thing yourself:
 

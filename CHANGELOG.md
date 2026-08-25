@@ -16,6 +16,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   v5.1.0 binary: quarantined it is killed silently with no output; with the
   attribute removed it runs.
 
+  Stripping it **at install time, before the first run**, is what matters: once
+  macOS has refused a binary it caches that decision for the path, and removing
+  the attribute afterwards does not lift it. Diagnosed on a real install — the
+  quarantined copy stayed blocked after the attribute was removed, while the
+  same bytes copied elsewhere ran immediately.
+
   This skips Gatekeeper's check for that one file, which is the standard remedy
   for an unsigned open-source CLI and still a real trade-off. The proper fix is
   a Developer ID signature and notarisation, which needs a paid Apple account
