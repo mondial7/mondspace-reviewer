@@ -60,14 +60,23 @@ func dirOf(u domain.Unit) string {
 	return filepath.ToSlash(filepath.Dir(filepath.ToSlash(u.Files[0])))
 }
 
-// groupID identifies a group by its members, so a description written for it can
-// be stored and matched back to it on a later run.
+// groupID identifies a group by the files in it, so a description written for it
+// can be found again on a later run.
+//
+// Deliberately not the unit ids: those are positional (`-f001`, `-f002`), so
+// adding one file renumbers every unit after it and would change the id of every
+// group beyond it. On a live review the units are rebuilt every fifteen seconds,
+// which meant a description could never survive long enough to be read.
+//
+// Paths are sorted, so the order git happens to walk them in does not matter.
 func groupID(units []domain.Unit) string {
-	ids := make([]string, 0, len(units))
+	paths := make([]string, 0, len(units))
 	for _, u := range units {
-		ids = append(ids, u.ID)
+		paths = append(paths, strings.Join(u.Files, ","))
 	}
-	sum := sha256.Sum256([]byte(strings.Join(ids, "\x00")))
+	sort.Strings(paths)
+
+	sum := sha256.Sum256([]byte(strings.Join(paths, "\x00")))
 	return hex.EncodeToString(sum[:6])
 }
 
@@ -199,3 +208,64 @@ func FileTree(units []domain.Unit, diffs map[string]domain.Diff) []domain.TreeNo
 	}
 	return nodes
 }
+
+// FileKey identifies one file's description. Like a group's id it is derived
+// from the path rather than the unit id, which is positional and shifts whenever
+// the file set changes. Prefixed so a file and a group can share one map without
+// colliding.
+func FileKey(u domain.Unit) string {
+	sum := sha256.Sum256([]byte(strings.Join(u.Files, ",")))
+	return "f:" + hex.EncodeToString(sum[:6])
+}
+
+// DescribeFile says what one file's change is for. A folder's summary is where a
+// reviewer starts; the next question is always "and what happened to this one".
+//
+// Unlike DescribeGroups this is never run in bulk: it is one file, asked for
+// deliberately, so there is no budget to bound — only the reviewer's patience.
+func DescribeFile(ctx context.Context, n Narrator, sess domain.Session, u domain.Unit, d domain.Diff) (string, error) {
+	if n == nil {
+		return "", fmt.Errorf("no summarizer available")
+	}
+
+	reply, err := ask(ctx, n, filePrompt(sess, u, d), meaningSchema())
+	if err != nil {
+		return "", err
+	}
+
+	var m struct {
+		Meaning string `json:"meaning"`
+	}
+	if start, end := strings.Index(reply, "{"), strings.LastIndex(reply, "}"); start >= 0 && end > start {
+		_ = json.Unmarshal([]byte(reply[start:end+1]), &m)
+	}
+	text := Brief(m.Meaning, meaningChars)
+	if text == "" {
+		return "", fmt.Errorf("the model did not describe this file")
+	}
+	return text, nil
+}
+
+// filePrompt shows the model one file and a bounded slice of what changed in it.
+func filePrompt(sess domain.Session, u domain.Unit, d domain.Diff) string {
+	var b strings.Builder
+	b.WriteString("You explain what a change to one file is for, to a reviewer.\n")
+	if sess.Prompt != "" {
+		b.WriteString("The developer asked the agent to: " + sess.Prompt + "\n")
+	}
+	b.WriteString("\nFile: " + strings.Join(u.Files, ", ") + "\n")
+
+	compact, _ := CompactDiff(d, fileDescribeLines)
+	if strings.TrimSpace(compact.Text) != "" {
+		b.WriteString("\nWhat changed:\n" + compact.Text + "\n")
+	}
+	b.WriteString(`
+In one sentence of at most 160 characters, say what this change is FOR — the
+behaviour or intent, not the file name. JSON only:
+{"meaning":".."}`)
+	return b.String()
+}
+
+// fileDescribeLines is how much of one file's diff the model is shown. More than
+// a group gets, because there is only one file to spend it on.
+const fileDescribeLines = 40

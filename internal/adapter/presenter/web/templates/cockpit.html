@@ -44,17 +44,45 @@
            requests, the working tree — and a recorded run is one kind among
            them rather than the index (ADR 0017). -->
       {{ if .Targets }}
-      <form class="switcher" method="get" action="/">
-        <select class="switcher__select" name="target" onchange="this.form.submit()"
-                aria-label="Choose what to review">
-          {{ range .Targets }}
-          <option value="{{ .ID }}" {{ if eq .ID $.Session.ID }}selected{{ end }}>
-            {{ .Repo }} · {{ .Kind }} · {{ .Title }}
-          </option>
-          {{ end }}
+      <!-- Two steps, because they are two questions: which project, then what
+           in it. One combined list made the second unreadable past a few
+           repositories. -->
+      <div class="picker">
+        {{ if gt (len .Repos) 1 }}
+        <select class="switcher__select picker__repo" id="repo-filter"
+                aria-label="Filter by repository">
+          <option value="">all repositories</option>
+          {{ range .Repos }}<option value="{{ .Name }}">{{ .Name }}</option>{{ end }}
         </select>
-        <noscript><button class="switcher__go" type="submit">open</button></noscript>
-      </form>
+        {{ end }}
+
+        <form class="switcher" method="get" action="/">
+          <select class="switcher__select" name="target" id="target-select"
+                  onchange="this.form.submit()" aria-label="Choose what to review">
+            {{ range .Targets }}
+            <option value="{{ .ID }}" data-repo="{{ .Repo }}" data-kind="{{ .Kind }}"
+                    {{ if eq .ID $.Session.ID }}selected{{ end }}>
+              {{ .Kind }} · {{ .Title }} — {{ .Repo }}
+            </option>
+            {{ end }}
+          </select>
+          <noscript><button class="switcher__go" type="submit">open</button></noscript>
+        </form>
+
+        {{ if .CanCompare }}
+        <!-- Any two points in history, compared. The same engine as every other
+             target; the refs just came from here. -->
+        <details class="picker__compare">
+          <summary class="post__moresummary">compare two points</summary>
+          <form class="picker__compareform" method="get" action="/compare">
+            <input type="hidden" name="repo" value="{{ .Session.Repo }}">
+            <input class="addrepo__input" name="from" placeholder="from (tag, branch or commit)" autocomplete="off">
+            <input class="addrepo__input" name="to" placeholder="to (default: working tree)" autocomplete="off">
+            <button class="addrepo__btn" type="submit">compare</button>
+          </form>
+        </details>
+        {{ end }}
+      </div>
       {{ end }}
 
       <section class="brief">
@@ -230,6 +258,17 @@
 
           <!-- A headline is shown only when a model wrote it. The mechanical
                one ("edited token.go") just repeats the filename above it. -->
+          <!-- What this one file's change is for. The folder's summary is where
+               a reviewer starts; this is the next question. -->
+          <p class="post__meaning{{ if not .Meaning }} group__meaning--none{{ end }}">
+            {{ if .Meaning }}<span class="why why--inferred">inferred</span>{{ .Meaning }}
+            {{ else }}not yet described{{ end }}
+            {{ if $.CanDescribeFile }}
+            <form class="describe" method="post" action="/units/{{ .ID }}/describe">
+              <button class="describe__btn" type="submit">{{ if .Meaning }}re-describe{{ else }}describe this file{{ end }}</button>
+            </form>
+            {{ end }}
+          </p>
           {{ if .Model }}
           <p class="post__line">{{ .Headline }}
             <span class="detail__model">{{ .Model }}</span></p>

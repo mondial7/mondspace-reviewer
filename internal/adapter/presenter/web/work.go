@@ -20,11 +20,18 @@ type Work struct {
 	Err     string
 }
 
-// Running reports whether this call is still in flight.
-func (w Work) Running() bool { return !w.Done }
+// Running reports whether this call is still in flight, and still plausibly so.
+func (w Work) Running() bool { return !w.Done && !w.Stalled() }
 
-// Failed reports whether it finished badly.
-func (w Work) Failed() bool { return w.Done && w.Err != "" }
+// Stalled reports a call that has run past any reasonable ceiling. It is shown
+// as stalled rather than running: the difference matters to a reviewer deciding
+// whether to wait or ask again.
+func (w Work) Stalled() bool {
+	return !w.Done && time.Since(w.Started) > workCeiling
+}
+
+// Failed reports whether it finished badly, or gave up waiting.
+func (w Work) Failed() bool { return (w.Done && w.Err != "") || w.Stalled() }
 
 // Took renders how long it ran, for a finished call.
 func (w Work) Took() string {
@@ -32,6 +39,17 @@ func (w Work) Took() string {
 		return ""
 	}
 	return fmt.Sprintf("%.1fs", float64(w.Millis)/1000)
+}
+
+// Why is what to show for a call that did not succeed.
+func (w Work) Why() string {
+	if w.Err != "" {
+		return w.Err
+	}
+	if w.Stalled() {
+		return "still running after " + workCeiling.String() + " — it may be stuck"
+	}
+	return ""
 }
 
 // Retry is where to send a reviewer who wants this done again. Only the kinds
@@ -44,6 +62,12 @@ func (w Work) Retry() string {
 		return ""
 	}
 }
+
+// workCeiling is how long a call may run before the page stops claiming it is
+// still thinking. Nothing is cancelled — the call may yet return — but a spinner
+// that has been spinning for half an hour is telling the reviewer a lie, and a
+// stuck one is indistinguishable from a slow one without it.
+const workCeiling = 25 * time.Minute
 
 // recentWork bounds the history kept in memory. A long session must not grow an
 // unbounded list, or a status page that takes a second to render.
@@ -103,7 +127,7 @@ func (s *Server) InFlight() int {
 
 	n := 0
 	for _, w := range s.work {
-		if !w.Done {
+		if w.Running() {
 			n++
 		}
 	}

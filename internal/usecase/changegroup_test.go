@@ -237,3 +237,129 @@ func TestFileTreeHandlesRootOnlyFiles(t *testing.T) {
 		t.Errorf("tree = %+v, want a single root-level file", got)
 	}
 }
+
+func TestGroupIDSurvivesTheReviewGrowing(t *testing.T) {
+	// Unit ids are positional, so adding one file renumbers every unit after it.
+	// A group id derived from those ids would change too, orphaning the
+	// description written for it — and on a live review that rebuild happens
+	// every fifteen seconds, so a description could never survive to be read.
+	before := usecase.GroupChanges([]domain.Unit{
+		{ID: "t-f001", Files: []string{"internal/tui/model.go"}},
+		{ID: "t-f002", Files: []string{"internal/tui/view.go"}},
+	}, nil)
+
+	// A new file lands earlier in the walk; everything after it renumbers.
+	after := usecase.GroupChanges([]domain.Unit{
+		{ID: "t-f001", Files: []string{"docs/index.md"}},
+		{ID: "t-f002", Files: []string{"internal/tui/model.go"}},
+		{ID: "t-f003", Files: []string{"internal/tui/view.go"}},
+	}, nil)
+
+	var beforeTUI, afterTUI string
+	for _, g := range before {
+		if g.Dir == "internal/tui" {
+			beforeTUI = g.ID
+		}
+	}
+	for _, g := range after {
+		if g.Dir == "internal/tui" {
+			afterTUI = g.ID
+		}
+	}
+	if beforeTUI == "" || afterTUI == "" {
+		t.Fatalf("missing the tui group: %q %q", beforeTUI, afterTUI)
+	}
+	if beforeTUI != afterTUI {
+		t.Errorf("group id changed from %q to %q because an unrelated file was added",
+			beforeTUI, afterTUI)
+	}
+}
+
+func TestGroupIDChangesWhenTheGroupItselfDoes(t *testing.T) {
+	// Stability must not become staleness: a description written for two files
+	// should not silently carry over to three.
+	two := usecase.GroupChanges([]domain.Unit{
+		{ID: "a", Files: []string{"pkg/one.go"}},
+		{ID: "b", Files: []string{"pkg/two.go"}},
+	}, nil)
+	three := usecase.GroupChanges([]domain.Unit{
+		{ID: "a", Files: []string{"pkg/one.go"}},
+		{ID: "b", Files: []string{"pkg/two.go"}},
+		{ID: "c", Files: []string{"pkg/three.go"}},
+	}, nil)
+
+	if two[0].ID == three[0].ID {
+		t.Error("a group that gained a file should not keep its old description")
+	}
+}
+
+func TestGroupIDIgnoresTheOrderFilesArriveIn(t *testing.T) {
+	a := usecase.GroupChanges([]domain.Unit{
+		{ID: "x", Files: []string{"pkg/one.go"}},
+		{ID: "y", Files: []string{"pkg/two.go"}},
+	}, nil)
+	b := usecase.GroupChanges([]domain.Unit{
+		{ID: "y", Files: []string{"pkg/two.go"}},
+		{ID: "x", Files: []string{"pkg/one.go"}},
+	}, nil)
+
+	if a[0].ID != b[0].ID {
+		t.Errorf("group id depends on walk order: %q vs %q", a[0].ID, b[0].ID)
+	}
+}
+
+func TestDescribeFileExplainsOneFileOnItsOwn(t *testing.T) {
+	// Reading a folder's summary is where a reviewer starts; the next question is
+	// always "and what happened to this one".
+	d := &describer{reply: `{"meaning":"Adds a validator interface so the JWT library can be swapped."}`}
+	unit := domain.Unit{ID: "u1", Files: []string{"auth/token.go"}}
+	diff := domain.Diff{Text: "@@\n+type TokenValidator interface{}\n"}
+
+	got, err := usecase.DescribeFile(context.Background(), d,
+		domain.Session{Prompt: "add auth"}, unit, diff)
+	if err != nil {
+		t.Fatalf("DescribeFile: %v", err)
+	}
+	if got != "Adds a validator interface so the JWT library can be swapped." {
+		t.Errorf("meaning = %q", got)
+	}
+	// The prompt must carry the file and what changed in it, or the answer is a
+	// guess from the filename.
+	if !strings.Contains(d.asked[0], "auth/token.go") || !strings.Contains(d.asked[0], "TokenValidator") {
+		t.Errorf("prompt should carry the file and its diff:\n%s", d.asked[0])
+	}
+	if len(d.schema) != 1 {
+		t.Errorf("the description should be schema-constrained, got %d schemas", len(d.schema))
+	}
+}
+
+func TestDescribeFileReportsWhenItCannot(t *testing.T) {
+	// Silence would be indistinguishable from "this file means nothing".
+	d := &describer{err: errors.New("summarizer offline")}
+
+	_, err := usecase.DescribeFile(context.Background(), d, domain.Session{},
+		domain.Unit{ID: "u1", Files: []string{"a.go"}}, domain.Diff{})
+
+	if err == nil {
+		t.Error("a failure should be reported, not swallowed")
+	}
+}
+
+func TestFileKeyIsStableAndDistinctFromAGroup(t *testing.T) {
+	// A file's description lives in the same map as a group's, so the two must
+	// not collide — and a file's key must survive renumbering just as a group's
+	// does.
+	a := usecase.FileKey(domain.Unit{ID: "t-f001", Files: []string{"auth/token.go"}})
+	b := usecase.FileKey(domain.Unit{ID: "t-f009", Files: []string{"auth/token.go"}})
+	other := usecase.FileKey(domain.Unit{ID: "t-f001", Files: []string{"auth/other.go"}})
+
+	if a != b {
+		t.Errorf("file key changed with the unit number: %q vs %q", a, b)
+	}
+	if a == other {
+		t.Error("two files must not share a key")
+	}
+	if a == "" {
+		t.Error("a file needs a key")
+	}
+}

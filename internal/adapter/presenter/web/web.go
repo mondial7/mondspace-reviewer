@@ -179,14 +179,17 @@ type Server struct {
 	tmpl  *template.Template
 	notes Annotator
 
-	mu        sync.RWMutex
-	sess      Session
-	loader    Loader
-	versions  VersionLister
-	versionOf VersionDiffer
-	describe  DescribeFunc
-	work      []Work
-	exchanges ExchangeStore
+	mu           sync.RWMutex
+	sess         Session
+	loader       Loader
+	versions     VersionLister
+	versionOf    VersionDiffer
+	describe     DescribeFunc
+	describeFile DescribeFileFunc
+	removeRepo   AddRepoFunc
+	compare      CompareFunc
+	work         []Work
+	exchanges    ExchangeStore
 	// loaded caches sessions opened during this run, so switching back and forth
 	// costs nothing after the first visit.
 	loaded     map[string]Session
@@ -286,6 +289,13 @@ func (s *Server) WithRepos(repos []RepoStatus, add AddRepoFunc) *Server {
 	return s
 }
 
+// WithRemoveRepo wires closing a repository, which stops watching it without
+// touching anything it holds.
+func (s *Server) WithRemoveRepo(fn AddRepoFunc) *Server {
+	s.removeRepo = fn
+	return s
+}
+
 // handleAddRepo starts watching another repository. A path that is not a
 // checkout is reported on the page rather than failing silently: it comes from
 // a form, and a typo that quietly did nothing is worse than an error.
@@ -372,6 +382,132 @@ func (s *Server) handleDescribe(w http.ResponseWriter, r *http.Request) {
 	s.broadcast("narrative")
 
 	http.Redirect(w, r, "/?target="+target+"#group-"+groupID, http.StatusSeeOther)
+}
+
+// DescribeFileFunc says what one file's change is for. A folder's summary is
+// where a reviewer starts; "and what happened to this one" is always next.
+type DescribeFileFunc func(ctx context.Context, targetID, unitID string) (string, error)
+
+// WithDescribeFile wires per-file description.
+func (s *Server) WithDescribeFile(fn DescribeFileFunc) *Server {
+	s.describeFile = fn
+	return s
+}
+
+// handleDescribeFile describes one file, on request. Unlike the group pass this
+// is never run in bulk, so there is no budget to bound — only patience.
+func (s *Server) handleDescribeFile(w http.ResponseWriter, r *http.Request) {
+	s.mu.RLock()
+	describe := s.describeFile
+	s.mu.RUnlock()
+	if describe == nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	target := s.openSession(r).ID
+	unitID := r.PathValue("id")
+	started := time.Now()
+	finish := s.BeginWork("describe", target, "what this file is for")
+	meaning, err := describe(context.WithoutCancel(r.Context()), target, unitID)
+	finish(err)
+
+	entry := AuditEntry{SessionID: target, UnitID: unitID, Action: "describe-file",
+		Millis: time.Since(started).Milliseconds(), Detail: unitID}
+	if err != nil {
+		entry.Failed = true
+		entry.Detail = unitID + ": " + err.Error()
+	} else {
+		s.describedGroup(target, s.fileKey(target, unitID), meaning)
+	}
+	s.Record(entry)
+	s.broadcast("narrative")
+
+	http.Redirect(w, r, "/?target="+target+"#unit-"+unitID, http.StatusSeeOther)
+}
+
+// fileKey is where a file's description lives in the same map a group's does.
+func (s *Server) fileKey(targetID, unitID string) string {
+	sess := s.sess
+	if targetID != "" && targetID != sess.ID {
+		s.mu.RLock()
+		if cached, ok := s.loaded[targetID]; ok {
+			sess = cached
+		}
+		s.mu.RUnlock()
+	}
+	for _, u := range sess.Units {
+		if u.ID == unitID {
+			return usecase.FileKey(u)
+		}
+	}
+	return unitID
+}
+
+// handleRemoveRepo stops watching a repository. Its reviews and notes are left
+// exactly where they are on disk — this closes a window, it does not delete
+// anything.
+func (s *Server) handleRemoveRepo(w http.ResponseWriter, r *http.Request) {
+	s.mu.RLock()
+	remove := s.removeRepo
+	s.mu.RUnlock()
+	if remove == nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	path := r.FormValue("path")
+	targets, repos, err := remove(path)
+
+	s.mu.Lock()
+	if err != nil {
+		s.repoErr = err.Error()
+	} else {
+		s.repoErr = ""
+		s.targets, s.repos = targets, repos
+		s.candidates = append(s.candidates, RepoStatus{Name: filepath.Base(path), Path: path})
+	}
+	s.mu.Unlock()
+
+	if err == nil {
+		s.Record(AuditEntry{Action: "repo-closed", Detail: path})
+	}
+	s.broadcast("repos")
+	http.Redirect(w, r, "/status", http.StatusSeeOther)
+}
+
+// CompareFunc reviews an arbitrary range the reviewer chose, returning the id it
+// can be opened under. It is the same engine as every other target; the refs
+// simply came from two select boxes rather than from git's own list.
+type CompareFunc func(ctx context.Context, repo, from, to string) (string, error)
+
+// WithCompare wires comparing two refs.
+func (s *Server) WithCompare(fn CompareFunc) *Server {
+	s.compare = fn
+	return s
+}
+
+// handleCompare builds a range target from two refs and opens it.
+func (s *Server) handleCompare(w http.ResponseWriter, r *http.Request) {
+	s.mu.RLock()
+	compare := s.compare
+	s.mu.RUnlock()
+
+	from, to := r.URL.Query().Get("from"), r.URL.Query().Get("to")
+	if compare == nil || from == "" || to == "" {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+
+	id, err := compare(r.Context(), r.URL.Query().Get("repo"), from, to)
+	if err != nil {
+		s.mu.Lock()
+		s.repoErr = err.Error()
+		s.mu.Unlock()
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, "/?target="+id, http.StatusSeeOther)
 }
 
 // WithVersions wires the file-history overlay: the commits that touched a file,
@@ -587,6 +723,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /units/{id}/diff", s.handleUnitDiff)
 	s.mux.HandleFunc("GET /units/{id}/versions", s.handleVersions)
 	s.mux.HandleFunc("POST /groups/{id}/describe", s.handleDescribe)
+	s.mux.HandleFunc("POST /units/{id}/describe", s.handleDescribeFile)
+	s.mux.HandleFunc("POST /repos/remove", s.handleRemoveRepo)
+	s.mux.HandleFunc("GET /compare", s.handleCompare)
 	s.mux.HandleFunc("GET /cockpit", s.handleCockpit)
 	s.mux.HandleFunc("GET /activity", s.handleActivity)
 	s.mux.HandleFunc("GET /status", s.handleStatus)
@@ -863,6 +1002,8 @@ type unitView struct {
 
 	// Edits is how the file reached this net change: a net-change review
 	// collapses the agent's back-and-forth (ADR 0002), and this opens it back up.
+	// Meaning is what this one file's change is for, when a model has been asked.
+	Meaning    string
 	Edits      int
 	LastEdited string
 	FirstEdit  string
@@ -1045,11 +1186,22 @@ func (s *Server) NarrateNow(ctx context.Context, targetID string) bool {
 	if !s.beginNarration() {
 		return false
 	}
+	// Registered before the goroutine starts, so the page shows the work the
+	// instant the request returns rather than whenever the scheduler gets to it.
+	finish := s.BeginWork("narrate", targetID, "reading the review")
+
 	go func() {
 		defer s.endNarration()
-		finish := s.BeginWork("narrate", targetID, "reading the review")
+		// A model adapter that panics must not take the server with it, and must
+		// not leave the page claiming to still be thinking. Both were possible.
+		defer func() {
+			if r := recover(); r != nil {
+				finish(fmt.Errorf("the narrator failed: %v", r))
+				return
+			}
+			finish(nil) // the narrator records its own outcome in the audit log
+		}()
 		s.narrate(ctx, targetID)
-		finish(nil) // the narrator records its own outcome in the audit log
 	}()
 	s.broadcast("narrative") // tell open pages it has started
 	return true
@@ -1103,8 +1255,11 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 	narrative := sess.Narrative
 	work := s.workLocked()
 	canDescribe := s.describe != nil
+	canDescribeFile := s.describeFile != nil
 	workspace := s.workspace
 	targets := s.targets
+	repos := s.repos
+	canCompare := s.compare != nil
 	thread := append([]Exchange(nil), s.thread...)
 	hasAsk := s.ask != nil
 	hasReanal := s.reanalyse != nil
@@ -1155,6 +1310,7 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 		}
 		for _, u := range g.Units {
 			v := viewByID[u.ID]
+			v.Meaning = narrative.Meanings[usecase.FileKey(u)]
 			compact, wasCompacted := usecase.CompactDiff(sess.Diffs[u.ID], cockpitDiffLines)
 			if wasCompacted {
 				v.Diff = splitDiff(compact.Text)
@@ -1165,23 +1321,27 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := struct {
-		Session     Session
-		Workspace   []SessionSummary
-		Targets     []TargetSummary
-		Stats       cockpitStats
-		Narrative   domain.Narrative
-		Chapters    []chapterView
-		Groups      []groupView
-		Tree        []domain.TreeNode
-		CanDescribe bool
-		Work        []Work
-		Thread      []Exchange
-		HasAsk      bool
-		HasReanal   bool
-		CanRetry    bool
-		Narrating   bool
+		Session         Session
+		Workspace       []SessionSummary
+		Targets         []TargetSummary
+		Repos           []RepoStatus
+		CanCompare      bool
+		Stats           cockpitStats
+		Narrative       domain.Narrative
+		Chapters        []chapterView
+		Groups          []groupView
+		Tree            []domain.TreeNode
+		CanDescribe     bool
+		CanDescribeFile bool
+		Work            []Work
+		Thread          []Exchange
+		HasAsk          bool
+		HasReanal       bool
+		CanRetry        bool
+		Narrating       bool
 	}{
 		Session: sess, Workspace: workspace, Targets: targets,
+		Repos: repos, CanCompare: canCompare,
 		Stats: cockpitStats{
 			Open:  humanDuration(stats.Open),
 			Live:  stats.Live,
@@ -1191,7 +1351,7 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 		},
 		Narrative: narrative, Chapters: chapters, Groups: groups,
 		Tree:        usecase.FileTree(sess.Units, sess.Diffs),
-		CanDescribe: canDescribe, Work: work,
+		CanDescribe: canDescribe, CanDescribeFile: canDescribeFile, Work: work,
 		Thread: thread, HasAsk: hasAsk, HasReanal: hasReanal,
 		CanRetry: canRetry, Narrating: narrating,
 	}
@@ -1267,6 +1427,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		Work               []Work
 		RepoErr            string
 		CanAddRepo         bool
+		CanRemoveRepo      bool
 	}{
 		SessionID: sessionID, Repo: repo, Agent: agent,
 		Calls: thousands(u.Calls), Failures: thousands(u.Failures),
@@ -1274,7 +1435,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		Reasoning: thousands(u.Reasoning), Total: thousands(u.Prompt + u.Completion),
 		Average: avg, Checked: checked,
 		Sessions: sessions, Repos: repos, Candidates: candidates, Work: work,
-		RepoErr: repoErr, CanAddRepo: canAddRepo,
+		RepoErr: repoErr, CanAddRepo: canAddRepo, CanRemoveRepo: s.removeRepo != nil,
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

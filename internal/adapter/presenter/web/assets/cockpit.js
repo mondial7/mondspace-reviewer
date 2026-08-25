@@ -449,3 +449,29 @@ if (storyCol) new MutationObserver(linkColumns).observe(storyCol, { childList: t
     }, 4000);
   });
 })();
+
+
+// ── The picker ──────────────────────────────────────────────────────────────
+//
+// Choosing what to review is two questions — which project, then what in it —
+// and one combined list made the second unreadable past a few repositories. The
+// repository box filters the target box; it navigates nothing on its own.
+(function picker() {
+  const repo = document.getElementById('repo-filter');
+  const targets = document.getElementById('target-select');
+  if (!repo || !targets) return;
+
+  // The options are removed from the DOM when filtered out rather than hidden:
+  // Safari ignores `hidden` on <option>, and a filter that silently does
+  // nothing on one browser is worse than no filter.
+  const all = [...targets.options].map((o) => ({ option: o, repo: o.dataset.repo }));
+
+  repo.addEventListener('change', () => {
+    const want = repo.value;
+    targets.textContent = '';
+    for (const { option, repo: owner } of all) {
+      if (!want || owner === want) targets.add(option);
+    }
+    targets.selectedIndex = 0;
+  });
+})();

@@ -4,6 +4,37 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.1.0] — 2026-08-25
+
+### Fixed
+
+- **Descriptions were being generated and then thrown away.** A group's id was
+  derived from its units' ids, which are positional (`-f001`, `-f002`) — so
+  adding one file renumbered everything after it and orphaned every description
+  beyond it. On a live review the units rebuild every fifteen seconds, which is
+  why a folder could sit at "not yet described" no matter how often it was
+  asked. Ids now come from the file paths, which do not move.
+- **A panicking model adapter took the server down**, and on the way out left
+  the page claiming to still be thinking. It is recovered, recorded as a
+  failure, and the work is registered before the goroutine starts so the page
+  never shows a call it has not begun.
+- Work that runs past a ceiling is shown as **stalled** rather than running: a
+  spinner that has been spinning for half an hour is telling the reviewer
+  something untrue.
+
+### Added
+
+- **Per-file descriptions.** A folder's summary is where a reviewer starts; "and
+  what happened to this one" is always next. Each file can be described on its
+  own, from the same control the folder has.
+- **Compare any two points** — a tag against a tag, a branch against a commit,
+  anything against the working tree. The result is a target like any other, so
+  it narrates and annotates identically.
+- **The picker is two steps**: repository, then what in it. One combined list
+  became unreadable past a few repositories.
+- **Repositories can be unwatched** from `/status`. Nothing on disk is touched —
+  it closes a window, and the reviews and notes stay where they are.
+
 ## [5.0.0] — 2026-08-24
 
 The web app is the product.
@@ -295,6 +326,7 @@ First public release. Watching one agent, one session, one repo.
 - Session identifiers are validated to prevent path traversal outside the store
   root.
 
+[5.1.0]: https://github.com/mondial7/mondspace-reviewer/releases/tag/v5.1.0
 [5.0.0]: https://github.com/mondial7/mondspace-reviewer/releases/tag/v5.0.0
 [4.1.0]: https://github.com/mondial7/mondspace-reviewer/releases/tag/v4.1.0
 [4.0.0]: https://github.com/mondial7/mondspace-reviewer/releases/tag/v4.0.0

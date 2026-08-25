@@ -1060,3 +1060,15 @@
 .work__took { color: var(--add); font-variant-numeric: tabular-nums; }
 .work--running .work__kind { color: var(--inferred); }
 .work__retry { display: inline; }
+
+/* A file's own meaning, beneath its folder's. */
+.post__meaning {
+  margin: 0.25rem 0 0.45rem; font-size: 0.84rem; line-height: 1.5;
+  display: flex; gap: 0.5rem; align-items: baseline; flex-wrap: wrap;
+}
+
+/* Two steps, because they are two questions: which project, then what in it. */
+.picker { display: flex; flex-direction: column; gap: 0.35rem; min-width: 0; }
+.picker__repo { width: 100%; }
+.picker__compare { margin-top: 0.1rem; }
+.picker__compareform { display: flex; flex-direction: column; gap: 0.3rem; margin-top: 0.35rem; }

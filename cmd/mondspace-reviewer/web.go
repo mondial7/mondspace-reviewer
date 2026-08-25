@@ -112,6 +112,9 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 		WithRepos(openRepos(), addRepo(*out)).
 		WithCandidates(unopenedRepos(candidates)).
 		WithDescribe(describeAnyTarget(sum)).
+		WithDescribeFile(describeOneFile(sum)).
+		WithRemoveRepo(removeRepo(*out)).
+		WithCompare(compareRefs()).
 		WithExchanges(exchangeStore(store), sess.Exchanges).
 		WithAsk(webAskFunc(sess, view.Units, view.Diffs, snap, sum)).
 		WithReanalyse(webReanalyseFunc(snap, sum, *model)).
@@ -986,6 +989,127 @@ func unitsFor(ctx context.Context, entry targetEntry) ([]domain.Unit, map[string
 		})
 }
 
+// compareRefs turns two refs a reviewer typed into a target and registers it, so
+// it opens and behaves exactly like a commit or a tag. An empty `to` means the
+// working tree, which is what "compare against what I have now" means.
+func compareRefs() web.CompareFunc {
+	return func(ctx context.Context, repo, from, to string) (string, error) {
+		entry, ok := anyEntryFor(repo)
+		if !ok {
+			return "", fmt.Errorf("no repository %q is open", repo)
+		}
+		snap := gitsnap.New(entry.repo, "compare")
+
+		fromRef, err := snap.ResolveRef(ctx, strings.TrimSpace(from))
+		if err != nil {
+			return "", fmt.Errorf("cannot resolve %q in %s", from, filepath.Base(entry.repo))
+		}
+		toRef := domain.SnapshotRef{}
+		if trimmed := strings.TrimSpace(to); trimmed != "" {
+			toRef, err = snap.ResolveRef(ctx, trimmed)
+			if err != nil {
+				return "", fmt.Errorf("cannot resolve %q in %s", to, filepath.Base(entry.repo))
+			}
+		}
+
+		title := from + " … " + firstNonEmpty(to, "working tree")
+		target := usecase.RangeTarget(entry.repo, title, fromRef, toRef)
+		targetIndex[target.ID] = targetEntry{target: target, repo: entry.repo, out: entry.out}
+		return target.ID, nil
+	}
+}
+
+// anyEntryFor finds a repository in the workspace by its short name, which is
+// what the page had to hand.
+func anyEntryFor(name string) (targetEntry, bool) {
+	for _, entry := range targetIndex {
+		if name == "" || filepath.Base(mustAbs(entry.repo)) == name {
+			return entry, true
+		}
+	}
+	return targetEntry{}, false
+}
+
+// describeOneFile says what a single file's change is for, on request. The
+// folder's summary is where a reviewer starts; this is the next question, and
+// it is asked deliberately rather than run in bulk.
+func describeOneFile(sum port.Summarizer) web.DescribeFileFunc {
+	return func(ctx context.Context, targetID, unitID string) (string, error) {
+		entry, known := targetIndex[targetID]
+		if !known {
+			return "", fmt.Errorf("nothing here to review under %q", targetID)
+		}
+		ctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
+		defer cancel()
+
+		units, diffs, err := unitsFor(ctx, entry)
+		if err != nil {
+			return "", err
+		}
+		for _, u := range units {
+			if u.ID != unitID {
+				continue
+			}
+			meaning, err := usecase.DescribeFile(ctx, sum,
+				domain.Session{Prompt: entry.target.Title}, u, diffs[u.ID])
+			if err != nil {
+				return "", err
+			}
+			saveMeaning(entry.out, targetID, usecase.FileKey(u), meaning)
+			return meaning, nil
+		}
+		return "", fmt.Errorf("no such file in this review")
+	}
+}
+
+// saveMeaning stores one description with the target's story, so it is written
+// once and survives a restart.
+func saveMeaning(out, targetID, key, meaning string) {
+	store := jsonl.New(out)
+	stored, err := store.LoadNarrative(targetID)
+	if err != nil {
+		return
+	}
+	if stored.Meanings == nil {
+		stored.Meanings = map[string]string{}
+	}
+	stored.Meanings[key] = meaning
+	stored.SessionID = targetID
+	_ = store.SaveNarrative(stored)
+}
+
+// removeRepo stops watching a repository. Nothing on disk is touched: this
+// closes a window, and the reviews and notes it holds stay exactly where they
+// are, ready for the next time it is opened.
+func removeRepo(out string) web.AddRepoFunc {
+	return func(path string) ([]web.TargetSummary, []web.RepoStatus, error) {
+		abs := mustAbs(path)
+
+		remaining := map[string]bool{}
+		found := false
+		for id, entry := range targetIndex {
+			if mustAbs(entry.repo) == abs {
+				delete(targetIndex, id)
+				found = true
+				continue
+			}
+			remaining[entry.repo] = true
+		}
+		if !found {
+			return nil, nil, fmt.Errorf("%s is not open", filepath.Base(abs))
+		}
+		if len(remaining) == 0 {
+			return nil, nil, fmt.Errorf("that is the only repository open; add another first")
+		}
+
+		repos := make([]string, 0, len(remaining))
+		for r := range remaining {
+			repos = append(repos, r)
+		}
+		return discoverTargets(context.Background(), repos, out), openRepos(), nil
+	}
+}
+
 // describeAnyTarget writes what one group of changes is for, in whichever target
 // is open — not only the one the server started with.
 func describeAnyTarget(sum port.Summarizer) web.DescribeFunc {
@@ -1012,16 +1136,7 @@ func describeAnyTarget(sum port.Summarizer) web.DescribeFunc {
 				return "", fmt.Errorf("the model did not describe this change")
 			}
 			// Saved with that target's story, so it is written once.
-			store := jsonl.New(entry.out)
-			stored, err := store.LoadNarrative(targetID)
-			if err == nil {
-				if stored.Meanings == nil {
-					stored.Meanings = map[string]string{}
-				}
-				stored.Meanings[groupID] = meaning
-				stored.SessionID = targetID
-				_ = store.SaveNarrative(stored)
-			}
+			saveMeaning(entry.out, targetID, groupID, meaning)
 			return meaning, nil
 		}
 		return "", fmt.Errorf("no such group in this review")

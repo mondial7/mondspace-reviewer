@@ -64,7 +64,9 @@ Anything in git, not just recorded agent runs:
 | **your working tree** | uncommitted work, offered first when it is dirty |
 | **an agent session** | a recorded run, if you installed the hooks |
 
-Pick from the selector at the top left. A recorded session is *one kind among
+Pick from the selector at the top left — repository first, then what in it. Or
+**compare two points** you choose: any tag, branch or commit against any other,
+reviewed exactly like anything else. A recorded session is *one kind among
 them*, not the index — and every other target lists the sessions that overlap
 it, so the intent behind a commit is one click away ([ADR 0017](ADR/0017-git-first-review.md)).
 
@@ -78,7 +80,9 @@ One page, three columns. Only the two right-hand ones scroll.
 | **story** | the change as chapters of prose, and the reviewer assistant |
 | **changes** | every file, folded, with its diff, history and annotation |
 
-**Read.** Click a chapter and its files come up beside it. Click a filename to
+**Read.** Start with what happened in a folder, then ask what happened to one
+file in it — both are a click, and both are one sentence about what the change
+is *for*. Click a chapter and its files come up beside it. Click a filename to
 open its diff; long diffs are compacted with the hunk headers kept, and
 `open full history` steps through that file's git history with `←`/`→`.
 

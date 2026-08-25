@@ -1031,3 +1031,57 @@ func TestWorkKeepsOnlyRecentHistory(t *testing.T) {
 		t.Error("the most recent work should survive the bound")
 	}
 }
+
+func TestNarrationWorkAlwaysFinishes(t *testing.T) {
+	// A spinner that never stops is worse than none: it says the assistant is
+	// still thinking when it is not, and there is no way to tell from the page.
+	h := web.NewServer(testSession(), nil).
+		WithNarrate(func(context.Context, string) { /* returns immediately */ })
+
+	req := httptest.NewRequest(http.MethodPost, "/story/narrate", nil)
+	h.ServeHTTP(httptest.NewRecorder(), req)
+
+	waitIdle(t, h)
+	if n := h.InFlight(); n != 0 {
+		t.Errorf("InFlight = %d after the narrator returned, want 0", n)
+	}
+}
+
+// waitIdle waits for the work registered by a request to finish.
+func waitIdle(t *testing.T, h *web.Server) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if len(h.Work()) > 0 && h.InFlight() == 0 {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("work did not finish: %+v", h.Work())
+}
+
+func TestNarrationWorkFinishesEvenWhenTheNarratorPanics(t *testing.T) {
+	// A panic in a background goroutine takes the process with it, and on the
+	// way out would leave the page claiming to be thinking. Neither is
+	// acceptable for something a model can trigger.
+	h := web.NewServer(testSession(), nil).
+		WithNarrate(func(context.Context, string) { panic("the model adapter blew up") })
+
+	req := httptest.NewRequest(http.MethodPost, "/story/narrate", nil)
+	h.ServeHTTP(httptest.NewRecorder(), req)
+
+	waitIdle(t, h)
+	if n := h.InFlight(); n != 0 {
+		t.Errorf("InFlight = %d after a panic, want 0", n)
+	}
+	// And it must say what happened rather than showing a silent success.
+	var failed bool
+	for _, w := range h.Work() {
+		if w.Failed() {
+			failed = true
+		}
+	}
+	if !failed {
+		t.Error("a panicking narrator should be recorded as a failure")
+	}
+}

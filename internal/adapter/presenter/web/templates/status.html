@@ -93,7 +93,7 @@
         <span class="work__kind">{{ .Kind }}</span>
         <span class="work__detail">{{ .Detail }}</span>
         {{ if .Running }}<span class="ask__spinner" aria-hidden="true"></span><span class="work__state">thinking…</span>
-        {{ else if .Failed }}<span class="work__state work__state--failed">{{ .Err }}</span>
+        {{ else if .Failed }}<span class="work__state work__state--failed">{{ .Why }}</span>
         {{ else }}<span class="work__took">{{ .Took }}</span>{{ end }}
         {{ if not .Running }}{{ with .Retry }}
         <form class="work__retry" method="post" action="{{ . }}">
@@ -113,7 +113,14 @@
       <div class="board__row">
         <span class="board__key">{{ .Name }}</span>
         <span class="board__val" title="{{ .Path }}">{{ .Path }}</span>
-        <span class="board__val">{{ .Sessions }}s</span>
+        <span class="board__val">{{ .Sessions }}</span>
+        {{ if $.CanRemoveRepo }}
+        <!-- Closes the window on it; nothing on disk is touched. -->
+        <form class="describe" method="post" action="/repos/remove">
+          <input type="hidden" name="path" value="{{ .Path }}">
+          <button class="describe__btn" type="submit" title="Stop watching — nothing is deleted">unwatch</button>
+        </form>
+        {{ end }}
       </div>
       {{ else }}
       <p class="queue__empty">No repositories open.</p>

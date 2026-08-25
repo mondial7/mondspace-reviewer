@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
 )
@@ -212,4 +213,17 @@ func stripPullRequestRef(subject string) string {
 // SortTargets orders targets newest first, which is how a reviewer reads them.
 func SortTargets(targets []domain.Target) {
 	sort.SliceStable(targets, func(i, j int) bool { return targets[i].TS.After(targets[j].TS) })
+}
+
+// RangeTarget is an arbitrary range a reviewer asked for, rather than one git
+// offered. It is built exactly like the others, so it opens, narrates and is
+// annotated the same way — the refs simply came from somewhere else.
+func RangeTarget(repo, title string, from, to domain.SnapshotRef) domain.Target {
+	return withID(repo, domain.Target{
+		Repo: repo, Kind: domain.TargetRange,
+		Title:    title,
+		Subtitle: "a range you chose",
+		From:     from, To: to,
+		TS: time.Now(),
+	})
 }
