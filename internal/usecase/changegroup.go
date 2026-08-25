@@ -153,7 +153,7 @@ func meaningSchema() port.JSONSchema {
 	return port.JSONSchema{
 		Name: "change_meaning",
 		Schema: object(map[string]any{
-			"meaning": map[string]any{"type": "string", "maxLength": meaningChars},
+			"meaning": map[string]any{"type": "string", "maxLength": meaningRoom},
 		}, "meaning"),
 	}
 }
@@ -288,7 +288,7 @@ func fileMeaningSchema() port.JSONSchema {
 	return port.JSONSchema{
 		Name: "file_meaning",
 		Schema: object(map[string]any{
-			"meaning": map[string]any{"type": "string", "maxLength": meaningChars},
+			"meaning": map[string]any{"type": "string", "maxLength": meaningRoom},
 			"key_lines": map[string]any{
 				"type":     "array",
 				"maxItems": maxKeyLines,
@@ -303,6 +303,13 @@ const (
 	// the diff is not a highlight.
 	maxKeyLines  = 3
 	keyLineChars = 120
+
+	// meaningRoom is the schema's cap, deliberately above the display limit. A
+	// grammar truncates at exactly its maximum, mid-word — a verbose model was
+	// producing "…identify units within a specific active session. It also re".
+	// Giving it room and trimming at a word boundary afterwards turns that into
+	// a clean sentence.
+	meaningRoom = meaningChars + 60
 )
 
 // filePrompt shows the model one file and a bounded slice of what changed in it.

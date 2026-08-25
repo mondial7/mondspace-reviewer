@@ -416,3 +416,49 @@ func TestADescriptionWithoutKeyLinesIsStillADescription(t *testing.T) {
 		t.Errorf("key lines = %v, want none", lines)
 	}
 }
+
+func TestALongMeaningIsCutAtAWordNotMidWord(t *testing.T) {
+	// A grammar stops the model at exactly its maxLength, which lands mid-word:
+	// "…identify units within a specific active session. It also re". The schema
+	// therefore allows more than the column shows, and the trim happens here,
+	// where it can respect a word boundary.
+	long := "This change improves the reliability of session management and navigation " +
+		"by ensuring that unit lookups correctly resolve sessions from incoming " +
+		"requests and maintaining the intended destination during redirects."
+	d := &describer{reply: `{"meaning":"` + long + `"}`}
+
+	got, _, err := usecase.DescribeFile(context.Background(), d, domain.Session{},
+		domain.Unit{ID: "u1", Files: []string{"web.go"}}, domain.Diff{Text: "@@\n+x\n"})
+	if err != nil {
+		t.Fatalf("DescribeFile: %v", err)
+	}
+
+	if !strings.HasSuffix(got, "…") {
+		t.Errorf("a trimmed meaning should say it was trimmed, got %q", got)
+	}
+	last := strings.TrimSuffix(got, "…")
+	if !strings.HasPrefix(long, last) {
+		t.Errorf("the trim should be a prefix of what the model wrote, got %q", last)
+	}
+	// The cut must land where a word ended: the next character in the original is
+	// a space, which is exactly what "not mid-word" means.
+	if rest := long[len(last):]; rest != "" && !strings.HasPrefix(rest, " ") {
+		t.Errorf("cut mid-word: %q | %q", last[max(0, len(last)-30):], rest[:min(20, len(rest))])
+	}
+}
+
+func TestTheSchemaLeavesRoomToFinishTheSentence(t *testing.T) {
+	// If the schema's cap equalled the display width the model would be stopped
+	// exactly at the truncation point and there would be nothing left to trim.
+	d := &describer{reply: `{"meaning":"short"}`}
+	if _, _, err := usecase.DescribeFile(context.Background(), d, domain.Session{},
+		domain.Unit{ID: "u1", Files: []string{"a.go"}}, domain.Diff{}); err != nil {
+		t.Fatalf("DescribeFile: %v", err)
+	}
+
+	props := d.schema[0].Schema["properties"].(map[string]any)
+	cap := props["meaning"].(map[string]any)["maxLength"].(int)
+	if cap <= 160 {
+		t.Errorf("the schema should allow more than the 160 shown, got %d", cap)
+	}
+}
