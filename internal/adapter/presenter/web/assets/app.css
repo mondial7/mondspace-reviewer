@@ -73,6 +73,12 @@
 
 * { box-sizing: border-box; }
 
+/* Any class that sets `display` outranks the browser's own [hidden] rule, so an
+   element marked hidden stays visible. That is how the assistant's "thinking…"
+   line showed with nothing running. One rule, rather than remembering to guard
+   every class that happens to set display. */
+[hidden] { display: none !important; }
+
 .page {
   margin: 0;
   padding: 0;
@@ -334,7 +340,6 @@
   display: flex; align-items: flex-start; justify-content: center;
   padding-top: 14vh;
 }
-.palette[hidden] { display: none; }
 .palette__sheet {
   width: min(560px, 92vw);
   background: var(--panel);
@@ -545,10 +550,14 @@
 /* The instrument panel is one fixed column: it never scrolls away. */
 .cockpit__panel {
   min-height: 0; min-width: 0;
-  display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;  /* switcher · brief · field · numbers */
+  display: flex; flex-direction: column;
   gap: 0.6rem;
 }
+/* Everything in the panel is sized by its content except the isometric field,
+   which takes whatever is left. A fixed row list meant adding a box moved which
+   one could grow. */
+.cockpit__panel > * { flex: 0 0 auto; }
+.cockpit__panel > .cockpit__pulse { flex: 1 1 auto; min-height: 8rem; }
 
 /* Moving between sessions and repositories. */
 .switcher { display: flex; gap: 0.4rem; min-width: 0; }
@@ -751,7 +760,7 @@
 
 /* Hiding the panel gives the feed the whole screen. */
 .page--focus .cockpit__scene { display: none; }
-.page--focus.page--cockpit .cockpit__panel { grid-template-rows: auto auto; }
+.page--focus.page--cockpit .cockpit__pulse { flex: 0 0 auto; }
 .page--focus.page--cockpit .cockpit__pulse { min-height: 0; }
 
 /* A narrow window stacks the panel above the feed and lets the page scroll. */
@@ -891,7 +900,6 @@
   backdrop-filter: blur(3px);
   display: flex; align-items: center; justify-content: center; padding: 3vh 3vw;
 }
-.overlay[hidden] { display: none; }
 .overlay__sheet {
   width: min(1100px, 94vw); height: min(88vh, 900px);
   background: var(--panel); border: 1px solid var(--accent); border-radius: 10px;
@@ -991,7 +999,11 @@
   transition: min-height 0.18s ease, border-color 0.18s ease;
 }
 .ask__input:focus { outline: none; border-color: var(--accent); min-height: 7rem; }
-.ask__actions { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+.ask__actions {
+  display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.ask__actions .ask__hint { margin-right: auto; }
 .ask__btn {
   font: inherit; font-size: 0.8rem; cursor: pointer;
   color: var(--bg); background: var(--accent);
@@ -1078,10 +1090,11 @@
 }
 
 /* Two steps, because they are two questions: which project, then what in it. */
-.picker { display: flex; flex-direction: column; gap: 0.35rem; min-width: 0; }
-.picker__repo { width: 100%; }
-.picker__compare { margin-top: 0.1rem; }
+.picker { display: flex; gap: 0.35rem; align-items: center; min-width: 0; }
+.picker .switcher__select { flex: 1 1 auto; min-width: 0; }
+.picker__compare { margin: 0; }
 .picker__compareform { display: flex; flex-direction: column; gap: 0.3rem; margin-top: 0.35rem; }
+.picker__compareform .switcher__go { align-self: flex-end; }
 
 /* The review card spans both reading columns: it is about the whole review,
    not about the story or the changes separately. */
@@ -1091,7 +1104,8 @@
 .cockpit__story { grid-column: 2; grid-row: 2; }
 .cockpit__changes { grid-column: 3; grid-row: 2; }
 
-.reviewcard {
+.reviewcard { min-width: 0; }
+.reviewcard__inner {
   display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; min-width: 0;
   padding: 0.6rem 0.9rem;
   border: 1px solid var(--rule); border-radius: 10px;
@@ -1103,9 +1117,9 @@
 .reviewcard__progress { display: flex; gap: 0.8rem; color: var(--fg-dim); flex: 1; min-width: 0; }
 .reviewcard__partial { color: var(--inferred); }
 .reviewcard__go { margin-left: auto; }
-.reviewcard--reading { border-color: var(--inferred); }
-.reviewcard--unread { border-color: color-mix(in srgb, var(--del) 45%, var(--rule)); }
-.reviewcard--read { border-color: color-mix(in srgb, var(--add) 35%, var(--rule)); }
+.reviewcard__inner.reviewcard--reading { border-color: var(--inferred); }
+.reviewcard__inner.reviewcard--unread { border-color: color-mix(in srgb, var(--del) 45%, var(--rule)); }
+.reviewcard__inner.reviewcard--read { border-color: color-mix(in srgb, var(--add) 35%, var(--rule)); }
 
 @media (max-width: 1400px) {
   .reviewcard { grid-column: 2; }

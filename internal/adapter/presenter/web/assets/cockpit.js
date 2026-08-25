@@ -408,17 +408,17 @@ if (storyCol) new MutationObserver(linkColumns).observe(storyCol, { childList: t
 
   const working = document.getElementById('ask-working');
   const workingText = document.getElementById('ask-working-text');
-  const cancel = document.getElementById('ask-cancel');
+  const clear = document.getElementById('ask-clear');
   const story = document.getElementById('story-col');
 
   const focus = (on) => story?.classList.toggle('cockpit__story--asking', on);
 
   input.addEventListener('focus', () => focus(true));
   input.addEventListener('input', () => focus(input.value.trim() !== ''));
-  cancel?.addEventListener('click', () => {
+  clear?.addEventListener('click', () => {
     input.value = '';
     focus(false);
-    input.blur();
+    input.focus();
   });
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') { input.value = ''; focus(false); input.blur(); }

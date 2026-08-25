@@ -124,7 +124,8 @@
     <!-- Spanning the two reading columns: has the assistant read this, when,
          how far it got, and how to ask. Switching target is exactly when a
          reviewer needs all four at once. -->
-    <section class="reviewcard reviewcard--{{ .Review.State }}">
+    <section class="reviewcard" id="reviewcard">
+      <div class="reviewcard__inner reviewcard--{{ .Review.State }}">
       <div class="reviewcard__state">
         {{ if eq .Review.State "reading" }}
         <span class="ask__spinner" aria-hidden="true"></span>
@@ -155,6 +156,7 @@
         </button>
       </form>
       {{ end }}
+      </div>
     </section>
 
     <!-- Middle: the session read as prose. Text only — the files each chapter
@@ -189,11 +191,11 @@
              and says plainly that it is working while the model thinks. -->
         <form class="ask__form" method="post" action="/ask?target={{ .Session.ID }}" id="ask-form">
           <textarea class="ask__input" name="question" rows="2" id="ask-input"
-                    placeholder="ask about this session — answered only from the log, diffs and your notes"></textarea>
+                    placeholder="ask about these changes"></textarea>
           <div class="ask__actions">
+            <span class="ask__hint">⌘⏎ to send · answered only from this review</span>
+            <button class="ask__cancel" type="button" id="ask-clear">clear</button>
             <button class="ask__btn" type="submit">ask</button>
-            <button class="ask__cancel" type="button" id="ask-cancel">cancel</button>
-            <span class="ask__hint">⌘⏎ to send · answered only from this session</span>
           </div>
           <p class="ask__working" id="ask-working" hidden>
             <span class="ask__spinner" aria-hidden="true"></span>
