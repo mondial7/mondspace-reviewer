@@ -16,10 +16,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mondial7/mondspace-reviewer/internal/adapter/config"
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/presenter/web"
 	gitsnap "github.com/mondial7/mondspace-reviewer/internal/adapter/snapshot/git"
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/store/jsonl"
 	pgstore "github.com/mondial7/mondspace-reviewer/internal/adapter/store/postgres"
+	"github.com/mondial7/mondspace-reviewer/internal/adapter/summarizer/openai"
+	"github.com/mondial7/mondspace-reviewer/internal/adapter/summarizer/switchable"
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
 	"github.com/mondial7/mondspace-reviewer/internal/port"
 	"github.com/mondial7/mondspace-reviewer/internal/usecase"
@@ -37,9 +40,22 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 	schema := fs.String("pg-schema", pgstore.DefaultSchema, "Postgres schema (never public)")
 	summarizerURL := fs.String("summarizer-url", defaultSummarizerURL, "OpenAI-compatible summarizer endpoint")
 	model := fs.String("model", defaultModel, "summarizer model")
+	configPath := fs.String("config", config.DefaultPath(), "where the model settings are kept")
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
 	}
+
+	// A flag actually passed beats the environment beats the stored settings
+	// beats the defaults. Go cannot tell a default from an identical explicit
+	// value, so the flags actually set are collected here.
+	set := flagsSet(func(yield func(string)) {
+		fs.Visit(func(f *flag.Flag) { yield(f.Name) })
+	})
+	stored, err := config.Load(*configPath)
+	if err != nil {
+		return err
+	}
+	agent := resolveAgent(stored, *summarizerURL, *model, set)
 	// With no --repo, look around: a checkout opens itself, and a directory of
 	// checkouts offers its children. Nothing is prompted for at launch — the
 	// repositories in the workspace are chosen in the app, on /status, where the
@@ -97,14 +113,17 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 		firstStats = nil // a review that cannot be measured still renders
 	}
 
-	sum := chooseSummarizer(*summarizerURL, *model)
+	// Wrapped so the endpoint and model can be changed from the status page: every
+	// model call below captures this reference, and swapping what it delegates to
+	// is what makes a change take effect without a restart.
+	sum := switchable.New(configuredSummarizer(agent))
 	var sess domain.Session
 	if entry.session != "" {
 		sess, _ = store.Load(entry.session)
 	}
 
 	handler := web.NewServer(view, targetNotes{}).
-		WithAgent(agentStatus(ctx, sum, *summarizerURL, *model)).
+		WithAgent(agentStatus(ctx, sum, &agent)).
 		WithWorkspace(discoverWorkspace(repos, *out)).
 		WithTargets(targets).
 		WithLoader(load).
@@ -115,9 +134,10 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 		WithDescribeFile(describeOneFile(sum)).
 		WithRemoveRepo(removeRepo(*out)).
 		WithCompare(compareRefs()).
+		WithConfigure(configureAgent(sum, *configPath, &agent)).
 		WithExchanges(exchangeStore(store), sess.Exchanges).
 		WithAsk(webAskFunc(sess, view.Units, view.Diffs, snap, sum)).
-		WithReanalyse(webReanalyseFunc(snap, sum, *model)).
+		WithReanalyse(webReanalyseFunc(snap, sum, agent.Model)).
 		WithAudit(workspaceAudit{writeTo: filepath.Join(storeRoot, initial, "audit.jsonl")})
 
 	// Narration is the only thing that calls the model unbidden, and it runs at
@@ -127,7 +147,7 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 		if targetID == "" {
 			targetID = initial
 		}
-		narrateTarget(ctx, handlerRef(), sum, targetID, *model)
+		narrateTarget(ctx, handlerRef(), sum, targetID, agent.Model)
 	}
 	handler = handler.WithNarrate(narrate)
 	setHandler(handler)
@@ -150,10 +170,10 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 		handler: handler, snap: snap, store: store, sum: sum,
 		sessionID: initial, repo: repo,
 		storeRel: storeRelativeTo(repo, storeRoot),
-		baseline: entry.target.From, model: *model,
+		baseline: entry.target.From, model: agent.Model,
 		fingerprint: usecase.ReviewFingerprint(firstStats), narrate: narrate,
 	})
-	go refreshAgent(ctx, handler, sum, *summarizerURL, *model)
+	go refreshAgent(ctx, handler, sum, &agent)
 
 	ln, err := net.Listen("tcp", *addr)
 	if err != nil {
@@ -523,12 +543,57 @@ func short(fingerprint string) string {
 	return fingerprint[:8]
 }
 
+// configuredSummarizer builds the summarizer these settings describe, probing
+// once so an unreachable endpoint degrades to mechanical rather than hanging.
+func configuredSummarizer(agent domain.AgentConfig) port.Summarizer {
+	chosen := chooseSummarizer(agent.Endpoint, agent.Model)
+	if agent.NoThinking {
+		if adapter, ok := chosen.(*openai.Summarizer); ok {
+			return adapter.WithoutThinking()
+		}
+	}
+	return chosen
+}
+
+// configureAgent applies new settings and remembers them. It refuses settings it
+// cannot reach: telling the reviewer now is better than leaving them to wonder
+// why nothing is being described.
+func configureAgent(sum *switchable.Summarizer, path string, current *domain.AgentConfig) web.ConfigureFunc {
+	return func(want domain.AgentConfig) error {
+		if want.Endpoint == "" || want.Model == "" {
+			return fmt.Errorf("an endpoint and a model are both needed")
+		}
+
+		next := configuredSummarizer(want)
+		if pinger, ok := next.(port.Pinger); ok {
+			probe, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			if err := pinger.Ping(probe); err != nil {
+				return fmt.Errorf("%s did not answer: %w", want.Endpoint, err)
+			}
+		} else {
+			return fmt.Errorf("%s did not answer", want.Endpoint)
+		}
+
+		sum.Swap(next)
+		*current = want
+		if err := config.Save(path, want); err != nil {
+			// It is working now; it just will not be remembered.
+			return fmt.Errorf("applied, but could not be saved: %w", err)
+		}
+		return nil
+	}
+}
+
 // agentStatus reports the reviewer's own model: which one, where, whether it
 // answers right now, and what it has spent. Liveness and usage are optional
 // capabilities — a summarizer without them still yields a complete panel, just
 // a quieter one.
-func agentStatus(ctx context.Context, sum port.Summarizer, endpoint, model string) web.AgentStatus {
-	status := web.AgentStatus{Model: model, Endpoint: endpoint, Checked: time.Now()}
+func agentStatus(ctx context.Context, sum port.Summarizer, agent *domain.AgentConfig) web.AgentStatus {
+	status := web.AgentStatus{
+		Model: agent.Model, Endpoint: agent.Endpoint,
+		NoThinking: agent.NoThinking, Checked: time.Now(),
+	}
 
 	if p, ok := sum.(port.Pinger); ok {
 		probe, cancel := context.WithTimeout(ctx, 2*time.Second)
@@ -544,7 +609,7 @@ func agentStatus(ctx context.Context, sum port.Summarizer, endpoint, model strin
 // refreshAgent re-probes the model while the page is open. "Is it online" is a
 // live question: an endpoint that answered at start-up says nothing about the
 // one that died five minutes later.
-func refreshAgent(ctx context.Context, handler *web.Server, sum port.Summarizer, endpoint, model string) {
+func refreshAgent(ctx context.Context, handler *web.Server, sum port.Summarizer, agent *domain.AgentConfig) {
 	ticker := time.NewTicker(20 * time.Second)
 	defer ticker.Stop()
 
@@ -553,7 +618,7 @@ func refreshAgent(ctx context.Context, handler *web.Server, sum port.Summarizer,
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			handler.SetAgent(agentStatus(ctx, sum, endpoint, model))
+			handler.SetAgent(agentStatus(ctx, sum, agent))
 		}
 	}
 }

@@ -131,11 +131,12 @@ type AuditReader interface {
 // right now, and what it has spent. It is the answer to "is the thing that
 // writes my summaries actually working", which nothing else on the site shows.
 type AgentStatus struct {
-	Model    string
-	Endpoint string
-	Online   bool
-	Checked  time.Time
-	Usage    port.TokenUsage
+	Model      string
+	Endpoint   string
+	NoThinking bool
+	Online     bool
+	Checked    time.Time
+	Usage      port.TokenUsage
 }
 
 // VersionLister and VersionDiffer let the overlay step through a file's history.
@@ -192,6 +193,8 @@ type Server struct {
 	describeFile DescribeFileFunc
 	removeRepo   AddRepoFunc
 	compare      CompareFunc
+	configure    ConfigureFunc
+	agentErr     string
 	work         []Work
 	exchanges    ExchangeStore
 	// loaded caches sessions opened during this run, so switching back and forth
@@ -291,6 +294,53 @@ func (s *Server) WithTargets(targets []TargetSummary) *Server {
 func (s *Server) WithRepos(repos []RepoStatus, add AddRepoFunc) *Server {
 	s.repos, s.addRepo = repos, add
 	return s
+}
+
+// ConfigureFunc applies a new model configuration and persists it. It returns an
+// error the reviewer will read, so it should say what went wrong rather than
+// only that something did.
+type ConfigureFunc func(domain.AgentConfig) error
+
+// WithConfigure lets the reviewer point msr at a different endpoint or model
+// without editing a file and restarting.
+func (s *Server) WithConfigure(fn ConfigureFunc) *Server {
+	s.configure = fn
+	return s
+}
+
+// handleConfigure applies the settings from the status page.
+func (s *Server) handleConfigure(w http.ResponseWriter, r *http.Request) {
+	s.mu.RLock()
+	configure := s.configure
+	s.mu.RUnlock()
+	if configure == nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	want := domain.AgentConfig{
+		Endpoint:   strings.TrimSpace(r.FormValue("endpoint")),
+		Model:      strings.TrimSpace(r.FormValue("model")),
+		NoThinking: r.FormValue("no_thinking") != "",
+	}
+	err := configure(want)
+
+	s.mu.Lock()
+	if err != nil {
+		s.agentErr = err.Error()
+	} else {
+		s.agentErr = ""
+		// Show it immediately; the next probe fills in whether it answers.
+		s.agent.Endpoint, s.agent.Model = want.Endpoint, want.Model
+	}
+	s.mu.Unlock()
+
+	if err == nil {
+		s.Record(AuditEntry{Action: "configure",
+			Detail: want.Model + " at " + want.Endpoint, Model: want.Model})
+	}
+	s.broadcast("agent")
+	http.Redirect(w, r, "/status", http.StatusSeeOther)
 }
 
 // WithRemoveRepo wires closing a repository, which stops watching it without
@@ -764,6 +814,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /groups/{id}/describe", s.handleDescribe)
 	s.mux.HandleFunc("POST /units/{id}/describe", s.handleDescribeFile)
 	s.mux.HandleFunc("POST /repos/remove", s.handleRemoveRepo)
+	s.mux.HandleFunc("POST /agent", s.handleConfigure)
 	s.mux.HandleFunc("GET /compare", s.handleCompare)
 	s.mux.HandleFunc("GET /cockpit", s.handleCockpit)
 	s.mux.HandleFunc("GET /activity", s.handleActivity)
@@ -1472,6 +1523,8 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	repos := s.repos
 	work := s.workLocked()
 	candidates := s.candidates
+	agentErr := s.agentErr
+	canConfigure := s.configure != nil
 	repoErr := s.repoErr
 	canAddRepo := s.addRepo != nil
 	sessions := s.workspace
@@ -1502,8 +1555,10 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		Candidates         []RepoStatus
 		Work               []Work
 		RepoErr            string
+		AgentErr           string
 		CanAddRepo         bool
 		CanRemoveRepo      bool
+		CanConfigure       bool
 	}{
 		SessionID: sessionID, Repo: repo, Agent: agent,
 		Calls: thousands(u.Calls), Failures: thousands(u.Failures),
@@ -1511,7 +1566,9 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		Reasoning: thousands(u.Reasoning), Total: thousands(u.Prompt + u.Completion),
 		Average: avg, Checked: checked,
 		Sessions: sessions, Repos: repos, Candidates: candidates, Work: work,
-		RepoErr: repoErr, CanAddRepo: canAddRepo, CanRemoveRepo: s.removeRepo != nil,
+		RepoErr: repoErr, AgentErr: agentErr,
+		CanAddRepo: canAddRepo, CanRemoveRepo: s.removeRepo != nil,
+		CanConfigure: canConfigure,
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

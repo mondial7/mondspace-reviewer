@@ -1116,3 +1116,16 @@
     grid-column: 1; grid-row: auto;
   }
 }
+
+/* Pointing msr at another model. */
+.agentform { display: flex; flex-direction: column; gap: 0.35rem; margin-top: 0.9rem; }
+.agentform__label {
+  font-size: 0.66rem; color: var(--fg-dim);
+  text-transform: uppercase; letter-spacing: 0.08em;
+}
+.agentform__check {
+  display: flex; align-items: baseline; gap: 0.4rem; flex-wrap: wrap;
+  font-size: 0.78rem; color: var(--fg-dim); margin-top: 0.2rem;
+}
+.agentform__note { font-size: 0.68rem; opacity: 0.75; }
+.agentform .addrepo__btn { align-self: flex-start; margin-top: 0.3rem; }

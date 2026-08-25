@@ -144,6 +144,23 @@ Every model call is slow on a local model, so the waiting is visible: a spinner
 on the rail from any page, and `/status` showing what is running, what it cost,
 and a button to run it again.
 
+### Choosing the model
+
+The endpoint and model are set on `/status` — type them, press apply, and it
+takes effect at once. No restart, no file to find. Settings that cannot be
+reached are refused with the reason rather than saved and left to fail quietly
+later.
+
+They are remembered in `~/.config/mondspace-reviewer/config.json` (override with
+`--config`). Four sources, most deliberate first:
+
+```
+a flag you passed  →  MSR_SUMMARIZER_URL / MSR_MODEL  →  the stored settings  →  the defaults
+```
+
+A flag left at its default does **not** override what you configured — passing
+`--model` means it for that run, not merely running `msr web` at all.
+
 ### The other pages
 
 - **`/activity`** — every model call and every change to the review, across the

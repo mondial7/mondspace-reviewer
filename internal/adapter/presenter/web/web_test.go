@@ -1149,3 +1149,56 @@ func TestReviewCardShowsProgressWhileReading(t *testing.T) {
 		t.Error("a read already running should not offer another")
 	}
 }
+
+func TestConfiguringTheModelFromTheStatusPage(t *testing.T) {
+	// Pointing msr at a different machine or a different model should not mean
+	// editing a file and restarting.
+	var got domain.AgentConfig
+	h := web.NewServer(testSession(), nil).
+		WithAgent(web.AgentStatus{Model: "old", Endpoint: "http://old:1234/v1"}).
+		WithConfigure(func(c domain.AgentConfig) error {
+			got = c
+			return nil
+		})
+
+	if !strings.Contains(get(t, h, "/status").Body.String(), `action="/agent"`) {
+		t.Fatal("the status page should offer the model settings")
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/agent",
+		strings.NewReader("endpoint=http://new:1234/v1&model=llama-3&no_thinking=on"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("POST /agent = %d, want 303", rec.Code)
+	}
+	if got.Endpoint != "http://new:1234/v1" || got.Model != "llama-3" || !got.NoThinking {
+		t.Errorf("configured %+v, want the submitted settings", got)
+	}
+	// And the page reflects it at once, rather than after a restart.
+	if !strings.Contains(get(t, h, "/status").Body.String(), "llama-3") {
+		t.Error("the new model should show immediately")
+	}
+}
+
+func TestARejectedConfigurationSaysWhy(t *testing.T) {
+	h := web.NewServer(testSession(), nil).WithConfigure(
+		func(domain.AgentConfig) error { return errors.New("that endpoint did not answer") })
+
+	req := httptest.NewRequest(http.MethodPost, "/agent",
+		strings.NewReader("endpoint=http://nope:1234/v1&model=m"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	h.ServeHTTP(httptest.NewRecorder(), req)
+
+	if !strings.Contains(get(t, h, "/status").Body.String(), "did not answer") {
+		t.Error("a rejected change should be explained on the page")
+	}
+}
+
+func TestSettingsAreNotOfferedWithoutSomewhereToPutThem(t *testing.T) {
+	if strings.Contains(get(t, web.NewServer(testSession(), nil), "/status").Body.String(), `action="/agent"`) {
+		t.Error("without a configure hook there is nothing behind the form")
+	}
+}

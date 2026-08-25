@@ -41,3 +41,14 @@ type Tag struct {
 	Hash string    `json:"hash"`
 	TS   time.Time `json:"ts"`
 }
+
+// AgentConfig is how to reach the reviewer's model. It is the one piece of
+// configuration worth persisting: everything else about a review is derived
+// from git.
+type AgentConfig struct {
+	Endpoint string `json:"endpoint,omitempty"`
+	Model    string `json:"model,omitempty"`
+	// NoThinking asks the server to skip the model's reasoning phase. Only some
+	// chat templates honour it (ADR 0014).
+	NoThinking bool `json:"no_thinking,omitempty"`
+}

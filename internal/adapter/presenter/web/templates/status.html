@@ -50,6 +50,31 @@
         <span class="board__key">last checked</span>
         <span class="board__val">{{ .Checked }}</span>
       </div>
+
+      {{ if .CanConfigure }}
+      <!-- Pointing msr at another machine or another model, without editing a
+           file and restarting. Applied at once and remembered. -->
+      <form class="agentform" method="post" action="/agent">
+        <label class="agentform__label" for="agent-endpoint">endpoint</label>
+        <input class="addrepo__input" id="agent-endpoint" name="endpoint" type="text"
+               value="{{ .Agent.Endpoint }}" placeholder="http://localhost:1234/v1"
+               autocomplete="off" spellcheck="false">
+
+        <label class="agentform__label" for="agent-model">model</label>
+        <input class="addrepo__input" id="agent-model" name="model" type="text"
+               value="{{ .Agent.Model }}" placeholder="qwen/qwen3.5-9b"
+               autocomplete="off" spellcheck="false">
+
+        <label class="agentform__check">
+          <input type="checkbox" name="no_thinking" {{ if .Agent.NoThinking }}checked{{ end }}>
+          skip the model's reasoning phase
+          <span class="agentform__note">only some chat templates honour this</span>
+        </label>
+
+        <button class="addrepo__btn" type="submit">apply</button>
+      </form>
+      {{ with .AgentErr }}<p class="addrepo__err">{{ . }}</p>{{ end }}
+      {{ end }}
     </section>
 
     <!-- What it has spent. Reasoning is broken out because on a thinking model
