@@ -13,6 +13,7 @@ import (
 	"html/template"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -90,7 +91,9 @@ type ExchangeStore interface {
 }
 
 // AskFunc answers a question given everything already discussed.
-type AskFunc func(ctx context.Context, question string, history []Exchange) (string, error)
+// It receives the review being read: asking a question while looking at one
+// target and being answered about another is worse than not answering.
+type AskFunc func(ctx context.Context, targetID, question string, history []Exchange) (string, error)
 
 // ReanalyseFunc re-summarises one unit, returning the headline and the model
 // that produced it. Re-running with a better model is cheap because the diff is
@@ -441,12 +444,14 @@ func (s *Server) handleDescribe(w http.ResponseWriter, r *http.Request) {
 	s.Record(entry)
 	s.broadcast("narrative")
 
-	http.Redirect(w, r, "/?target="+target+"#group-"+groupID, http.StatusSeeOther)
+	http.Redirect(w, r, backTo(r, "#group-"+groupID), http.StatusSeeOther)
 }
 
 // DescribeFileFunc says what one file's change is for. A folder's summary is
 // where a reviewer starts; "and what happened to this one" is always next.
-type DescribeFileFunc func(ctx context.Context, targetID, unitID string) (string, error)
+// It returns the description and the lines worth reading, which come from the
+// same model call so they cannot disagree about what the change was.
+type DescribeFileFunc func(ctx context.Context, targetID, unitID string) (string, []string, error)
 
 // WithDescribeFile wires per-file description.
 func (s *Server) WithDescribeFile(fn DescribeFileFunc) *Server {
@@ -469,7 +474,7 @@ func (s *Server) handleDescribeFile(w http.ResponseWriter, r *http.Request) {
 	unitID := r.PathValue("id")
 	started := time.Now()
 	finish := s.BeginWork("describe", target, "what this file is for")
-	meaning, err := describe(context.WithoutCancel(r.Context()), target, unitID)
+	meaning, lines, err := describe(context.WithoutCancel(r.Context()), target, unitID)
 	finish(err)
 
 	entry := AuditEntry{SessionID: target, UnitID: unitID, Action: "describe-file",
@@ -478,12 +483,12 @@ func (s *Server) handleDescribeFile(w http.ResponseWriter, r *http.Request) {
 		entry.Failed = true
 		entry.Detail = unitID + ": " + err.Error()
 	} else {
-		s.describedGroup(target, s.fileKey(target, unitID), meaning)
+		s.describedFile(target, s.fileKey(target, unitID), meaning, lines)
 	}
 	s.Record(entry)
 	s.broadcast("narrative")
 
-	http.Redirect(w, r, "/?target="+target+"#unit-"+unitID, http.StatusSeeOther)
+	http.Redirect(w, r, backTo(r, "#unit-"+unitID), http.StatusSeeOther)
 }
 
 // unitsInGroup resolves a rendered group back to the units it holds, from the
@@ -762,6 +767,28 @@ func (s *Server) describedGroup(targetID, groupID, meaning string) {
 	}
 }
 
+// describedFile records a file's description and the lines called out with it.
+func (s *Server) describedFile(targetID, key, meaning string, lines []string) {
+	s.describedGroup(targetID, key, meaning)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	apply := func(sess *Session) {
+		if sess.Narrative.Highlights == nil {
+			sess.Narrative.Highlights = map[string][]string{}
+		}
+		sess.Narrative.Highlights[key] = lines
+	}
+	if targetID == "" || targetID == s.sess.ID {
+		apply(&s.sess)
+		return
+	}
+	if cached, ok := s.loaded[targetID]; ok {
+		apply(&cached)
+		s.loaded[targetID] = cached
+	}
+}
+
 // SetNarrativeFor replaces the story of whichever target was narrated, which
 // may be one opened from the picker rather than the one served at start-up.
 func (s *Server) SetNarrativeFor(targetID string, n domain.Narrative) {
@@ -831,17 +858,16 @@ func (s *Server) routes() {
 // with every diff inlined would be megabytes of HTML nobody reads.
 func (s *Server) handleUnitDiff(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	s.mu.RLock()
-	diff, known := s.sess.Diffs[id]
+	sess := s.openSession(r)
+	diff, known := sess.Diffs[id]
 	if !known {
-		for _, u := range s.sess.Units {
+		for _, u := range sess.Units {
 			if u.ID == id {
 				known = true
 				break
 			}
 		}
 	}
-	s.mu.RUnlock()
 	if !known {
 		http.NotFound(w, r)
 		return
@@ -1024,7 +1050,7 @@ var noteKinds = map[string]domain.NoteKind{
 // handleAnnotate attaches a note to a unit and persists it. Annotations anchor
 // to unit ids, never file/line — the working tree moves, unit ids do not.
 func (s *Server) handleAnnotate(w http.ResponseWriter, r *http.Request) {
-	unit, ok := s.unit(r.PathValue("id"))
+	unit, ok := s.unitIn(r, r.PathValue("id"))
 	if !ok {
 		http.Error(w, "unknown unit", http.StatusNotFound)
 		return
@@ -1060,13 +1086,23 @@ func (s *Server) handleAnnotate(w http.ResponseWriter, r *http.Request) {
 		Action: "annotate", Detail: string(note.Kind) + ": " + note.Text})
 	s.broadcast("note")
 
-	http.Redirect(w, r, "/#unit-"+unit.ID, http.StatusSeeOther)
+	http.Redirect(w, r, backTo(r, "#unit-"+unit.ID), http.StatusSeeOther)
 }
 
-func (s *Server) unit(id string) (domain.Unit, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	for _, u := range s.sess.Units {
+// backTo is the page an action should return to: the review it acted on, at the
+// thing it acted on.
+func backTo(r *http.Request, fragment string) string {
+	if target := r.URL.Query().Get("target"); target != "" {
+		return "/?target=" + url.QueryEscape(target) + fragment
+	}
+	return "/" + fragment
+}
+
+// unitIn finds a unit in whichever review is being acted on. Looking only in the
+// review the server started with is what made every action fail the moment a
+// reviewer switched target: the id was real, just not there.
+func (s *Server) unitIn(r *http.Request, id string) (domain.Unit, bool) {
+	for _, u := range s.openSession(r).Units {
 		if u.ID == id {
 			return u, true
 		}
@@ -1093,7 +1129,13 @@ type unitView struct {
 	// Edits is how the file reached this net change: a net-change review
 	// collapses the agent's back-and-forth (ADR 0002), and this opens it back up.
 	// Meaning is what this one file's change is for, when a model has been asked.
-	Meaning    string
+	Meaning string
+	// Name is the file without its directory: the group heading above it already
+	// says where it is, and repeating the path in every row is noise.
+	Name string
+	// Highlights are the one to three lines the model called out as the ones
+	// worth looking at, written with the description.
+	Highlights []string
 	Edits      int
 	LastEdited string
 	FirstEdit  string
@@ -1120,7 +1162,7 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 	}
 	question := strings.TrimSpace(r.FormValue("question"))
 	if question == "" {
-		http.Redirect(w, r, "/#ask", http.StatusSeeOther)
+		http.Redirect(w, r, backTo(r, "#ask"), http.StatusSeeOther)
 		return
 	}
 
@@ -1130,8 +1172,9 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 		history := append([]Exchange(nil), s.thread...)
 		s.mu.RUnlock()
 
-		finish := s.BeginWork("ask", s.sess.ID, question)
-		got, err := s.ask(context.WithoutCancel(r.Context()), question, history)
+		target := s.openSession(r).ID
+		finish := s.BeginWork("ask", target, question)
+		got, err := s.ask(context.WithoutCancel(r.Context()), target, question, history)
 		finish(err)
 		if err != nil {
 			answer = err.Error()
@@ -1159,13 +1202,13 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 	s.record(AuditEntry{SessionID: sessionID, Action: "ask", Detail: question})
 	s.broadcast("answer")
 
-	http.Redirect(w, r, "/#ask", http.StatusSeeOther)
+	http.Redirect(w, r, backTo(r, "#ask"), http.StatusSeeOther)
 }
 
 // handleReanalyse re-summarises one unit with the configured model, replacing
 // its headline and recording which model produced it.
 func (s *Server) handleReanalyse(w http.ResponseWriter, r *http.Request) {
-	unit, ok := s.unit(r.PathValue("id"))
+	unit, ok := s.unitIn(r, r.PathValue("id"))
 	if !ok {
 		http.Error(w, "unknown unit", http.StatusNotFound)
 		return
@@ -1182,7 +1225,7 @@ func (s *Server) handleReanalyse(w http.ResponseWriter, r *http.Request) {
 		// A failing model must not lose the existing headline.
 		s.record(AuditEntry{SessionID: unit.SessionID, UnitID: unit.ID,
 			Action: "reanalyse", Detail: "failed: " + err.Error()})
-		http.Redirect(w, r, "/#unit-"+unit.ID, http.StatusSeeOther)
+		http.Redirect(w, r, backTo(r, "#unit-"+unit.ID), http.StatusSeeOther)
 		return
 	}
 
@@ -1199,7 +1242,7 @@ func (s *Server) handleReanalyse(w http.ResponseWriter, r *http.Request) {
 		Action: "reanalyse", Detail: model})
 	s.broadcast("headline")
 
-	http.Redirect(w, r, "/#unit-"+unit.ID, http.StatusSeeOther)
+	http.Redirect(w, r, backTo(r, "#unit-"+unit.ID), http.StatusSeeOther)
 }
 
 // record appends to the audit log. A log that cannot be written must not break
@@ -1436,6 +1479,7 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 		for _, u := range g.Units {
 			v := viewByID[u.ID]
 			v.Meaning = narrative.Meanings[usecase.FileKey(u)]
+			v.Highlights = narrative.Highlights[usecase.FileKey(u)]
 			compact, wasCompacted := usecase.CompactDiff(sess.Diffs[u.ID], cockpitDiffLines)
 			if wasCompacted {
 				v.Diff = splitDiff(compact.Text)
@@ -1720,6 +1764,7 @@ func (s *Server) viewIn(sess Session, u domain.Unit) unitView {
 	}
 
 	return unitView{
+		Name:       baseNames(u.Files),
 		Edits:      h.Count,
 		LastEdited: clockOrDash(h.Last),
 		FirstEdit:  clockOrDash(h.First),
@@ -1737,6 +1782,15 @@ func (s *Server) viewIn(sess Session, u domain.Unit) unitView {
 		Notes:      notes,
 		Model:      s.models[u.ID],
 	}
+}
+
+// baseNames is a unit's files without their directories.
+func baseNames(files []string) string {
+	names := make([]string, 0, len(files))
+	for _, f := range files {
+		names = append(names, filepath.Base(filepath.ToSlash(f)))
+	}
+	return strings.Join(names, ", ")
 }
 
 // splitDiff classifies each diff line so the template can style it without logic.

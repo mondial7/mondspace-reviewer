@@ -245,28 +245,65 @@ func FileKey(u domain.Unit) string {
 //
 // Unlike DescribeGroups this is never run in bulk: it is one file, asked for
 // deliberately, so there is no budget to bound — only the reviewer's patience.
-func DescribeFile(ctx context.Context, n Narrator, sess domain.Session, u domain.Unit, d domain.Diff) (string, error) {
+func DescribeFile(ctx context.Context, n Narrator, sess domain.Session, u domain.Unit, d domain.Diff) (string, []string, error) {
 	if n == nil {
-		return "", fmt.Errorf("no summarizer available")
+		return "", nil, fmt.Errorf("no summarizer available")
 	}
 
-	reply, err := ask(ctx, n, filePrompt(sess, u, d), meaningSchema())
+	reply, err := ask(ctx, n, filePrompt(sess, u, d), fileMeaningSchema())
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 
 	var m struct {
-		Meaning string `json:"meaning"`
+		Meaning  string   `json:"meaning"`
+		KeyLines []string `json:"key_lines"`
 	}
 	if start, end := strings.Index(reply, "{"), strings.LastIndex(reply, "}"); start >= 0 && end > start {
 		_ = json.Unmarshal([]byte(reply[start:end+1]), &m)
 	}
 	text := Brief(m.Meaning, meaningChars)
 	if text == "" {
-		return "", fmt.Errorf("the model did not describe this file")
+		return "", nil, fmt.Errorf("the model did not describe this file")
 	}
-	return text, nil
+
+	// A model that answered only the first half has still answered something
+	// worth keeping, so missing lines are not a failure.
+	lines := make([]string, 0, maxKeyLines)
+	for _, l := range m.KeyLines {
+		if l = strings.TrimSpace(l); l == "" {
+			continue
+		}
+		lines = append(lines, Brief(l, keyLineChars))
+		if len(lines) == maxKeyLines {
+			break
+		}
+	}
+	return text, lines, nil
 }
+
+// fileMeaningSchema asks for the description and the lines worth reading in one
+// call, so the two cannot disagree about what the change was.
+func fileMeaningSchema() port.JSONSchema {
+	return port.JSONSchema{
+		Name: "file_meaning",
+		Schema: object(map[string]any{
+			"meaning": map[string]any{"type": "string", "maxLength": meaningChars},
+			"key_lines": map[string]any{
+				"type":     "array",
+				"maxItems": maxKeyLines,
+				"items":    map[string]any{"type": "string", "maxLength": keyLineChars},
+			},
+		}, "meaning", "key_lines"),
+	}
+}
+
+const (
+	// maxKeyLines is how many lines may be called out. A highlight covering half
+	// the diff is not a highlight.
+	maxKeyLines  = 3
+	keyLineChars = 120
+)
 
 // filePrompt shows the model one file and a bounded slice of what changed in it.
 func filePrompt(sess domain.Session, u domain.Unit, d domain.Diff) string {
@@ -282,9 +319,15 @@ func filePrompt(sess domain.Session, u domain.Unit, d domain.Diff) string {
 		b.WriteString("\nWhat changed:\n" + compact.Text + "\n")
 	}
 	b.WriteString(`
-In one sentence of at most 160 characters, say what this change is FOR — the
-behaviour or intent, not the file name. JSON only:
-{"meaning":".."}`)
+Answer two things about this change. JSON only:
+
+  meaning   — one sentence of at most 160 characters saying what the change is
+              FOR: the behaviour or intent, not the file name.
+  key_lines — the 1 to 3 lines from the diff above a reviewer should actually
+              look at, copied verbatim. Choose the lines that carry the change
+              you just described, not imports or boilerplate.
+
+{"meaning":"..","key_lines":[".."]}`)
 	return b.String()
 }
 

@@ -205,7 +205,7 @@ func TestReanalyseReplacesHeadlineAndRecordsModel(t *testing.T) {
 func TestAuditLogRecordsInteractions(t *testing.T) {
 	audit := &recordingAudit{}
 	h := web.NewServer(testSession(), nil).WithAudit(audit).WithAsk(
-		func(context.Context, string, []web.Exchange) (string, error) { return "an answer", nil })
+		func(context.Context, string, string, []web.Exchange) (string, error) { return "an answer", nil })
 
 	post := func(path, body string) {
 		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
@@ -394,7 +394,7 @@ func TestRecordMakesAModelCallVisibleAndLive(t *testing.T) {
 func TestAskKeepsConversationHistory(t *testing.T) {
 	var asked []string
 	h := web.NewServer(testSession(), nil).WithAsk(
-		func(_ context.Context, question string, history []web.Exchange) (string, error) {
+		func(_ context.Context, _, question string, history []web.Exchange) (string, error) {
 			asked = append(asked, question)
 			// The assistant sees what was already discussed (issue #12).
 			return fmt.Sprintf("answer %d (history %d)", len(asked), len(history)), nil
@@ -428,7 +428,7 @@ func TestAskKeepsConversationHistory(t *testing.T) {
 
 func TestAskSurfacesErrorWithoutCrashing(t *testing.T) {
 	h := web.NewServer(testSession(), nil).WithAsk(
-		func(context.Context, string, []web.Exchange) (string, error) {
+		func(context.Context, string, string, []web.Exchange) (string, error) {
 			return "", errors.New("summarizer offline")
 		})
 
@@ -1200,5 +1200,82 @@ func TestARejectedConfigurationSaysWhy(t *testing.T) {
 func TestSettingsAreNotOfferedWithoutSomewhereToPutThem(t *testing.T) {
 	if strings.Contains(get(t, web.NewServer(testSession(), nil), "/status").Body.String(), `action="/agent"`) {
 		t.Error("without a configure hook there is nothing behind the form")
+	}
+}
+
+func TestActingOnASwitchedTargetReachesTheRightReview(t *testing.T) {
+	// Every action posts to a path with a unit or group id in it. Without the
+	// target alongside, the handler looked the id up in the review the server
+	// started with — so describing, annotating and re-analysing all failed the
+	// moment the reviewer switched to something else.
+	other := web.Session{
+		ID: "other", Prompt: "port the parser", Repo: "api",
+		Units: []domain.Unit{{ID: "other-f001", SessionID: "other",
+			Files: []string{"parser/lex.go"}, Headline: domain.Headline{Text: "rewrote the lexer"}}},
+		Diffs: map[string]domain.Diff{"other-f001": {Text: "@@ -1 +1 @@\n+lex\n"}},
+	}
+	notes := &recordingNotes{}
+	h := web.NewServer(testSession(), notes).
+		WithLoader(func(context.Context, string) (web.Session, error) { return other, nil }).
+		WithDescribe(func(context.Context, string, []string) (string, error) { return "meaning", nil }).
+		WithDescribeFile(func(context.Context, string, string) (string, []string, error) { return "meaning", nil, nil })
+
+	// Every action form on that page must carry the target it is acting on.
+	body := get(t, h, "/?target=other").Body.String()
+	for _, want := range []string{
+		`/units/other-f001/notes?target=other`,
+		`/units/other-f001/describe?target=other`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("an action form is missing its target: want %q", want)
+		}
+	}
+
+	// And annotating one really does land against that review.
+	req := httptest.NewRequest(http.MethodPost,
+		"/units/other-f001/notes?target=other", strings.NewReader("kind=ok&text=fine"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("annotating a switched target = %d, want 303", rec.Code)
+	}
+	if len(notes.notes) != 1 || notes.notes[0].UnitID != "other-f001" {
+		t.Errorf("stored %+v, want a note on the switched review's unit", notes.notes)
+	}
+}
+
+func TestDescribingAGroupOnASwitchedTarget(t *testing.T) {
+	// The reported symptom: re-describe answered "no such group in this review"
+	// because the group id came from one review and was looked up in another.
+	other := web.Session{
+		ID: "other", Repo: "api",
+		Units: []domain.Unit{{ID: "other-f001", SessionID: "other", Files: []string{"parser/lex.go"}}},
+		Diffs: map[string]domain.Diff{"other-f001": {Text: "@@\n+lex\n"}},
+	}
+	var asked []string
+	h := web.NewServer(testSession(), nil).
+		WithLoader(func(context.Context, string) (web.Session, error) { return other, nil }).
+		WithDescribe(func(_ context.Context, _ string, units []string) (string, error) {
+			asked = units
+			return "what it is for", nil
+		})
+
+	body := get(t, h, "/?target=other").Body.String()
+	group := regexp.MustCompile(`id="group-([0-9a-f]+)"`).FindStringSubmatch(body)
+	if group == nil {
+		t.Fatalf("no group rendered:\n%s", body[:400])
+	}
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost,
+		"/groups/"+group[1]+"/describe?target=other", nil))
+
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("describe on a switched target = %d, want 303 (not 'no such group')", rec.Code)
+	}
+	if len(asked) != 1 || asked[0] != "other-f001" {
+		t.Errorf("asked to describe %v, want the switched review's unit", asked)
 	}
 }

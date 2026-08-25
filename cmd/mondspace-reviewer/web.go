@@ -230,16 +230,26 @@ func storeRelativeTo(repo, out string) string {
 // webAskFunc adapts the reviewer-assistant to the bounded-context ask usecase,
 // threading the conversation so far into each question (issue #12).
 func webAskFunc(sess domain.Session, units []domain.Unit, diffs map[string]domain.Diff, snap port.Snapshotter, sum port.Summarizer) web.AskFunc {
-	return func(ctx context.Context, question string, history []web.Exchange) (string, error) {
+	return func(ctx context.Context, targetID, question string, history []web.Exchange) (string, error) {
+		askUnits, askDiffs := units, diffs
+		// Answer about whatever is being read. Closing over the review the server
+		// started with meant a question asked while looking at one target was
+		// answered from another.
+		if entry, known := targetIndex[targetID]; known && targetID != sess.ID {
+			if u, d, err := unitsFor(ctx, entry); err == nil {
+				askUnits, askDiffs = u, d
+			}
+		}
+
 		askCtx := usecase.BuildAskContext(domain.AskSession, sess, domain.Unit{}, domain.Diff{})
 		// The units the page shows are rebuilt from git, not the ones the store
 		// happens to hold — a retroactive review has none in the store at all, so
 		// asking about it was asking about nothing.
-		askCtx.Units = units
+		askCtx.Units = askUnits
 		// Units and notes alone are metadata; asked what changed, the assistant
 		// correctly answered that it could not say. The digest is what makes a
 		// session-scoped question answerable.
-		askCtx = usecase.WithChanges(askCtx, units, diffs, askDigestLines)
+		askCtx = usecase.WithChanges(askCtx, askUnits, askDiffs, askDigestLines)
 		return sum.Answer(ctx, withHistory(question, history), askCtx)
 	}
 }
@@ -1108,37 +1118,37 @@ func anyEntryFor(name string) (targetEntry, bool) {
 // folder's summary is where a reviewer starts; this is the next question, and
 // it is asked deliberately rather than run in bulk.
 func describeOneFile(sum port.Summarizer) web.DescribeFileFunc {
-	return func(ctx context.Context, targetID, unitID string) (string, error) {
+	return func(ctx context.Context, targetID, unitID string) (string, []string, error) {
 		entry, known := targetIndex[targetID]
 		if !known {
-			return "", fmt.Errorf("nothing here to review under %q", targetID)
+			return "", nil, fmt.Errorf("nothing here to review under %q", targetID)
 		}
 		ctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 		defer cancel()
 
 		units, diffs, err := unitsFor(ctx, entry)
 		if err != nil {
-			return "", err
+			return "", nil, err
 		}
 		for _, u := range units {
 			if u.ID != unitID {
 				continue
 			}
-			meaning, err := usecase.DescribeFile(ctx, sum,
+			meaning, lines, err := usecase.DescribeFile(ctx, sum,
 				domain.Session{Prompt: entry.target.Title}, u, diffs[u.ID])
 			if err != nil {
-				return "", err
+				return "", nil, err
 			}
-			saveMeaning(entry.out, targetID, usecase.FileKey(u), meaning)
-			return meaning, nil
+			saveMeaning(entry.out, targetID, usecase.FileKey(u), meaning, lines)
+			return meaning, lines, nil
 		}
-		return "", fmt.Errorf("no such file in this review")
+		return "", nil, fmt.Errorf("no such file in this review")
 	}
 }
 
 // saveMeaning stores one description with the target's story, so it is written
 // once and survives a restart.
-func saveMeaning(out, targetID, key, meaning string) {
+func saveMeaning(out, targetID, key, meaning string, lines []string) {
 	store := jsonl.New(out)
 	stored, err := store.LoadNarrative(targetID)
 	if err != nil {
@@ -1148,6 +1158,12 @@ func saveMeaning(out, targetID, key, meaning string) {
 		stored.Meanings = map[string]string{}
 	}
 	stored.Meanings[key] = meaning
+	if len(lines) > 0 {
+		if stored.Highlights == nil {
+			stored.Highlights = map[string][]string{}
+		}
+		stored.Highlights[key] = lines
+	}
 	stored.SessionID = targetID
 	_ = store.SaveNarrative(stored)
 }
@@ -1220,7 +1236,7 @@ func describeAnyTarget(sum port.Summarizer) web.DescribeFunc {
 		described, failed, why := usecase.DescribeGroupsReporting(ctx, sum,
 			domain.Session{Prompt: entry.target.Title}, groups, nil)
 		for id, meaning := range described {
-			saveMeaning(entry.out, targetID, id, meaning)
+			saveMeaning(entry.out, targetID, id, meaning, nil)
 			return meaning, nil
 		}
 		if failed > 0 && why != nil {

@@ -19,6 +19,10 @@ type Narrative struct {
 	// Meanings is what each group of changes is for, keyed by group id. Written
 	// by a model and therefore inferred, like the prose.
 	Meanings map[string]string `json:"meanings,omitempty"`
+	// Highlights are the lines a model called out as the ones worth reading, by
+	// the same key as Meanings. One to three per file: a highlight that covers
+	// half the diff is not a highlight.
+	Highlights map[string][]string `json:"highlights,omitempty"`
 	// WrittenAt is when a model last read this review. Stored with the story, so
 	// switching between targets answers "has this been read, and how long ago"
 	// without another model call.

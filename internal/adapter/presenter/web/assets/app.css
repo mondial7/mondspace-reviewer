@@ -1129,3 +1129,18 @@
 }
 .agentform__note { font-size: 0.68rem; opacity: 0.75; }
 .agentform .addrepo__btn { align-self: flex-start; margin-top: 0.3rem; }
+
+/* The lines the model called out, in the folded row: the reason to open it. */
+.keylines {
+  list-style: none; margin: 0.3rem 0 0; padding: 0;
+  flex-basis: 100%; min-width: 0;
+}
+.keylines__line {
+  padding: 0.1rem 0; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.keylines__line code {
+  font-size: 0.76rem; color: var(--fg-dim);
+  background: var(--bg); border: 1px solid var(--rule); border-radius: 3px;
+  padding: 0.05rem 0.35rem;
+}

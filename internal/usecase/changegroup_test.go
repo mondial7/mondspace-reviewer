@@ -315,7 +315,7 @@ func TestDescribeFileExplainsOneFileOnItsOwn(t *testing.T) {
 	unit := domain.Unit{ID: "u1", Files: []string{"auth/token.go"}}
 	diff := domain.Diff{Text: "@@\n+type TokenValidator interface{}\n"}
 
-	got, err := usecase.DescribeFile(context.Background(), d,
+	got, _, err := usecase.DescribeFile(context.Background(), d,
 		domain.Session{Prompt: "add auth"}, unit, diff)
 	if err != nil {
 		t.Fatalf("DescribeFile: %v", err)
@@ -337,7 +337,7 @@ func TestDescribeFileReportsWhenItCannot(t *testing.T) {
 	// Silence would be indistinguishable from "this file means nothing".
 	d := &describer{err: errors.New("summarizer offline")}
 
-	_, err := usecase.DescribeFile(context.Background(), d, domain.Session{},
+	_, _, err := usecase.DescribeFile(context.Background(), d, domain.Session{},
 		domain.Unit{ID: "u1", Files: []string{"a.go"}}, domain.Diff{})
 
 	if err == nil {
@@ -361,5 +361,58 @@ func TestFileKeyIsStableAndDistinctFromAGroup(t *testing.T) {
 	}
 	if a == "" {
 		t.Error("a file needs a key")
+	}
+}
+
+func TestDescribeFileAlsoCallsOutTheLinesWorthReading(t *testing.T) {
+	// The description says what the change is for; these say where to look. They
+	// come from the same call so they cannot disagree with it.
+	d := &describer{reply: `{"meaning":"Adds a validator interface so the JWT library can be swapped.",
+		"key_lines":["+type TokenValidator interface{}","+func Validate(tok string) error {"]}`}
+	unit := domain.Unit{ID: "u1", Files: []string{"auth/token.go"}}
+	diff := domain.Diff{Text: "@@\n+type TokenValidator interface{}\n+func Validate(tok string) error {\n"}
+
+	meaning, lines, err := usecase.DescribeFile(context.Background(), d,
+		domain.Session{Prompt: "add auth"}, unit, diff)
+	if err != nil {
+		t.Fatalf("DescribeFile: %v", err)
+	}
+	if meaning == "" {
+		t.Error("the description is still the point")
+	}
+	if len(lines) != 2 || lines[0] != "+type TokenValidator interface{}" {
+		t.Errorf("key lines = %v, want the two the model chose", lines)
+	}
+}
+
+func TestKeyLinesAreCappedAtThree(t *testing.T) {
+	// A highlight that covers half the diff is not a highlight.
+	d := &describer{reply: `{"meaning":"m","key_lines":["a","b","c","d","e"]}`}
+
+	_, lines, err := usecase.DescribeFile(context.Background(), d, domain.Session{},
+		domain.Unit{ID: "u", Files: []string{"a.go"}}, domain.Diff{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(lines) != 3 {
+		t.Errorf("got %d key lines, want at most 3", len(lines))
+	}
+}
+
+func TestADescriptionWithoutKeyLinesIsStillADescription(t *testing.T) {
+	// A model that answers the first half of the question has still answered
+	// something useful, and losing it would be worse.
+	d := &describer{reply: `{"meaning":"Adds retry to the pool."}`}
+
+	meaning, lines, err := usecase.DescribeFile(context.Background(), d, domain.Session{},
+		domain.Unit{ID: "u", Files: []string{"a.go"}}, domain.Diff{})
+	if err != nil {
+		t.Fatalf("DescribeFile: %v", err)
+	}
+	if meaning != "Adds retry to the pool." {
+		t.Errorf("meaning = %q", meaning)
+	}
+	if len(lines) != 0 {
+		t.Errorf("key lines = %v, want none", lines)
 	}
 }

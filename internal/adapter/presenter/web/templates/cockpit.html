@@ -197,7 +197,7 @@
 
         <!-- The form takes over the column while a question is being written,
              and says plainly that it is working while the model thinks. -->
-        <form class="ask__form" method="post" action="/ask" id="ask-form">
+        <form class="ask__form" method="post" action="/ask?target={{ .Session.ID }}" id="ask-form">
           <textarea class="ask__input" name="question" rows="2" id="ask-input"
                     placeholder="ask about this session — answered only from the log, diffs and your notes"></textarea>
           <div class="ask__actions">
@@ -253,13 +253,11 @@
         <!-- What this change is for. Model-written, so labelled inferred; the
              files and churn above it come from git. -->
         <p class="group__meaning{{ if not .Meaning }} group__meaning--none{{ end }}">
-          {{ if .Meaning }}
-          <span class="why why--inferred">inferred</span>{{ .Meaning }}
-          {{ else }}not yet described{{ end }}
+          {{ if .Meaning }}{{ .Meaning }}{{ else }}not yet described{{ end }}
           {{ if $.CanDescribe }}
           <!-- The automatic pass is bounded, so most groups in a large session
                arrive undescribed. This is how a reviewer asks for one. -->
-          <form class="describe" method="post" action="/groups/{{ .ID }}/describe">
+          <form class="describe" method="post" action="/groups/{{ .ID }}/describe?target={{ $.Session.ID }}">
             <button class="describe__btn" type="submit">{{ if .Meaning }}re-describe{{ else }}describe{{ end }}</button>
           </form>
           {{ end }}
@@ -271,7 +269,7 @@
         <details class="post" id="unit-{{ .ID }}" data-file="{{ .File }}" data-added="{{ .Added }}"
                  data-removed="{{ .Removed }}" data-flags="{{ len .Flags }}">
           <summary class="post__head">
-            <span class="post__file">{{ .File }}</span>
+            <span class="post__file" title="{{ .File }}">{{ .Name }}</span>
             <span class="post__stats">
               <span class="unit__stat unit__stat--add">+{{ .Added }}</span>
               <span class="unit__stat unit__stat--del">-{{ .Removed }}</span>
@@ -283,6 +281,13 @@
             {{ if .Edits }}
             <span class="post__when">{{ .Edits }} edit(s) · last {{ .LastEdited }}</span>
             {{ end }}
+            {{ with .Highlights }}
+            <!-- The lines the model called out. Shown folded, because they are
+                 the reason to open it — or not to. -->
+            <ol class="keylines">
+              {{ range . }}<li class="keylines__line"><code>{{ . }}</code></li>{{ end }}
+            </ol>
+            {{ end }}
           </summary>
 
           <!-- A headline is shown only when a model wrote it. The mechanical
@@ -290,10 +295,9 @@
           <!-- What this one file's change is for. The folder's summary is where
                a reviewer starts; this is the next question. -->
           <p class="post__meaning{{ if not .Meaning }} group__meaning--none{{ end }}">
-            {{ if .Meaning }}<span class="why why--inferred">inferred</span>{{ .Meaning }}
-            {{ else }}not yet described{{ end }}
+            {{ if .Meaning }}{{ .Meaning }}{{ else }}not yet described{{ end }}
             {{ if $.CanDescribeFile }}
-            <form class="describe" method="post" action="/units/{{ .ID }}/describe">
+            <form class="describe" method="post" action="/units/{{ .ID }}/describe?target={{ $.Session.ID }}">
               <button class="describe__btn" type="submit">{{ if .Meaning }}re-describe{{ else }}describe this file{{ end }}</button>
             </form>
             {{ end }}
@@ -327,7 +331,7 @@
 
           <!-- Three rows: write the note, choose what kind it is, then the
                tools that act on the file itself. -->
-          <form class="annotate" method="post" action="/units/{{ .ID }}/notes">
+          <form class="annotate" method="post" action="/units/{{ .ID }}/notes?target={{ $.Session.ID }}">
             <textarea class="annotate__text" name="text" rows="2"
                       placeholder="optional note…" autocomplete="off"></textarea>
             <div class="annotate__kinds">
@@ -341,11 +345,11 @@
 
           <div class="post__tools">
             <button class="post__open" type="button"
-                    data-versions="/units/{{ .ID }}/versions" data-file="{{ .File }}">
+                    data-versions="/units/{{ .ID }}/versions?target={{ $.Session.ID }}" data-file="{{ .File }}">
               open full history
             </button>
             {{ if $.HasReanal }}
-            <form class="reanalyse" method="post" action="/units/{{ .ID }}/reanalyse">
+            <form class="reanalyse" method="post" action="/units/{{ .ID }}/reanalyse?target={{ $.Session.ID }}">
               <button class="reanalyse__btn" type="submit">re-analyse</button>
             </form>
             {{ end }}
