@@ -33,7 +33,7 @@ func BuildTargets(repo string, commits []domain.Commit, tags []domain.Tag, sessi
 			head = domain.SnapshotRef{Commit: commits[0].Hash, Label: "HEAD"}
 		}
 		targets = append(targets, withID(repo, domain.Target{
-			Repo: repo, Kind: domain.TargetWorktree,
+			Repo: repo, Kind: domain.TargetWorktree, Ref: "worktree",
 			Title: "Uncommitted work", Subtitle: "the working tree against HEAD",
 			From: head,
 		}))
@@ -47,7 +47,7 @@ func BuildTargets(repo string, commits []domain.Commit, tags []domain.Tag, sessi
 	}
 	for _, c := range commits {
 		targets = append(targets, withID(repo, domain.Target{
-			Repo: repo, Kind: domain.TargetCommit,
+			Repo: repo, Kind: domain.TargetCommit, Ref: shortHash(c.Hash),
 			Title: c.Subject, Subtitle: shortHash(c.Hash) + " · " + c.Author,
 			From: parentRef(c), To: domain.SnapshotRef{Commit: c.Hash, Label: shortHash(c.Hash)},
 			TS: c.TS, Commits: 1,
@@ -55,6 +55,9 @@ func BuildTargets(repo string, commits []domain.Commit, tags []domain.Tag, sessi
 	}
 	for _, s := range sessions {
 		s.Repo = repo
+		if s.Ref == "" {
+			s.Ref = s.ID
+		}
 		if s.ID == "" {
 			s = withID(repo, s)
 		}
@@ -84,7 +87,7 @@ func tagTargets(repo string, tags []domain.Tag, commits []domain.Commit) []domai
 			from = domain.SnapshotRef{Commit: tags[i+1].Hash, Label: tags[i+1].Name}
 		}
 		out = append(out, withID(repo, domain.Target{
-			Repo: repo, Kind: domain.TargetTag,
+			Repo: repo, Kind: domain.TargetTag, Ref: tag.Name,
 			Title:    tag.Name,
 			Subtitle: "everything since " + from.Label,
 			From:     from,
@@ -135,7 +138,7 @@ func pullRequestTargets(repo string, commits []domain.Commit) []domain.Target {
 			continue
 		}
 		out = append(out, withID(repo, domain.Target{
-			Repo: repo, Kind: domain.TargetPR,
+			Repo: repo, Kind: domain.TargetPR, Ref: "#" + num,
 			Title:    "#" + num + " · " + stripPullRequestRef(s.newest.Subject),
 			Subtitle: fmt.Sprintf("%d commits", s.count),
 			From:     parentRef(s.oldest),

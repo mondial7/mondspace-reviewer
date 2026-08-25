@@ -708,3 +708,53 @@ func TestIsDirtyReportsUncommittedWork(t *testing.T) {
 		t.Error("an edited working tree is dirty")
 	}
 }
+
+func TestCommitsBetweenCountsWhatIsInARange(t *testing.T) {
+	// A tag target asks "what shipped since the previous tag". Asking for commits
+	// *since the tag's date* answers the opposite question — everything after it —
+	// which is how a release came to report zero commits.
+	dir := newRepo(t)
+	base := time.Now()
+	commitAt(t, dir, base.Add(-4*time.Hour), "a.go", "One")
+	gitCmd(t, dir, "tag", "v1.0.0")
+	commitAt(t, dir, base.Add(-3*time.Hour), "b.go", "Two")
+	commitAt(t, dir, base.Add(-2*time.Hour), "c.go", "Three")
+	gitCmd(t, dir, "tag", "v1.1.0")
+	commitAt(t, dir, base.Add(-time.Hour), "d.go", "After the release")
+
+	s := gitsnap.New(dir, "s")
+	from, _ := s.ResolveRef(context.Background(), "v1.0.0")
+	to, _ := s.ResolveRef(context.Background(), "v1.1.0")
+
+	got, err := s.CommitsBetween(context.Background(), from, to)
+	if err != nil {
+		t.Fatalf("CommitsBetween: %v", err)
+	}
+
+	if len(got) != 2 {
+		t.Fatalf("got %d commits, want the two between the tags: %+v", len(got), got)
+	}
+	if got[0].Subject != "Three" || got[1].Subject != "Two" {
+		t.Errorf("commits = %+v, want newest first and nothing from after the tag", got)
+	}
+}
+
+func TestCommitsBetweenHandlesAnOpenEnd(t *testing.T) {
+	// An empty far end means the working tree, so everything since `from` counts.
+	dir := newRepo(t)
+	base := time.Now()
+	commitAt(t, dir, base.Add(-2*time.Hour), "a.go", "One")
+	gitCmd(t, dir, "tag", "v1.0.0")
+	commitAt(t, dir, base.Add(-time.Hour), "b.go", "Two")
+
+	s := gitsnap.New(dir, "s")
+	from, _ := s.ResolveRef(context.Background(), "v1.0.0")
+
+	got, err := s.CommitsBetween(context.Background(), from, domain.SnapshotRef{})
+	if err != nil {
+		t.Fatalf("CommitsBetween: %v", err)
+	}
+	if len(got) != 1 || got[0].Subject != "Two" {
+		t.Errorf("got %+v, want everything since the tag", got)
+	}
+}

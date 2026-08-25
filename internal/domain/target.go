@@ -20,7 +20,11 @@ const (
 // one is what the engine always did — the net change per file between two
 // snapshots — so a target only has to supply those two refs.
 type Target struct {
-	ID       string
+	ID string
+	// Ref is how a person names this point in history — a tag name, a short
+	// commit hash, "#42". It is what the picker submits and what appears in the
+	// URL, so a link reads /?target=v5.1.0 rather than a hex id.
+	Ref      string
 	Repo     string
 	Kind     TargetKind
 	Title    string

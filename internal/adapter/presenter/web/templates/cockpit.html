@@ -44,45 +44,39 @@
            requests, the working tree — and a recorded run is one kind among
            them rather than the index (ADR 0017). -->
       {{ if .Targets }}
-      <!-- Two steps, because they are two questions: which project, then what
-           in it. One combined list made the second unreadable past a few
-           repositories. -->
-      <div class="picker">
-        {{ if gt (len .Repos) 1 }}
-        <select class="switcher__select picker__repo" id="repo-filter"
-                aria-label="Filter by repository">
-          <option value="">all repositories</option>
-          {{ range .Repos }}<option value="{{ .Name }}">{{ .Name }}</option>{{ end }}
-        </select>
+      <!-- One input, one vocabulary, searchable. Choosing what to review and
+           choosing the two ends of a comparison are the same question — "which
+           point in history" — and three different widgets made that unclear.
+           A native datalist, so it searches without any JavaScript. -->
+      <datalist id="refs">
+        {{ range .Targets }}
+        <option value="{{ if .Ref }}{{ .Ref }}{{ else }}{{ .ID }}{{ end }}"
+                label="{{ .Kind }} · {{ .Title }} — {{ .Repo }}"></option>
         {{ end }}
+      </datalist>
 
-        <form class="switcher" method="get" action="/">
-          <select class="switcher__select" name="target" id="target-select"
-                  onchange="this.form.submit()" aria-label="Choose what to review">
-            {{ range .Targets }}
-            <option value="{{ .ID }}" data-repo="{{ .Repo }}" data-kind="{{ .Kind }}"
-                    {{ if eq .ID $.Session.ID }}selected{{ end }}>
-              {{ .Kind }} · {{ .Title }} — {{ .Repo }}
-            </option>
-            {{ end }}
-          </select>
-          <noscript><button class="switcher__go" type="submit">open</button></noscript>
+      <form class="picker" method="get" action="/">
+        <label class="agentform__label" for="target-input">reviewing</label>
+        <input class="switcher__select" id="target-input" name="target" list="refs"
+               value="{{ if .Session.Target.Ref }}{{ .Session.Target.Ref }}{{ else }}{{ .Session.ID }}{{ end }}"
+               autocomplete="off" spellcheck="false"
+               aria-label="Choose what to review">
+        <button class="switcher__go" type="submit">open</button>
+      </form>
+
+      {{ if .CanCompare }}
+      <details class="picker__compare">
+        <summary class="post__moresummary">compare two points</summary>
+        <form class="picker__compareform" method="get" action="/compare">
+          <input type="hidden" name="repo" value="{{ .Session.Repo }}">
+          <input class="switcher__select" name="from" list="refs" placeholder="from"
+                 autocomplete="off" spellcheck="false" aria-label="Compare from">
+          <input class="switcher__select" name="to" list="refs" placeholder="to (default: working tree)"
+                 autocomplete="off" spellcheck="false" aria-label="Compare to">
+          <button class="switcher__go" type="submit">compare</button>
         </form>
-
-        {{ if .CanCompare }}
-        <!-- Any two points in history, compared. The same engine as every other
-             target; the refs just came from here. -->
-        <details class="picker__compare">
-          <summary class="post__moresummary">compare two points</summary>
-          <form class="picker__compareform" method="get" action="/compare">
-            <input type="hidden" name="repo" value="{{ .Session.Repo }}">
-            <input class="addrepo__input" name="from" placeholder="from (tag, branch or commit)" autocomplete="off">
-            <input class="addrepo__input" name="to" placeholder="to (default: working tree)" autocomplete="off">
-            <button class="addrepo__btn" type="submit">compare</button>
-          </form>
-        </details>
-        {{ end }}
-      </div>
+      </details>
+      {{ end }}
       {{ end }}
 
       <section class="brief">
@@ -111,22 +105,18 @@
       </section>
 
       <section class="cockpit__stats">
-        <div class="stat"><span class="stat__value">{{ .Stats.Open }}</span><span class="stat__label">open</span></div>
-        <div class="stat"><span class="stat__value">{{ .Stats.Files }}</span><span class="stat__label">files</span></div>
-        <div class="stat">
+        {{ range .Stats.Tiles }}
+        <div class="stat"{{ with .Hint }} title="{{ . }}"{{ end }}>
+          {{ if .IsLines }}
           <span class="stat__value stat__value--lines">
-            <span class="unit__stat--add">+{{ .Stats.Added }}</span>
-            <span class="unit__stat--del">-{{ .Stats.Removed }}</span>
+            <span class="unit__stat--add">+{{ .Added }}</span>
+            <span class="unit__stat--del">-{{ .Removed }}</span>
           </span>
-          <span class="stat__label">lines</span>
+          {{ else }}
+          <span class="stat__value">{{ .Value }}</span>
+          {{ end }}
+          <span class="stat__label">{{ .Label }}</span>
         </div>
-        <div class="stat"><span class="stat__value">{{ .Stats.Commits }}</span><span class="stat__label">commits</span></div>
-        <div class="stat">
-          <span class="stat__value">{{ .Stats.PullRequests }}</span>
-          <span class="stat__label" title="Counted from commit subjects — msr talks to no forge">PRs</span>
-        </div>
-        {{ with .Stats.Tokens }}
-        <div class="stat"><span class="stat__value">{{ . }}</span><span class="stat__label">tokens</span></div>
         {{ end }}
       </section>
     </aside>

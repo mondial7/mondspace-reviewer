@@ -757,23 +757,6 @@ func TestStatusPageSaysWhenTheModelIsOffline(t *testing.T) {
 	}
 }
 
-func TestCockpitShowsTokensWhenThereAreSome(t *testing.T) {
-	// "if we have them" — a session that has made no model call shows no token
-	// tile rather than a misleading zero.
-	quiet := get(t, web.NewServer(testSession(), nil), "/")
-	if strings.Contains(quiet.Body.String(), "tokens") {
-		t.Error("with no model calls there is no token stat to show")
-	}
-
-	h := web.NewServer(testSession(), nil).
-		WithAgent(web.AgentStatus{Usage: port.TokenUsage{Calls: 3, Prompt: 1200, Completion: 800}})
-
-	body := get(t, h, "/").Body.String()
-	if !strings.Contains(body, "tokens") || !strings.Contains(body, "2,000") {
-		t.Errorf("the cockpit should total the tokens spent:\n%s", body)
-	}
-}
-
 func TestSwitchingSessionLoadsItOnDemand(t *testing.T) {
 	// A workspace may span several repositories and many sessions. Materialising
 	// every one at start-up would mean a git diff per file per session, so they
@@ -1332,5 +1315,142 @@ func TestReasoningShareIsShownEvenWhenNotSkipping(t *testing.T) {
 
 	if !strings.Contains(get(t, h, "/status").Body.String(), "25%") {
 		t.Error("the reasoning share should be shown regardless of the setting")
+	}
+}
+
+func TestStatsSuitWhatIsBeingReviewed(t *testing.T) {
+	// A single commit has one commit in it by definition, and no pull request.
+	// Showing "1 commit · 0 PRs" is answering questions nobody asked, and it
+	// crowds out the ones they did.
+	sess := testSession()
+	sess.Target = domain.Target{Kind: domain.TargetCommit, Subtitle: "a1b2c3d4 · Marco"}
+	sess.Stats = domain.SessionStats{Files: 2, Added: 12, Removed: 4, Commits: 1}
+	h := web.NewServer(sess, nil)
+
+	body := get(t, h, "/").Body.String()
+
+	for _, unwanted := range []string{`stat__label">commits`, `stat__label">PRs`} {
+		if strings.Contains(body, unwanted) {
+			t.Errorf("a single commit should not show %q", unwanted)
+		}
+	}
+	for _, want := range []string{`stat__label">files`, `stat__label">lines`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("a commit should still show %q", want)
+		}
+	}
+}
+
+func TestATagShowsWhatShippedInIt(t *testing.T) {
+	// "What went into this release" is the question a tag answers, so the commits
+	// and the pull requests are the point.
+	sess := testSession()
+	sess.Target = domain.Target{Kind: domain.TargetTag}
+	sess.Stats = domain.SessionStats{Files: 25, Added: 900, Removed: 120, Commits: 14, PullRequests: 3}
+	h := web.NewServer(sess, nil)
+
+	body := get(t, h, "/").Body.String()
+
+	for _, want := range []string{`stat__label">commits`, `stat__label">PRs`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("a tag should show %q", want)
+		}
+	}
+}
+
+func TestASessionShowsHowLongItRan(t *testing.T) {
+	sess := testSession()
+	sess.Target = domain.Target{Kind: domain.TargetSession}
+	sess.Stats = domain.SessionStats{Files: 3, Open: 90 * time.Minute, Commits: 2}
+	h := web.NewServer(sess, nil)
+
+	if !strings.Contains(get(t, h, "/").Body.String(), `stat__label">open`) {
+		t.Error("how long a run went on is the thing only a session has")
+	}
+}
+
+func TestTheWorkingTreeDoesNotPretendToHaveCommits(t *testing.T) {
+	sess := testSession()
+	sess.Target = domain.Target{Kind: domain.TargetWorktree}
+	sess.Stats = domain.SessionStats{Files: 6, Added: 40, Removed: 3}
+	h := web.NewServer(sess, nil)
+
+	body := get(t, h, "/").Body.String()
+	if strings.Contains(body, `stat__label">commits`) {
+		t.Error("uncommitted work has no commits, which is the whole point of it")
+	}
+	if !strings.Contains(body, "uncommitted") {
+		t.Errorf("it should say what it is:\n%s", body)
+	}
+}
+
+func TestTokensAreNotShownBesideReviewFacts(t *testing.T) {
+	// The token count is what the assistant has spent since msr started, across
+	// every review. Sitting it beside this review's file and line counts read as
+	// though it belonged to this review. It lives on /status, explained.
+	sess := testSession()
+	sess.Target = domain.Target{Kind: domain.TargetCommit}
+	sess.Stats = domain.SessionStats{Files: 1}
+	h := web.NewServer(sess, nil).
+		WithAgent(web.AgentStatus{Usage: port.TokenUsage{Calls: 3, Prompt: 1200, Completion: 800}})
+
+	if strings.Contains(get(t, h, "/").Body.String(), `stat__label">tokens`) {
+		t.Error("a process-wide token total does not belong among this review's facts")
+	}
+}
+
+func TestATargetCanBeOpenedByItsRefNotOnlyItsID(t *testing.T) {
+	// The picker and the two comparison fields become one kind of input, so they
+	// need one vocabulary. A tag is "v5.1.0" to a person; a hex id is not.
+	other := web.Session{ID: "abc123", Prompt: "v5.1.0", Repo: "api",
+		Units: []domain.Unit{{ID: "abc123-f001", Files: []string{"a.go"}}}}
+	var asked []string
+	h := web.NewServer(testSession(), nil).
+		WithTargets([]web.TargetSummary{
+			{ID: "abc123", Ref: "v5.1.0", Kind: domain.TargetTag, Title: "v5.1.0", Repo: "api"},
+		}).
+		WithLoader(func(_ context.Context, id string) (web.Session, error) {
+			asked = append(asked, id)
+			if id == "abc123" {
+				return other, nil
+			}
+			return web.Session{}, errors.New("no such target")
+		})
+
+	body := get(t, h, "/?target=v5.1.0").Body.String()
+
+	if !strings.Contains(body, "a.go") {
+		t.Errorf("a target should open by its ref:\n%s", body[:400])
+	}
+	// It is resolved to the id before the loader is asked, so the loader keeps
+	// one way of being addressed.
+	if len(asked) == 0 || asked[0] != "abc123" {
+		t.Errorf("loader was asked for %v, want the resolved id", asked)
+	}
+}
+
+func TestAllThreeInputsShareOneList(t *testing.T) {
+	// One element, one vocabulary, searchable. Three different widgets for three
+	// versions of "which point in history" was the confusing part.
+	h := web.NewServer(testSession(), nil).
+		WithTargets([]web.TargetSummary{
+			{ID: "t1", Ref: "v5.1.0", Kind: domain.TargetTag, Title: "v5.1.0", Repo: "api"},
+			{ID: "t2", Ref: "a1b2c3d4", Kind: domain.TargetCommit, Title: "Fix the retry", Repo: "api"},
+		}).
+		WithCompare(func(context.Context, string, string, string) (string, error) { return "x", nil })
+
+	body := get(t, h, "/").Body.String()
+
+	if n := strings.Count(body, `list="refs"`); n != 3 {
+		t.Errorf("found %d inputs bound to the shared list, want 3 (target, from, to)", n)
+	}
+	if !strings.Contains(body, `<datalist id="refs"`) {
+		t.Error("the shared list of points in history is missing")
+	}
+	// Every known point is offered, whichever field you are filling in.
+	for _, want := range []string{"v5.1.0", "a1b2c3d4"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the list is missing %q", want)
+		}
 	}
 }

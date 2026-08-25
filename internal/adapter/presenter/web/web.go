@@ -7,6 +7,7 @@
 package web
 
 import (
+	"bytes"
 	"context"
 	"embed"
 	"fmt"
@@ -57,7 +58,11 @@ type Session struct {
 // come from git — a commit, a tag, a pull request, the working tree — and a
 // recorded session is one kind among them rather than the index (ADR 0017).
 type TargetSummary struct {
-	ID       string
+	ID string
+	// Ref is how a person names this point in history — a tag name, a short
+	// commit hash, a session id. It is what the picker submits, so a URL reads
+	// /?target=v5.1.0 rather than a hex id nobody can recognise.
+	Ref      string
 	Repo     string
 	Kind     domain.TargetKind
 	Title    string
@@ -639,6 +644,14 @@ func (s *Server) openSession(r *http.Request) Session {
 	if want == "" || want == current.ID || !validSessionID(want) {
 		return current
 	}
+	// A person names a point in history by its ref. Resolve that to an id first,
+	// so everything downstream keeps one way of being addressed.
+	if id, ok := s.targetByRef(want); ok {
+		want = id
+		if want == current.ID {
+			return current
+		}
+	}
 	if isCached {
 		return cached
 	}
@@ -665,6 +678,18 @@ func validSessionID(id string) bool {
 		return false
 	}
 	return !strings.ContainsAny(id, `/\`) && !strings.Contains(id, "..")
+}
+
+// targetByRef resolves a human name for a point in history to a target id.
+func (s *Server) targetByRef(ref string) (string, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, t := range s.targets {
+		if t.Ref != "" && strings.EqualFold(t.Ref, ref) {
+			return t.ID, true
+		}
+	}
+	return "", false
 }
 
 // SetSession replaces the units and diffs on a running server, so a review of a
@@ -1377,17 +1402,96 @@ func describeReview(n domain.Narrative, groups int, reading, canRead bool, now t
 
 // cockpitStats is the session's numbers rendered for display: durations and
 // counts as strings, so the template holds no formatting logic.
+// render writes a template to a buffer first. Executing straight into the
+// response streams output, so an error partway through leaves a half-written
+// page already committed to a 200 — which is how a missing field looked like a
+// blank cockpit rather than a mistake.
+func (s *Server) render(w http.ResponseWriter, name string, data any) {
+	var buf bytes.Buffer
+	if err := s.tmpl.ExecuteTemplate(&buf, name, data); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = buf.WriteTo(w)
+}
+
+// plural is the noun for a count, so a tile reads "1 file" rather than "1 files".
+func plural(noun string, n int) string {
+	if n == 1 {
+		return noun
+	}
+	return noun + "s"
+}
+
+// statTile is one number worth showing for this review.
+type statTile struct {
+	Value string
+	Label string
+	Hint  string
+	// Lines renders as a +/- pair rather than a single figure.
+	Added, Removed int
+	IsLines        bool
+}
+
+// cockpitStats is the panel's numbers, chosen for what is being reviewed.
 type cockpitStats struct {
-	Open         string
-	Live         bool
-	Files        int
-	Added        int
-	Removed      int
-	Commits      int
-	PullRequests int
-	// Tokens is blank when no model call has been made, so a session that never
-	// touched a model shows no tile rather than a misleading zero.
-	Tokens string
+	Live  bool
+	Tiles []statTile
+}
+
+// statsFor picks the numbers that mean something for this kind of review.
+//
+// Every kind used to show the same six, which meant a single commit reported
+// "1 commit" and "0 PRs" — answering questions nobody asked, and crowding out
+// the ones they did. The token total is gone entirely: it is what the assistant
+// has spent since msr started, across every review, and sitting it beside this
+// review's file counts read as though it belonged to this one. It lives on
+// /status, where there is room to say what it is.
+func statsFor(kind domain.TargetKind, st domain.SessionStats, subtitle string) cockpitStats {
+	out := cockpitStats{Live: st.Live}
+	add := func(t statTile) { out.Tiles = append(out.Tiles, t) }
+
+	// Every review is some files and some lines. Nothing else is universal.
+	add(statTile{Value: thousands(st.Files), Label: plural("file", st.Files)})
+	add(statTile{IsLines: true, Added: st.Added, Removed: st.Removed, Label: "lines"})
+
+	switch kind {
+	case domain.TargetCommit:
+		if subtitle != "" {
+			add(statTile{Value: subtitle, Label: "commit"})
+		}
+	case domain.TargetWorktree:
+		add(statTile{Value: "—", Label: "uncommitted", Hint: "not committed yet"})
+	case domain.TargetTag, domain.TargetPR, domain.TargetRange:
+		add(statTile{Value: thousands(st.Commits), Label: plural("commit", st.Commits)})
+		if st.PullRequests > 0 || kind == domain.TargetTag {
+			add(statTile{Value: thousands(st.PullRequests), Label: "PRs",
+				Hint: "counted from commit subjects — msr talks to no forge"})
+		}
+	case domain.TargetSession:
+		add(statTile{Value: humanDuration(st.Open), Label: "open",
+			Hint: "how long the agent run went on"})
+		if st.Commits > 0 {
+			add(statTile{Value: thousands(st.Commits), Label: plural("commit", st.Commits)})
+		}
+		if st.PullRequests > 0 {
+			add(statTile{Value: thousands(st.PullRequests), Label: "PRs"})
+		}
+	default:
+		// An unrecognised kind shows whatever is actually there. Better to show a
+		// real number than to hide it because the kind was not anticipated.
+		if st.Open > 0 {
+			add(statTile{Value: humanDuration(st.Open), Label: "open"})
+		}
+		if st.Commits > 0 {
+			add(statTile{Value: thousands(st.Commits), Label: plural("commit", st.Commits)})
+		}
+		if st.PullRequests > 0 {
+			add(statTile{Value: thousands(st.PullRequests), Label: "PRs"})
+		}
+	}
+	return out
 }
 
 // feedItem is one change in the cockpit stream: a sentence and its diff, with
@@ -1419,7 +1523,6 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 	s.mu.RLock()
 	views := s.viewsOf(sess)
 	stats := sess.Stats
-	usage := s.agent.Usage
 	narrative := sess.Narrative
 	work := s.workLocked()
 	canDescribe := s.describe != nil
@@ -1512,14 +1615,8 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 	}{
 		Session: sess, Workspace: workspace, Targets: targets,
 		Repos: repos, CanCompare: canCompare,
-		Review: describeReview(narrative, len(groups), narrating, s.narrate != nil, s.now()),
-		Stats: cockpitStats{
-			Open:  humanDuration(stats.Open),
-			Live:  stats.Live,
-			Files: stats.Files, Added: stats.Added, Removed: stats.Removed,
-			Commits: stats.Commits, PullRequests: stats.PullRequests,
-			Tokens: tokenTotal(usage),
-		},
+		Review:    describeReview(narrative, len(groups), narrating, s.narrate != nil, s.now()),
+		Stats:     statsFor(sess.Target.Kind, stats, sess.Target.Subtitle),
 		Narrative: narrative, Chapters: chapters, Groups: groups,
 		Tree:        usecase.FileTree(sess.Units, sess.Diffs),
 		CanDescribe: canDescribe, CanDescribeFile: canDescribeFile, Work: work,
@@ -1527,10 +1624,7 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 		CanRetry: canRetry, Narrating: narrating,
 	}
 
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := s.tmpl.ExecuteTemplate(w, "cockpit.html", data); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
+	s.render(w, "cockpit.html", data)
 }
 
 // tokenTotal is the tokens spent so far, or blank if no model call has happened.
@@ -1632,10 +1726,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		CanConfigure: canConfigure,
 	}
 
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := s.tmpl.ExecuteTemplate(w, "status.html", data); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
+	s.render(w, "status.html", data)
 }
 
 // thousands groups a count so a six-figure token total stays readable.
@@ -1720,10 +1811,7 @@ func (s *Server) handleActivity(w http.ResponseWriter, r *http.Request) {
 		Work      []Work
 	}{SessionID: sessionID, Entries: rows, Work: work}
 
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := s.tmpl.ExecuteTemplate(w, "activity.html", data); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
+	s.render(w, "activity.html", data)
 }
 
 // chapterView pairs a chapter's prose with the real units it covers, so the

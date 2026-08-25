@@ -721,7 +721,7 @@ func discoverTargets(ctx context.Context, repos []string, out string) []web.Targ
 	summaries := make([]web.TargetSummary, 0, len(all))
 	for _, t := range all {
 		summaries = append(summaries, web.TargetSummary{
-			ID: t.ID, Repo: filepath.Base(mustAbs(t.Repo)), Kind: t.Kind,
+			ID: t.ID, Ref: t.Ref, Repo: filepath.Base(mustAbs(t.Repo)), Kind: t.Kind,
 			Title: t.Title, Subtitle: t.Subtitle, TS: t.TS, Sessions: len(t.Sessions),
 		})
 	}
@@ -812,11 +812,13 @@ func targetLoader() web.Loader {
 			return web.Session{}, err
 		}
 
-		commits, _ := snap.CommitsSince(ctx, t.TS)
-		if t.Kind != domain.TargetSession {
-			// For a range, the commits in it are the ones it spans, which the
-			// target already counted rather than re-deriving here.
-			commits = commits[:min(len(commits), t.Commits)]
+		// What is *in* this range. A session is the exception: it is bounded by
+		// when the run happened, not by two refs.
+		var commits []domain.Commit
+		if t.Kind == domain.TargetSession {
+			commits, _ = snap.CommitsSince(ctx, t.TS)
+		} else {
+			commits, _ = snap.CommitsBetween(ctx, t.From, t.To)
 		}
 
 		view := web.Session{

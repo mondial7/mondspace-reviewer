@@ -502,3 +502,49 @@ func (s *Snapshotter) IsDirty(ctx context.Context) (bool, error) {
 	}
 	return strings.TrimSpace(out) != "", nil
 }
+
+// CommitsBetween lists the commits in a range, newest first.
+//
+// This is not CommitsSince: a range target asks "what is *in* this", and asking
+// for commits since its date answers the opposite — everything after it — which
+// is how a tagged release came to report zero commits in it.
+//
+// An empty far end means the working tree, so everything after `from` counts.
+func (s *Snapshotter) CommitsBetween(ctx context.Context, from, to domain.SnapshotRef) ([]domain.Commit, error) {
+	spec := from.Commit + ".."
+	if to.Commit != "" {
+		spec += to.Commit
+	} else {
+		spec += "HEAD"
+	}
+	if from.Commit == "" || from.Commit == emptyTree {
+		// Nothing before it: the range is all of history up to the far end.
+		spec = "HEAD"
+		if to.Commit != "" {
+			spec = to.Commit
+		}
+	}
+
+	out, err := s.run(ctx, os.Environ(), "log", "-200",
+		"--pretty=format:%H"+commitFieldSep+"%an"+commitFieldSep+"%cI"+commitFieldSep+"%s",
+		spec)
+	if err != nil {
+		return nil, nil // an unresolvable range is empty, not fatal
+	}
+
+	var commits []domain.Commit
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Split(line, commitFieldSep)
+		if len(fields) != 4 {
+			continue
+		}
+		ts, err := time.Parse(time.RFC3339, fields[2])
+		if err != nil {
+			continue
+		}
+		commits = append(commits, domain.Commit{
+			Hash: fields[0], Author: fields[1], TS: ts, Subject: fields[3],
+		})
+	}
+	return commits, nil
+}
