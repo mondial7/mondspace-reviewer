@@ -263,7 +263,7 @@ MSR_SUMMARIZER_URL=http://localhost:1234/v1 MSR_MODEL=qwen/qwen3.5-9b \
 
 ## Status
 
-**v5.0.0** — the web app is the product.
+**v5.1.0** — the web app is the product.
 
 - **Cockpit** (`msr web`) — one page: the change as a story, the diffs,
   annotation, re-analysis, a live isometric field, and a workspace spanning any
