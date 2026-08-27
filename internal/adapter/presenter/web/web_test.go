@@ -1932,3 +1932,41 @@ func TestThePickerMarksWhatHasAlreadyBeenReviewed(t *testing.T) {
 		t.Error("an unreviewed target must not be ticked")
 	}
 }
+
+func TestKeyboardNavigationIsServedAndWired(t *testing.T) {
+	// Reading is the common case in the cockpit and was the one thing that
+	// needed a mouse (ADR 0022).
+	h := web.NewServer(testSession(), nil)
+
+	page := get(t, h, "/").Body.String()
+	if !strings.Contains(page, "/assets/keys.js") {
+		t.Error("the cockpit should load the keyboard bindings")
+	}
+
+	asset := get(t, h, "/assets/keys.js")
+	if asset.Code != http.StatusOK {
+		t.Fatalf("GET /assets/keys.js = %d, want 200", asset.Code)
+	}
+	body := asset.Body.String()
+	// The bindings that move between reviews and repositories are the ones that
+	// cannot be discovered by clicking, so they are the ones worth pinning.
+	for _, want := range []string{"stepReview", "stepRepo", "keysheet"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("keys.js should define %q", want)
+		}
+	}
+}
+
+func TestThePickerCarriesWhatNavigationNeeds(t *testing.T) {
+	// Switching repository walks the picker's own option list, so there is one
+	// source of truth for what exists rather than two that can drift.
+	h := web.NewServer(testSession(), nil).WithTargets([]web.TargetSummary{
+		{ID: "a", Ref: "v1", Kind: domain.TargetTag, Title: "v1", Repo: "api"},
+		{ID: "b", Ref: "v2", Kind: domain.TargetTag, Title: "v2", Repo: "web"},
+	})
+
+	body := get(t, h, "/").Body.String()
+	if !strings.Contains(body, `data-repo="api"`) || !strings.Contains(body, `data-repo="web"`) {
+		t.Errorf("each option should name its repository:\n%s", body)
+	}
+}

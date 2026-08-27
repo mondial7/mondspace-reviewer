@@ -98,6 +98,8 @@ const DESTINATIONS = [
   { label: 'Sessions', hint: 'every review, across repositories', href: '/status' },
   { label: 'Toggle theme', hint: 'dark · light · follow the system', action: cycleTheme },
   { label: 'Toggle zen', hint: 'hide the shell and work', action: () => setZen(!zen) },
+  { label: 'Keyboard shortcuts', hint: 'moving around without the mouse — or press ?',
+    action: () => document.dispatchEvent(new CustomEvent('msr:shortcuts')) },
 ];
 
 let palette = null;

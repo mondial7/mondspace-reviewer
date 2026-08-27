@@ -86,11 +86,15 @@ Click a chapter and its files come up beside it. Click a filename for its diff;
 shape rather than the detail.
 
 **Watch it happen.** msr opens on the **live** target: the working tree against
-HEAD, updating as the agent works. It keeps its identity when a commit lands, so
-your notes and the story survive the commit rather than being swapped out from
-under you. And whatever you are looking at, a small toast in the corner says
-when the repository moves — a commit, a tag, files changing — and clicking it
-opens what it names.
+HEAD. While you read it, it holds still — work the agent does afterwards queues
+up in a banner naming the files, and flagging any you have already annotated.
+Then you choose: keep reading, include them, or review just the new work. And a
+small toast in the corner says when the repository moves — a commit, a tag,
+files changing — and clicking it opens what it names.
+
+**Finish it.** Mark a target reviewed, with a closing comment. Reopening says so,
+and the picker ticks what is done. `j`/`k` move between files, `[`/`]` between
+reviews, `{`/`}` between repositories, and `?` lists every shortcut.
 
 **The review log is the product.** The prose and the assistant exist only to help
 you produce it — annotate as `ok`, `question`, `objection`, `debt` or `note`, and

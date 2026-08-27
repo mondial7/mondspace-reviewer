@@ -6,6 +6,7 @@
   <title>{{ .Narrative.Title }} — msr</title>
   <link rel="stylesheet" href="/assets/app.css">
   <script type="module" src="/assets/cockpit.js" defer></script>
+  <script type="module" src="/assets/keys.js" defer></script>
   <script type="module" src="/assets/chrome.js" defer></script>
   <script type="module" src="/assets/live.js" defer></script>
 </head>
@@ -53,6 +54,7 @@
         <!-- The tick is the whole point of recording a sign-off: what is left
              to look at should be readable without opening anything. -->
         <option value="{{ if .Ref }}{{ .Ref }}{{ else }}{{ .ID }}{{ end }}"
+                data-repo="{{ .Repo }}" data-reviewed="{{ .Reviewed }}"
                 label="{{ if .Reviewed }}✓ {{ end }}{{ .Kind }} · {{ .Title }} — {{ .Repo }}"></option>
         {{ end }}
       </datalist>
@@ -219,7 +221,7 @@
           </summary>
           <form method="post" action="/review/signoff?target={{ .Session.ID }}">
             <input type="hidden" name="target" value="{{ .Session.ID }}">
-            <textarea class="ask__input" name="comment" rows="2"
+            <textarea class="signoff__input" name="comment" rows="2"
                       placeholder="anything to say about this change as a whole (optional)"></textarea>
             <button class="pending__btn pending__btn--go" type="submit">done reviewing</button>
           </form>

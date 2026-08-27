@@ -141,9 +141,17 @@ the assistant exist only to help you produce it. Export it when you are done.
 your own notes. Never a re-read of the repo, never the open internet.
 
 **Watch.** The **live** target is the working tree against HEAD, and it is where
-msr opens. Files change under it as the agent works, and it keeps its identity
-when a commit lands — so your notes and the story survive the commit instead of
-being swapped out from under you ([ADR 0018](ADR/0018-live-target-and-pulses.md)).
+msr opens. It keeps its identity when a commit lands, so your notes and the
+story survive the commit instead of being swapped out from under you
+([ADR 0018](ADR/0018-live-target-and-pulses.md)).
+
+While you read, it **holds still**. Work the agent does after you opened it does
+not appear underneath you — it queues up in a banner that names the files and
+tells you which of them you have already annotated, because a note you wrote
+against a version that no longer exists is the thing worth interrupting for.
+Then you choose: **keep reading**, **include them** in what you are reviewing,
+or **review just these** — which opens the delta on its own, as an ordinary
+range ([ADR 0020](ADR/0020-pin-the-review-queue-the-rest.md)).
 
 Whatever you are looking at, msr tells you when the repository moves: a commit,
 a tag, or files changing. It arrives as a small toast in the corner naming what
@@ -152,8 +160,26 @@ discovered, so the link works. Nothing is announced on arrival, and nothing is
 announced while the tab is in the background; the content is up to date either
 way.
 
-**Keys.** `⌘K` a palette over every page and every changed file · `⌘Z` zen mode,
-which hides the shell · `⌘J` dark, light, or follow the system.
+**Finish.** When you are done with a target, **mark it reviewed** and leave a
+closing comment on the change as a whole. It is remembered, so reopening it
+tomorrow says so — and a signed-off target is ticked in the picker, so what is
+left to look at is readable from the list. If the code moved after you signed
+off, it says that too rather than reading as current
+([ADR 0021](ADR/0021-finishing-a-review.md)).
+
+**Keys.** Reading is the common case, so it has the short keys:
+
+| | | | |
+| --- | --- | --- | --- |
+| `j` `k` | next / previous file | `[` `]` | previous / next review |
+| `o` | open the file | `{` `}` | previous / next repository |
+| `g` `G` | first / last file | `/` | jump to the picker |
+| `a` | ask about these changes | `r` | mark this review done |
+| `?` | every shortcut | | |
+
+Plus the shell's three, on every page: `⌘K` a palette over every page and every
+changed file · `⌘Z` zen mode · `⌘J` dark, light, or follow the system. All of
+them are ignored while you are typing ([ADR 0022](ADR/0022-keyboard-navigation.md)).
 
 Every model call is slow on a local model, so the waiting is visible: a spinner
 on the rail from any page, and `/status` showing what is running, what it cost,
@@ -382,7 +408,7 @@ MSR_SUMMARIZER_URL=http://127.0.0.1:8081/v1 MSR_MODEL=qwen3-4b-instruct-2507 \
 
 ## Status
 
-**v5.3.0** — the web app is the product.
+**v5.4.0** — the web app is the product.
 
 - **Cockpit** (`msr web`) — one page: the change as a story, the diffs,
   annotation, re-analysis, a live isometric field, and a workspace spanning any
@@ -391,8 +417,15 @@ MSR_SUMMARIZER_URL=http://127.0.0.1:8081/v1 MSR_MODEL=qwen3-4b-instruct-2507 \
   recorded sessions, all reviewed by the same net-change-per-file engine
   ([ADR 0017](ADR/0017-git-first-review.md)).
 - **Live watching** — a target that follows HEAD and keeps its identity across a
-  commit, and a toast when the repository moves
-  ([ADR 0018](ADR/0018-live-target-and-pulses.md)).
+  commit, a toast when the repository moves, and work that arrives mid-review
+  queued as a choice rather than folded in silently
+  ([ADR 0018](ADR/0018-live-target-and-pulses.md),
+  [ADR 0020](ADR/0020-pin-the-review-queue-the-rest.md)).
+- **Finishing a review** — mark a target reviewed with a closing comment, held
+  across restarts and honest about going stale
+  ([ADR 0021](ADR/0021-finishing-a-review.md)).
+- **Keyboard navigation** across files, reviews and repositories
+  ([ADR 0022](ADR/0022-keyboard-navigation.md)).
 - **Schema-enforced model output**, on-demand descriptions, persisted
   conversations, and full accounting of every call and token at `/activity` and
   `/status`.

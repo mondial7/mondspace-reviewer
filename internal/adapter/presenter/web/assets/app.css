@@ -1402,8 +1402,70 @@ a.toast:hover { border-color: var(--kind, var(--accent)); }
   overflow-wrap: anywhere;
 }
 
-.signoff__form textarea {
+/* Its own class rather than the ask box's: `a` focuses the assistant and `r`
+   focuses this, and one selector matching both would send you to the wrong
+   one (ADR 0022). */
+.signoff__input {
   width: 100%;
   margin: 0.35rem 0;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.82rem;
   resize: vertical;
+}
+
+.signoff__input:focus { outline: none; border-color: var(--accent); }
+
+/* ── Keyboard navigation ────────────────────────────────────────────────────
+   The cursor is a reading position, not a selection: it says where j and k
+   left you, and must be visible without competing with the diff (ADR 0022). */
+
+.post[data-cursor='true'] {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.post[data-cursor='true'] > .post__head {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.keysheet__title {
+  margin: 0 0 0.5rem;
+  color: var(--fg-dim);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.keysheet__list {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.3rem 0.9rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.keysheet__row {
+  display: contents;
+}
+
+.keysheet__key {
+  justify-self: end;
+  padding: 0.1rem 0.4rem;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.keysheet__what {
+  color: var(--fg-dim);
+  font-size: 0.8rem;
 }
