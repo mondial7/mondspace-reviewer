@@ -194,3 +194,55 @@ func (s *Store) LoadNarrative(sessionID string) (domain.Narrative, error) {
 	}
 	return n, nil
 }
+
+// signoffFile records that a reviewer finished with a target, and what they
+// said about it as a whole. Rewritten rather than appended: a target has one
+// current verdict, and re-signing replaces it (ADR 0021).
+const signoffFile = "signoff.json"
+
+// SaveSignoff stores a target's verdict so reopening it says so. Written to a
+// temporary file and renamed, so a crash mid-write leaves the previous verdict
+// intact rather than a truncated one.
+func (s *Store) SaveSignoff(v domain.Signoff) error {
+	dir := filepath.Join(s.root, v.TargetID)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	body, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	tmp, err := os.CreateTemp(dir, signoffFile+".*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	if _, err := tmp.Write(body); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), filepath.Join(dir, signoffFile))
+}
+
+// LoadSignoff returns a target's verdict, or a zero Signoff when nobody has
+// finished with it. Never reviewed is the ordinary state, not a failure.
+func (s *Store) LoadSignoff(targetID string) (domain.Signoff, error) {
+	body, err := os.ReadFile(filepath.Join(s.root, targetID, signoffFile))
+	if errors.Is(err, fs.ErrNotExist) {
+		return domain.Signoff{}, nil
+	}
+	if err != nil {
+		return domain.Signoff{}, err
+	}
+	var v domain.Signoff
+	if err := json.Unmarshal(body, &v); err != nil {
+		// A corrupt verdict reads as "not reviewed", which is the safe way to
+		// be wrong: it invites another look rather than claiming one happened.
+		return domain.Signoff{}, nil
+	}
+	return v, nil
+}

@@ -287,3 +287,37 @@ func TestLoadHasNoExchangesForASessionNobodyAsked(t *testing.T) {
 		t.Errorf("got %+v, want no conversation", got.Exchanges)
 	}
 }
+
+func TestASignOffSurvivesARestart(t *testing.T) {
+	// The whole point: reopening a target tomorrow has to say you already
+	// finished with it, and what you said.
+	dir := t.TempDir()
+	want := domain.Signoff{
+		TargetID: "t1", At: time.Now().UTC().Truncate(time.Second),
+		Comment: "fine; the retry loop needs a follow-up",
+		Print:   "print-a", Files: 4,
+	}
+
+	if err := jsonl.New(dir).SaveSignoff(want); err != nil {
+		t.Fatalf("SaveSignoff: %v", err)
+	}
+	got, err := jsonl.New(dir).LoadSignoff("t1")
+	if err != nil {
+		t.Fatalf("LoadSignoff: %v", err)
+	}
+
+	if !got.At.Equal(want.At) || got.Comment != want.Comment ||
+		got.Print != want.Print || got.Files != want.Files {
+		t.Errorf("got %+v, want %+v", got, want)
+	}
+}
+
+func TestATargetNobodyFinishedIsNotAnError(t *testing.T) {
+	got, err := jsonl.New(t.TempDir()).LoadSignoff("never-seen")
+	if err != nil {
+		t.Fatalf("an unreviewed target should not error: %v", err)
+	}
+	if got.Done() {
+		t.Errorf("got %+v, want nothing recorded", got)
+	}
+}

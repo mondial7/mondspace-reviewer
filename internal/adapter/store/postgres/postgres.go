@@ -91,6 +91,13 @@ func (s *Store) migrate(ctx context.Context) error {
 			updated_at  timestamptz NOT NULL DEFAULT now(),
 			payload     jsonb NOT NULL
 		)`,
+		// A target has one current verdict, and re-signing replaces it
+		// (ADR 0021).
+		`CREATE TABLE IF NOT EXISTS ` + s.table("signoffs") + ` (
+			target_id   text PRIMARY KEY,
+			updated_at  timestamptz NOT NULL DEFAULT now(),
+			payload     jsonb NOT NULL
+		)`,
 		`CREATE TABLE IF NOT EXISTS ` + s.table("exchanges") + ` (
 			id          text PRIMARY KEY,
 			session_id  text NOT NULL,
@@ -198,6 +205,42 @@ func (s *Store) LoadNarrative(sessionID string) (domain.Narrative, error) {
 		return domain.Narrative{}, nil
 	}
 	return n, nil
+}
+
+// SaveSignoff records that a reviewer finished with a target.
+func (s *Store) SaveSignoff(v domain.Signoff) error {
+	payload, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	_, err = s.pool.Exec(context.Background(),
+		`INSERT INTO `+s.table("signoffs")+` (target_id, payload)
+		 VALUES ($1, $2)
+		 ON CONFLICT (target_id) DO UPDATE SET payload = EXCLUDED.payload, updated_at = now()`,
+		v.TargetID, payload)
+	return err
+}
+
+// LoadSignoff returns a target's verdict, or a zero Signoff when nobody has
+// finished with it. Never reviewed is the ordinary state, not a failure.
+func (s *Store) LoadSignoff(targetID string) (domain.Signoff, error) {
+	var payload []byte
+	err := s.pool.QueryRow(context.Background(),
+		`SELECT payload FROM `+s.table("signoffs")+` WHERE target_id = $1`,
+		targetID).Scan(&payload)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return domain.Signoff{}, nil
+	}
+	if err != nil {
+		return domain.Signoff{}, err
+	}
+	var v domain.Signoff
+	if err := json.Unmarshal(payload, &v); err != nil {
+		// A corrupt verdict reads as "not reviewed", which is the safe way to
+		// be wrong: it invites another look rather than claiming one happened.
+		return domain.Signoff{}, nil
+	}
+	return v, nil
 }
 
 // Load reconstructs a session. The task prompt is the first prompt event's

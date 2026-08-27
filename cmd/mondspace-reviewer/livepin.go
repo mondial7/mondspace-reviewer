@@ -6,8 +6,9 @@ import (
 	"sync"
 	"time"
 
-	gitsnap "github.com/mondial7/mondspace-reviewer/internal/adapter/snapshot/git"
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/presenter/web"
+	gitsnap "github.com/mondial7/mondspace-reviewer/internal/adapter/snapshot/git"
+	"github.com/mondial7/mondspace-reviewer/internal/adapter/store/jsonl"
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
 	"github.com/mondial7/mondspace-reviewer/internal/usecase"
 )
@@ -134,4 +135,42 @@ func currentHead(ctx context.Context, snap *gitsnap.Snapshotter) (string, error)
 		return "", nil // a repository with no commits yet
 	}
 	return head[0].Hash, nil
+}
+
+// saveSignoff records that a reviewer has finished with a target, in whichever
+// store that target belongs to. A workspace spans repositories, and each keeps
+// its own store, so the verdict follows the target rather than the process.
+func saveSignoff() web.SignoffFunc {
+	return func(_ context.Context, v domain.Signoff) error {
+		entry, known := lookupTarget(v.TargetID)
+		if !known {
+			return fmt.Errorf("no such review %q", v.TargetID)
+		}
+		store, ok := any(jsonl.New(entry.out)).(signoffStore)
+		if !ok {
+			return fmt.Errorf("this store cannot remember a verdict")
+		}
+		return store.SaveSignoff(v)
+	}
+}
+
+// loadSignoff reads back a target's verdict. A store that cannot answer reads
+// as "not reviewed", which is the safe way to be wrong: it invites another look
+// rather than claiming one happened.
+func loadSignoff() web.SignoffOf {
+	return func(targetID string) domain.Signoff {
+		entry, known := lookupTarget(targetID)
+		if !known {
+			return domain.Signoff{}
+		}
+		store, ok := any(jsonl.New(entry.out)).(signoffStore)
+		if !ok {
+			return domain.Signoff{}
+		}
+		v, err := store.LoadSignoff(targetID)
+		if err != nil {
+			return domain.Signoff{}
+		}
+		return v
+	}
 }

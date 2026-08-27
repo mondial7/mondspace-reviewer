@@ -73,6 +73,12 @@ func eventSpan(sess domain.Session) (first, last time.Time, ok bool) {
 	return first, last, !first.IsZero()
 }
 
+// Churn is how many lines a diff adds and removes. Exported because a review's
+// fingerprint is per-file churn, and the presenter needs the same arithmetic
+// the rest of the numbers use — two counts that disagree would be worse than
+// either alone.
+func Churn(d domain.Diff) (added, removed int) { return countChangedLines(d) }
+
 // countChangedLines counts added and removed lines, ignoring the +++/--- file
 // headers that would otherwise each be miscounted as a changed line.
 func countChangedLines(d domain.Diff) (added, removed int) {

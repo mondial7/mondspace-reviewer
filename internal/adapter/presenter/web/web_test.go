@@ -1816,3 +1816,119 @@ func TestAFailedIncludeLeavesTheWorkWaiting(t *testing.T) {
 		t.Error("a failed include must leave the choice on the page")
 	}
 }
+
+func TestFinishingAReviewRecordsItWithAComment(t *testing.T) {
+	// Notes answer "what do I think of this file". Nothing answered "am I done
+	// with this, and what is my overall view" — which is the question you have
+	// on reopening something you looked at yesterday (ADR 0021).
+	var got domain.Signoff
+	h := web.NewServer(testSession(), nil).
+		WithSignoff(func(_ context.Context, v domain.Signoff) error { got = v; return nil },
+			func(string) domain.Signoff { return domain.Signoff{} })
+
+	req := httptest.NewRequest(http.MethodPost, "/review/signoff",
+		strings.NewReader("target=s&comment=happy+with+this%3B+retry+loop+needs+a+follow-up"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("POST /review/signoff = %d, want 303", rec.Code)
+	}
+	if got.TargetID != "s" {
+		t.Errorf("signed off %q, want the open review", got.TargetID)
+	}
+	if got.Comment != "happy with this; retry loop needs a follow-up" {
+		t.Errorf("comment = %q", got.Comment)
+	}
+	if got.At.IsZero() {
+		t.Error("a sign-off has to say when")
+	}
+	// It must capture what the review looked like, or reopening cannot tell
+	// whether the code moved underneath the judgement.
+	if got.Files != 2 {
+		t.Errorf("files = %d, want the 2 in this review", got.Files)
+	}
+	if got.Print == "" {
+		t.Error("a sign-off should fingerprint what was reviewed")
+	}
+}
+
+func TestBeingDoneIsWorthRecordingWithNothingToAdd(t *testing.T) {
+	var got domain.Signoff
+	h := web.NewServer(testSession(), nil).
+		WithSignoff(func(_ context.Context, v domain.Signoff) error { got = v; return nil },
+			func(string) domain.Signoff { return domain.Signoff{} })
+
+	req := httptest.NewRequest(http.MethodPost, "/review/signoff", strings.NewReader("target=s&comment="))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	h.ServeHTTP(httptest.NewRecorder(), req)
+
+	if !got.Done() {
+		t.Error("an empty comment is still a sign-off")
+	}
+}
+
+func TestAReviewedTargetSaysSoWhenReopened(t *testing.T) {
+	h := web.NewServer(testSession(), nil).
+		WithSignoff(nil, func(string) domain.Signoff {
+			return domain.Signoff{
+				TargetID: "s", At: time.Now().Add(-2 * time.Hour),
+				Comment: "shipped it", Print: "same", Files: 2,
+			}
+		})
+
+	body := get(t, h, "/").Body.String()
+
+	if !strings.Contains(body, "reviewed 2h ago") {
+		t.Errorf("a finished review should say so:\n%s", body)
+	}
+	if !strings.Contains(body, "shipped it") {
+		t.Error("the closing comment should come back with it")
+	}
+}
+
+func TestAReviewSignedOffBeforeTheCodeMovedIsQualified(t *testing.T) {
+	// The same discipline as the pending banner, one level up: "reviewed" about
+	// something that has changed since would be a lie.
+	h := web.NewServer(testSession(), nil).
+		WithSignoff(nil, func(string) domain.Signoff {
+			return domain.Signoff{
+				TargetID: "s", At: time.Now().Add(-time.Hour),
+				Print: "an-old-print", Files: 1,
+			}
+		})
+
+	body := get(t, h, "/").Body.String()
+	if !strings.Contains(body, "but it has changed since") {
+		t.Errorf("a stale sign-off must be qualified:\n%s", body)
+	}
+}
+
+func TestAnUnfinishedReviewOffersTheButton(t *testing.T) {
+	h := web.NewServer(testSession(), nil).
+		WithSignoff(func(context.Context, domain.Signoff) error { return nil },
+			func(string) domain.Signoff { return domain.Signoff{} })
+
+	body := get(t, h, "/").Body.String()
+	if !strings.Contains(body, "/review/signoff") {
+		t.Errorf("there should be a way to finish a review:\n%s", body)
+	}
+}
+
+func TestThePickerMarksWhatHasAlreadyBeenReviewed(t *testing.T) {
+	// What is left to look at should be readable without opening anything.
+	h := web.NewServer(testSession(), nil).WithTargets([]web.TargetSummary{
+		{ID: "a", Ref: "v1.0.0", Kind: domain.TargetTag, Title: "v1.0.0", Reviewed: true},
+		{ID: "b", Ref: "abc12345", Kind: domain.TargetCommit, Title: "still open"},
+	})
+
+	body := get(t, h, "/").Body.String()
+
+	if !strings.Contains(body, "✓ tag · v1.0.0") {
+		t.Errorf("a signed-off target should be ticked in the picker:\n%s", body)
+	}
+	if strings.Contains(body, "✓ commit · still open") {
+		t.Error("an unreviewed target must not be ticked")
+	}
+}

@@ -50,8 +50,10 @@
            A native datalist, so it searches without any JavaScript. -->
       <datalist id="refs">
         {{ range .Targets }}
+        <!-- The tick is the whole point of recording a sign-off: what is left
+             to look at should be readable without opening anything. -->
         <option value="{{ if .Ref }}{{ .Ref }}{{ else }}{{ .ID }}{{ end }}"
-                label="{{ .Kind }} · {{ .Title }} — {{ .Repo }}"></option>
+                label="{{ if .Reviewed }}✓ {{ end }}{{ .Kind }} · {{ .Title }} — {{ .Repo }}"></option>
         {{ end }}
       </datalist>
 
@@ -173,7 +175,9 @@
         <span class="ask__spinner" aria-hidden="true"></span>
         <strong>reading this review…</strong>
         {{ else if eq .Review.State "read" }}
-        <strong>reviewed</strong>
+        <!-- "read", not "reviewed": the assistant reading this and you having
+             reviewed it are different facts, and the second one is below. -->
+        <strong>read by the assistant</strong>
         {{ with .Review.When }}<span class="reviewcard__when">{{ . }}</span>{{ end }}
         {{ with .Review.Model }}<span class="detail__model">{{ . }}</span>{{ end }}
         {{ else }}
@@ -194,11 +198,35 @@
       {{ if .Review.CanRead }}
       <form class="reviewcard__go" method="post" action="/story/narrate?target={{ .Session.ID }}">
         <button class="hero__retrybtn" type="submit">
-          {{ if eq .Review.State "read" }}review again{{ else }}review this{{ end }}
+          {{ if eq .Review.State "read" }}read again{{ else }}ask it to read this{{ end }}
         </button>
       </form>
       {{ end }}
       </div>
+
+      <!-- Your own verdict on the whole thing, as opposed to a note on one file.
+           It is the first thing you need on reopening something you looked at
+           yesterday (ADR 0021). -->
+      {{ if or .HasSignoff .CanSignoff }}
+      <div class="signoff {{ if .Signoff.Done }}signoff--done{{ end }} {{ if .Signoff.Moved }}signoff--moved{{ end }}">
+        <p class="signoff__state">{{ .Signoff.Sentence }}</p>
+        {{ with .Signoff.Comment }}<p class="signoff__comment">{{ . }}</p>{{ end }}
+
+        {{ if .CanSignoff }}
+        <details class="signoff__form">
+          <summary class="post__moresummary">
+            {{ if .Signoff.Done }}review it again{{ else }}mark this reviewed{{ end }}
+          </summary>
+          <form method="post" action="/review/signoff?target={{ .Session.ID }}">
+            <input type="hidden" name="target" value="{{ .Session.ID }}">
+            <textarea class="ask__input" name="comment" rows="2"
+                      placeholder="anything to say about this change as a whole (optional)"></textarea>
+            <button class="pending__btn pending__btn--go" type="submit">done reviewing</button>
+          </form>
+        </details>
+        {{ end }}
+      </div>
+      {{ end }}
     </section>
 
     <!-- Middle: the session read as prose. Text only — the files each chapter

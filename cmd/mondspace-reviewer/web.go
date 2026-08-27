@@ -152,6 +152,7 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 		WithRemoveRepo(removeRepo(*out)).
 		WithCompare(compareRefs()).
 		WithLiveActions(liveActions()).
+		WithSignoff(saveSignoff(), loadSignoff()).
 		WithConfigure(configureAgent(pool, *configPath, &agent)).
 		WithExchanges(exchangeStore(store), sess.Exchanges).
 		WithAsk(webAskFunc(sess, view.Units, view.Diffs, snap, pool.For(domain.Ask))).
@@ -464,6 +465,14 @@ type narrativeCache interface {
 	LoadNarrative(sessionID string) (domain.Narrative, error)
 }
 
+// signoffStore is the ability to remember that a target was reviewed. Asserted
+// below for the same reason: a store without it would silently forget every
+// verdict, and the only symptom would be a review that never looks finished.
+type signoffStore interface {
+	SaveSignoff(domain.Signoff) error
+	LoadSignoff(targetID string) (domain.Signoff, error)
+}
+
 // Every store must remember stories. This is asserted rather than left to the
 // runtime type switch because the failure is silent: a store that does not
 // satisfy it simply re-narrates on every launch, costing several model calls
@@ -471,6 +480,8 @@ type narrativeCache interface {
 var (
 	_ narrativeCache = (*jsonl.Store)(nil)
 	_ narrativeCache = (*pgstore.Store)(nil)
+	_ signoffStore   = (*jsonl.Store)(nil)
+	_ signoffStore   = (*pgstore.Store)(nil)
 )
 
 // reviewRefresher is everything the background refresh needs. It is a struct
@@ -797,11 +808,13 @@ func discoverTargets(ctx context.Context, repos []string, out string) []web.Targ
 
 	usecase.SortTargets(all)
 
+	signedOff := loadSignoff()
 	summaries := make([]web.TargetSummary, 0, len(all))
 	for _, t := range all {
 		summaries = append(summaries, web.TargetSummary{
 			ID: t.ID, Ref: t.Ref, Repo: filepath.Base(mustAbs(t.Repo)), Kind: t.Kind,
 			Title: t.Title, Subtitle: t.Subtitle, TS: t.TS, Sessions: len(t.Sessions),
+			Reviewed: signedOff(t.ID).Done(),
 		})
 	}
 	return summaries

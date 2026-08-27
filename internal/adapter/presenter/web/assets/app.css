@@ -1365,3 +1365,45 @@ a.toast:hover { border-color: var(--kind, var(--accent)); }
 /* "Keep reading" is the most common answer, so it sits first and quietest;
    the two that change what you are looking at are pushed to the right. */
 .pending__choices form:first-of-type { margin-left: auto; }
+
+/* ── Your verdict on the whole change ───────────────────────────────────────
+   Distinct from the assistant having read it: that is a fact about the model,
+   this is a fact about you (ADR 0021). */
+
+.signoff {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid var(--rule);
+}
+
+.signoff__state {
+  margin: 0;
+  color: var(--fg-dim);
+  font-size: 0.78rem;
+}
+
+.signoff--done .signoff__state {
+  color: var(--stated);
+  font-weight: 600;
+}
+
+/* Signed off, but the code has moved since. The judgement stands as a fact
+   about the past; it just no longer describes what is on screen. */
+.signoff--moved .signoff__state { color: var(--inferred); }
+
+.signoff__comment {
+  margin: 0;
+  padding-left: 0.6rem;
+  border-left: 2px solid var(--rule);
+  color: var(--fg);
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+
+.signoff__form textarea {
+  width: 100%;
+  margin: 0.35rem 0;
+  resize: vertical;
+}

@@ -70,6 +70,9 @@ type TargetSummary struct {
 	Subtitle string
 	TS       time.Time
 	Sessions int
+	// Reviewed marks a target someone has finished with, so the picker shows
+	// at a glance what is still open (ADR 0021).
+	Reviewed bool
 }
 
 // SessionSummary is one row of the workspace: a review that exists, wherever it
@@ -237,9 +240,12 @@ type Server struct {
 
 	// pending is work that arrived after this review was opened, waiting for
 	// the reviewer to decide what to do with it (ADR 0020).
-	pending domain.Pending
-	include IncludeFunc
-	split   SplitFunc
+	pending   domain.Pending
+	include   IncludeFunc
+	split     SplitFunc
+	signoff   SignoffFunc
+	signoffOf SignoffOf
+	signErr   string
 
 	// subs are live subscribers (server-sent events). Each gets a buffered
 	// channel so a slow reader can never block a request handler.
@@ -975,6 +981,7 @@ func (s *Server) routes() {
 	// The workspace list folded into the status page.
 	s.mux.HandleFunc("GET /sessions", redirectStatus)
 	s.mux.HandleFunc("POST /story/narrate", s.handleNarrate)
+	s.mux.HandleFunc("POST /review/signoff", s.handleSignoff)
 	s.mux.HandleFunc("POST /live/include", s.handleInclude)
 	s.mux.HandleFunc("POST /live/split", s.handleSplit)
 	s.mux.HandleFunc("GET /events", s.handleEvents)
@@ -1170,6 +1177,72 @@ func (s *Server) ClearPending() {
 	s.pending = domain.Pending{}
 	s.mu.Unlock()
 	s.broadcast("pending")
+}
+
+// SignoffFunc records that a reviewer has finished with a target; SignoffOf
+// reads back whatever was recorded for one.
+type SignoffFunc func(ctx context.Context, v domain.Signoff) error
+
+// SignoffOf reads a target's stored verdict. It returns a zero Signoff for one
+// nobody has finished with, which is the ordinary state.
+type SignoffOf func(targetID string) domain.Signoff
+
+// WithSignoff wires finishing a review, and reading back that it was finished.
+func (s *Server) WithSignoff(sign SignoffFunc, of SignoffOf) *Server {
+	s.signoff, s.signoffOf = sign, of
+	return s
+}
+
+// handleSignoff records that the reviewer is done with what they were reading,
+// and whatever they wanted to say about it as a whole.
+func (s *Server) handleSignoff(w http.ResponseWriter, r *http.Request) {
+	s.mu.RLock()
+	sign := s.signoff
+	s.mu.RUnlock()
+	if sign == nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	sess := s.openSession(r)
+	// Fingerprinting what was reviewed is what lets a later visit say whether
+	// the code has moved underneath the judgement (ADR 0021).
+	stats := make([]domain.FileStat, 0, len(sess.Units))
+	for _, u := range sess.Units {
+		added, removed := usecase.Churn(sess.Diffs[u.ID])
+		for _, f := range u.Files {
+			stats = append(stats, domain.FileStat{Path: f, Added: added, Removed: removed})
+		}
+	}
+
+	v := domain.Signoff{
+		TargetID: sess.ID,
+		At:       s.now(),
+		Comment:  strings.TrimSpace(r.FormValue("comment")),
+		Print:    usecase.ReviewFingerprint(stats),
+		Files:    len(stats),
+	}
+	if err := sign(r.Context(), v); err != nil {
+		s.mu.Lock()
+		s.signErr = err.Error()
+		s.mu.Unlock()
+	} else {
+		s.mu.Lock()
+		s.signErr = ""
+		s.mu.Unlock()
+		s.Record(AuditEntry{SessionID: sess.ID, Action: "signoff",
+			Detail: firstNonBlank(v.Comment, "reviewed, no comment")})
+	}
+
+	s.broadcast("signoff")
+	http.Redirect(w, r, backTo(r, "#reviewcard"), http.StatusSeeOther)
+}
+
+func firstNonBlank(a, b string) string {
+	if strings.TrimSpace(a) != "" {
+		return a
+	}
+	return b
 }
 
 // IncludeFunc extends the open review to cover the work that arrived after it
@@ -1780,6 +1853,8 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 	s.mu.RLock()
 	views := s.viewsOf(sess)
 	pending := s.pending
+	signoffOf := s.signoffOf
+	canSignoff := s.signoff != nil
 	stats := sess.Stats
 	narrative := sess.Narrative
 	work := s.workLocked()
@@ -1796,6 +1871,22 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 	canRetry := s.narrate != nil && narrative.Source != domain.NarrativeModel
 	narrating := s.narrating
 	s.mu.RUnlock()
+
+	// What was signed off is compared against what is on screen now, so a
+	// verdict about code that has since moved says so rather than reading as
+	// current (ADR 0021).
+	var signoff usecase.SignoffView
+	if signoffOf != nil {
+		nowStats := make([]domain.FileStat, 0, len(sess.Units))
+		for _, u := range sess.Units {
+			added, removed := usecase.Churn(sess.Diffs[u.ID])
+			for _, f := range u.Files {
+				nowStats = append(nowStats, domain.FileStat{Path: f, Added: added, Removed: removed})
+			}
+		}
+		signoff = usecase.SignoffState(signoffOf(sess.ID),
+			usecase.ReviewFingerprint(nowStats), len(nowStats), s.now())
+	}
 
 	byID := map[string]unitView{}
 	for _, v := range views {
@@ -1871,10 +1962,14 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 		CanRetry        bool
 		Narrating       bool
 		Pending         domain.Pending
+		Signoff         usecase.SignoffView
+		HasSignoff      bool
+		CanSignoff      bool
 	}{
 		Session: sess, Workspace: workspace, Targets: targets,
 		Repos: repos, CanCompare: canCompare,
-		Pending:   pending,
+		Pending: pending,
+		Signoff: signoff, HasSignoff: signoffOf != nil, CanSignoff: canSignoff,
 		Review:    describeReview(narrative, len(groups), narrating, s.narrate != nil, s.now()),
 		Stats:     statsFor(sess.Target.Kind, stats, sess.Target.Subtitle),
 		Narrative: narrative, Chapters: chapters, Groups: groups,
