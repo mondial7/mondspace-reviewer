@@ -57,7 +57,12 @@ type Tag struct {
 type AgentConfig struct {
 	Endpoint string `json:"endpoint,omitempty"`
 	Model    string `json:"model,omitempty"`
-	// NoThinking asks the server to skip the model's reasoning phase. Only some
-	// chat templates honour it (ADR 0014).
+	// NoThinking asks the server to skip the model's reasoning phase. Under
+	// llama-server this is --reasoning-budget 0 and it works; under LM Studio it
+	// was chat_template_kwargs and it did nothing (ADR 0014, ADR 0019).
 	NoThinking bool `json:"no_thinking,omitempty"`
+	// Overrides send a particular workload to a different model, or a different
+	// server, or both. Absent means every workload shares the settings above,
+	// which is the common case and stays the simple one.
+	Overrides map[Workload]ModelRef `json:"overrides,omitempty"`
 }

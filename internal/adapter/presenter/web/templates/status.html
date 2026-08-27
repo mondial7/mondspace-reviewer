@@ -51,6 +51,17 @@
         <span class="board__val">{{ .Checked }}</span>
       </div>
 
+      {{ with .Agent.Workloads }}
+      <!-- With two models answering, "the model" is no longer a single fact,
+           and showing one of them says nothing about the other (ADR 0019). -->
+      {{ range . }}
+      <div class="board__row">
+        <span class="board__key">{{ .Workload }}</span>
+        <span class="board__val">{{ .Model }} <span class="board__hint">{{ .Endpoint }}</span></span>
+      </div>
+      {{ end }}
+      {{ end }}
+
       {{ if .CanConfigure }}
       <!-- Pointing msr at another machine or another model, without editing a
            file and restarting. Applied at once and remembered. -->
@@ -74,6 +85,21 @@
           </span>
         </label>
 
+
+        <!-- Sending one job to its own model. Both boxes empty means it uses
+             the settings above, which is how two servers collapse into one. -->
+        <details class="picker__compare">
+          <summary class="post__moresummary">send a workload to its own model</summary>
+          {{ range .WorkloadForm }}
+          <label class="agentform__label" for="wl-{{ .Workload }}">{{ .Workload }}</label>
+          <input class="addrepo__input" id="wl-{{ .Workload }}" name="endpoint_{{ .Workload }}"
+                 type="text" value="{{ .Endpoint }}" placeholder="endpoint (default: the one above)"
+                 autocomplete="off" spellcheck="false">
+          <input class="addrepo__input" name="model_{{ .Workload }}"
+                 type="text" value="{{ .Model }}" placeholder="model (default: the one above)"
+                 autocomplete="off" spellcheck="false">
+          {{ end }}
+        </details>
 
         <button class="addrepo__btn" type="submit">apply</button>
       </form>

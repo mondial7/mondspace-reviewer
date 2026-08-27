@@ -308,23 +308,24 @@ func (s *Summarizer) chat(ctx context.Context, system, user string, format *resp
 		return choice.Message.Content, nil
 	}
 
-	// Content is empty. What that means depends entirely on whether a schema was
-	// in force.
-	if format != nil {
-		// Constrained: LM Studio puts the grammar-constrained JSON in
-		// reasoning_content and leaves content empty, so this IS the answer.
-		if strings.TrimSpace(choice.Message.Reasoning) != "" {
-			return choice.Message.Reasoning, nil
-		}
-	} else if strings.TrimSpace(choice.Message.Reasoning) != "" {
-		// Unconstrained: this is the model thinking aloud and never reaching an
-		// answer — almost always because it ran out of budget mid-thought.
-		// Returning it would put a "Thinking Process:" monologue on the page
-		// dressed as a reply, which is worse than saying nothing.
-		return "", fmt.Errorf("the model spent its whole budget on reasoning and "+
-			"produced no answer (finish_reason %q, %d reasoning tokens); raise the "+
-			"token budget or use a model that does less thinking",
+	// Content is empty, and that is now always a fault.
+	//
+	// msr used to dig the answer out of reasoning_content when a schema was in
+	// force, because LM Studio filed grammar-constrained JSON there. That
+	// worked, and it hid the very failure it was working around: a model that
+	// thought instead of answering was indistinguishable from one that
+	// answered. Under llama-server with --reasoning-format none the answer is
+	// in content or it does not exist (ADR 0019).
+	if strings.TrimSpace(choice.Message.Reasoning) != "" {
+		return "", fmt.Errorf("the model put its answer in the reasoning channel and left "+
+			"content empty (finish_reason %q, %d reasoning tokens); start the server with "+
+			"--reasoning-format none, or --reasoning-budget 0 to stop it thinking at all",
 			choice.FinishReason, reply.Usage.Details.ReasoningTokens)
+	}
+	if choice.FinishReason == "length" {
+		return "", fmt.Errorf("the model produced no answer before running out of budget "+
+			"(finish_reason %q); raise the token budget or use a model that does less thinking",
+			choice.FinishReason)
 	}
 	return "", fmt.Errorf("summarizer returned an empty answer (finish_reason %q)", choice.FinishReason)
 }

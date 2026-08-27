@@ -323,24 +323,34 @@ func TestASchemaRejectionIsNamedWhenTheRetryAlsoFails(t *testing.T) {
 	}
 }
 
-func TestAnswerReadsAReplyTheServerFiledAsReasoning(t *testing.T) {
-	// Measured against LM Studio with qwen/qwen3.5-9b: a schema-constrained reply
-	// arrives complete (finish_reason "stop") but in reasoning_content, with
-	// content empty — the grammar constrains sampling inside the template's
-	// thinking block. Treating that as an empty reply is what made narration
-	// silently fall back.
+func TestAConstrainedReplyMustArriveInContent(t *testing.T) {
+	// msr used to read the answer out of reasoning_content when content was
+	// empty, because LM Studio put grammar-constrained JSON there. That was a
+	// workaround for a server behaviour, and it hid the failure it was working
+	// around: a model that thinks instead of answering looks identical to one
+	// that answered.
+	//
+	// llama-server with --reasoning-format none puts the answer in content, so
+	// there is nothing left to guess at. An empty content is now a fault, and
+	// saying so points at the server flag that causes it (ADR 0019).
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		io.WriteString(w, `{"choices":[{"message":{"role":"assistant","content":"",`+
+		io.WriteString(w, `{"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"",`+
 			`"reasoning_content":"{\"title\":\"T\",\"prose\":\"p\"}"}}]}`)
 	}))
 	defer srv.Close()
 
-	got, err := openai.New(srv.URL, "m").AnswerSchema(context.Background(), "q", domain.AskContext{}, narrativeSchema())
-	if err != nil {
-		t.Fatalf("AnswerSchema: %v", err)
+	_, err := openai.New(srv.URL, "m").AnswerSchema(context.Background(), "q", domain.AskContext{}, narrativeSchema())
+
+	if err == nil {
+		t.Fatal("an answer filed as reasoning must be reported, not silently used")
 	}
-	if got != `{"title":"T","prose":"p"}` {
-		t.Errorf("answer = %q, want the reply the server filed as reasoning", got)
+	if !strings.Contains(err.Error(), "reasoning") {
+		t.Errorf("the error should name what the server did, got: %v", err)
+	}
+	// The cause is a server setting, so the error has to name it — otherwise
+	// the reviewer is left guessing at a flag they have never seen.
+	if !strings.Contains(err.Error(), "--reasoning-format none") {
+		t.Errorf("the error should name the flag that fixes it, got: %v", err)
 	}
 }
 
@@ -529,21 +539,20 @@ func TestFreeTextAnswerNeverReturnsTheModelsThinking(t *testing.T) {
 	}
 }
 
-func TestSchemaAnswerStillReadsReasoningBecauseTheJSONIsThere(t *testing.T) {
-	// The schema case is the opposite: LM Studio puts the constrained JSON in
-	// reasoning_content and leaves content empty, so that IS the answer.
+func TestASchemaDoesNotExcuseAnEmptyContent(t *testing.T) {
+	// The schema case used to be the exception that read reasoning_content back
+	// as the answer. It is not an exception any more: whether or not a grammar
+	// was in force, an empty content means the server is configured to hide the
+	// answer, and the fix is a server flag rather than a client workaround.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, `{"choices":[{"finish_reason":"stop","message":{"role":"assistant",`+
 			`"content":"","reasoning_content":"{\"title\":\"T\"}"}}]}`)
 	}))
 	defer srv.Close()
 
-	got, err := openai.New(srv.URL, "m").AnswerSchema(context.Background(), "q", domain.AskContext{}, narrativeSchema())
-	if err != nil {
-		t.Fatalf("AnswerSchema: %v", err)
-	}
-	if got != `{"title":"T"}` {
-		t.Errorf("answer = %q, want the constrained JSON", got)
+	if _, err := openai.New(srv.URL, "m").AnswerSchema(context.Background(), "q",
+		domain.AskContext{}, narrativeSchema()); err == nil {
+		t.Fatal("a constrained call with empty content must fail like any other")
 	}
 }
 

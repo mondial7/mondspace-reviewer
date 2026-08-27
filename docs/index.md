@@ -23,8 +23,9 @@ configuration, no database, no account, and **no session to record first** — i
 reads the git history that is already there.
 
 Everything runs offline. The prose is optional: point it at any
-OpenAI-compatible endpoint — a local [LM Studio](https://lmstudio.ai) server by
-default — and it falls back to a mechanical grouping when there is none.
+OpenAI-compatible endpoint — a local
+[llama.cpp](https://github.com/ggml-org/llama.cpp) server by default — and it
+falls back to a mechanical grouping when there is none.
 
 ## Why
 

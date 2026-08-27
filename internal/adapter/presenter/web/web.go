@@ -146,6 +146,17 @@ type AgentStatus struct {
 	Online     bool
 	Checked    time.Time
 	Usage      port.TokenUsage
+	// Workloads is which model answers each job, when they do not all share one
+	// (ADR 0019). Empty when a single model answers everything, so the common
+	// arrangement stays the quiet one on the page.
+	Workloads []WorkloadModel
+}
+
+// WorkloadModel is one job and the model that answers it.
+type WorkloadModel struct {
+	Workload string
+	Endpoint string
+	Model    string
 }
 
 // VersionLister and VersionDiffer let the overlay step through a file's history.
@@ -345,6 +356,23 @@ func (s *Server) handleConfigure(w http.ResponseWriter, r *http.Request) {
 		Endpoint:   strings.TrimSpace(r.FormValue("endpoint")),
 		Model:      strings.TrimSpace(r.FormValue("model")),
 		NoThinking: r.FormValue("no_thinking") != "",
+	}
+	// A workload with either box filled goes to its own model; both empty means
+	// it shares the settings above. Blank has to mean "shared" rather than "an
+	// override to nothing", because emptying the box is how a reviewer collapses
+	// two servers back into one.
+	for _, w := range domain.Workloads {
+		ref := domain.ModelRef{
+			Endpoint: strings.TrimSpace(r.FormValue("endpoint_" + string(w))),
+			Model:    strings.TrimSpace(r.FormValue("model_" + string(w))),
+		}
+		if ref == (domain.ModelRef{}) {
+			continue
+		}
+		if want.Overrides == nil {
+			want.Overrides = map[domain.Workload]domain.ModelRef{}
+		}
+		want.Overrides[w] = ref
 	}
 	err := configure(want)
 
@@ -1823,6 +1851,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		CanAddRepo         bool
 		CanRemoveRepo      bool
 		CanConfigure       bool
+		WorkloadForm       []WorkloadModel
 	}{
 		SessionID: sessionID, Repo: repo, Agent: agent,
 		Calls: thousands(u.Calls), Failures: thousands(u.Failures),
@@ -1833,10 +1862,31 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		Sessions: sessions, Repos: repos, Candidates: candidates, Work: work,
 		RepoErr: repoErr, AgentErr: agentErr,
 		CanAddRepo: canAddRepo, CanRemoveRepo: s.removeRepo != nil,
-		CanConfigure: canConfigure,
+		CanConfigure: canConfigure, WorkloadForm: workloadForm(agent),
 	}
 
 	s.render(w, "status.html", data)
+}
+
+// workloadForm is a row per workload for the settings form, pre-filled with
+// whatever currently overrides the shared model. A workload on the shared model
+// gets empty boxes, which is also how it is put back there.
+func workloadForm(agent AgentStatus) []WorkloadModel {
+	current := map[string]WorkloadModel{}
+	for _, w := range agent.Workloads {
+		current[w.Workload] = w
+	}
+
+	out := make([]WorkloadModel, 0, len(domain.Workloads))
+	for _, w := range domain.Workloads {
+		row := WorkloadModel{Workload: string(w)}
+		if have, ok := current[string(w)]; ok &&
+			(have.Endpoint != agent.Endpoint || have.Model != agent.Model) {
+			row.Endpoint, row.Model = have.Endpoint, have.Model
+		}
+		out = append(out, row)
+	}
+	return out
 }
 
 // thousands groups a count so a six-figure token total stays readable.

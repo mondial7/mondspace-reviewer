@@ -3,6 +3,7 @@ package config_test
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/config"
@@ -23,7 +24,7 @@ func TestSavedConfigComesBack(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 
-	if got != want {
+	if !reflect.DeepEqual(got, want) {
 		t.Errorf("Load = %+v, want %+v", got, want)
 	}
 }
@@ -36,7 +37,7 @@ func TestNoConfigIsNotAnError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("a missing config should not error: %v", err)
 	}
-	if got != (domain.AgentConfig{}) {
+	if !reflect.DeepEqual(got, domain.AgentConfig{}) {
 		t.Errorf("got %+v, want nothing set", got)
 	}
 }
@@ -90,5 +91,35 @@ func TestDefaultPathIsUnderTheUsersConfigDirectory(t *testing.T) {
 	}
 	if filepath.Base(got) != "config.json" || filepath.Base(filepath.Dir(got)) != "mondspace-reviewer" {
 		t.Errorf("DefaultPath = %q, want …/mondspace-reviewer/config.json", got)
+	}
+}
+
+func TestPerWorkloadOverridesSurviveARestart(t *testing.T) {
+	// The split is the whole point of configuring two servers, and it is not
+	// worth setting up if it has to be set up again every launch.
+	path := filepath.Join(t.TempDir(), "config.json")
+	want := domain.AgentConfig{
+		Endpoint: "http://127.0.0.1:8081/v1", Model: "qwen3-4b-instruct",
+		Overrides: map[domain.Workload]domain.ModelRef{
+			domain.Narration: {Endpoint: "http://127.0.0.1:8082/v1", Model: "qwen3.5-9b"},
+		},
+	}
+
+	if err := config.Save(path, want); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	got, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("Load = %+v, want %+v", got, want)
+	}
+	if ref := got.For(domain.Narration); ref.Model != "qwen3.5-9b" {
+		t.Errorf("narration came back on %q", ref.Model)
+	}
+	if ref := got.For(domain.Describe); ref.Model != "qwen3-4b-instruct" {
+		t.Errorf("describe came back on %q", ref.Model)
 	}
 }

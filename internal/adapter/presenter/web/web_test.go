@@ -1612,3 +1612,64 @@ func TestTheLiveTargetIsRebuiltEvenWhenItIsTheOpenOne(t *testing.T) {
 		t.Errorf("rebuilt %d times, want one per look", loads)
 	}
 }
+
+func TestSendingAWorkloadToItsOwnModelFromTheStatusPage(t *testing.T) {
+	// The two-server split has to be adjustable where everything else is, or it
+	// becomes the one setting that needs a config file and a restart.
+	var got domain.AgentConfig
+	h := web.NewServer(testSession(), nil).
+		WithAgent(web.AgentStatus{Model: "small", Endpoint: "http://127.0.0.1:8081/v1"}).
+		WithConfigure(func(c domain.AgentConfig) error { got = c; return nil })
+
+	req := httptest.NewRequest(http.MethodPost, "/agent", strings.NewReader(
+		"endpoint=http://127.0.0.1:8081/v1&model=small"+
+			"&endpoint_narration=http://127.0.0.1:8082/v1&model_narration=big"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	h.ServeHTTP(httptest.NewRecorder(), req)
+
+	if ref := got.For(domain.Narration); ref.Endpoint != "http://127.0.0.1:8082/v1" || ref.Model != "big" {
+		t.Errorf("narration = %+v, want the 9B on 8082", ref)
+	}
+	for _, w := range []domain.Workload{domain.Describe, domain.Ask} {
+		if ref := got.For(w); ref.Model != "small" {
+			t.Errorf("%s = %+v, want the shared model", w, ref)
+		}
+	}
+}
+
+func TestClearingAWorkloadFieldPutsItBackOnTheSharedModel(t *testing.T) {
+	// Emptying the box is how a reviewer collapses back to one server. Treating
+	// blank as "an override to an empty model" would leave that workload
+	// pointing at nothing.
+	var got domain.AgentConfig
+	h := web.NewServer(testSession(), nil).
+		WithConfigure(func(c domain.AgentConfig) error { got = c; return nil })
+
+	req := httptest.NewRequest(http.MethodPost, "/agent", strings.NewReader(
+		"endpoint=http://a/v1&model=m&endpoint_narration=&model_narration=  "))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	h.ServeHTTP(httptest.NewRecorder(), req)
+
+	if got.Split() {
+		t.Errorf("got %+v, want no override left", got)
+	}
+}
+
+func TestTheStatusPageShowsWhichModelAnswersWhat(t *testing.T) {
+	// With two models answering, "the model" is no longer a single fact, and a
+	// page that shows one of them is actively misleading about the other.
+	h := web.NewServer(testSession(), nil).WithAgent(web.AgentStatus{
+		Model: "small", Endpoint: "http://127.0.0.1:8081/v1",
+		Workloads: []web.WorkloadModel{
+			{Workload: "narration", Endpoint: "http://127.0.0.1:8082/v1", Model: "big"},
+			{Workload: "describe", Endpoint: "http://127.0.0.1:8081/v1", Model: "small"},
+		},
+	})
+
+	body := get(t, h, "/status").Body.String()
+	for _, want := range []string{"narration", "big", "describe", "8082"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the status page should name %q:\n%s", want, body)
+		}
+	}
+}

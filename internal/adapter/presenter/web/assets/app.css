@@ -1249,3 +1249,11 @@ a.toast:hover { border-color: var(--kind, var(--accent)); }
   .toast { animation: none; }
   .toast[data-leaving] { transition: none; }
 }
+
+/* Where a workload's model is served. Secondary to the model name beside it:
+   which model answers is the fact, the port is the detail (ADR 0019). */
+.board__hint {
+  color: var(--fg-dim);
+  font-size: 0.78em;
+  overflow-wrap: anywhere;
+}

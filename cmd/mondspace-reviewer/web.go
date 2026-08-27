@@ -23,7 +23,6 @@ import (
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/store/jsonl"
 	pgstore "github.com/mondial7/mondspace-reviewer/internal/adapter/store/postgres"
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/summarizer/openai"
-	"github.com/mondial7/mondspace-reviewer/internal/adapter/summarizer/switchable"
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
 	"github.com/mondial7/mondspace-reviewer/internal/port"
 	"github.com/mondial7/mondspace-reviewer/internal/usecase"
@@ -42,6 +41,17 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 	summarizerURL := fs.String("summarizer-url", defaultSummarizerURL, "OpenAI-compatible summarizer endpoint")
 	model := fs.String("model", defaultModel, "summarizer model")
 	configPath := fs.String("config", config.DefaultPath(), "where the model settings are kept")
+
+	// Per-workload overrides. The jobs want different models, and this is how
+	// two llama-servers are named without editing a config file (ADR 0019).
+	workloadURL := map[domain.Workload]*string{}
+	workloadModel := map[domain.Workload]*string{}
+	for _, w := range domain.Workloads {
+		workloadURL[w] = fs.String(string(w)+"-url", "",
+			"endpoint for the "+string(w)+" workload (default: the shared one)")
+		workloadModel[w] = fs.String(string(w)+"-model", "",
+			"model for the "+string(w)+" workload (default: the shared one)")
+	}
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
 	}
@@ -57,6 +67,11 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 		return err
 	}
 	agent := resolveAgent(stored, *summarizerURL, *model, set)
+	workloadFlags := map[domain.Workload]domain.ModelRef{}
+	for _, w := range domain.Workloads {
+		workloadFlags[w] = domain.ModelRef{Endpoint: *workloadURL[w], Model: *workloadModel[w]}
+	}
+	agent = resolveWorkloads(agent, workloadFlags, set)
 	// With no --repo, look around: a checkout opens itself, and a directory of
 	// checkouts offers its children. Nothing is prompted for at launch — the
 	// repositories in the workspace are chosen in the app, on /status, where the
@@ -114,31 +129,32 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 		firstStats = nil // a review that cannot be measured still renders
 	}
 
-	// Wrapped so the endpoint and model can be changed from the status page: every
-	// model call below captures this reference, and swapping what it delegates to
-	// is what makes a change take effect without a restart.
-	sum := switchable.New(configuredSummarizer(agent))
+	// One handle per workload, so narration can be answered by a bigger model
+	// than the per-file descriptions without anything downstream knowing (ADR
+	// 0019). Each handle is permanent and swaps what it delegates to, which is
+	// what makes a change from the status page take effect without a restart.
+	pool := newAgentPool(agent, summarizerFor(agent))
 	var sess domain.Session
 	if entry.session != "" {
 		sess, _ = store.Load(entry.session)
 	}
 
 	handler := web.NewServer(view, targetNotes{}).
-		WithAgent(agentStatus(ctx, sum, &agent)).
+		WithAgent(agentStatus(ctx, pool, &agent)).
 		WithWorkspace(discoverWorkspace(repos, *out)).
 		WithTargets(targets).
 		WithLoader(load).
 		WithVersions(snap.FileVersions, snap.DiffAt).
 		WithRepos(openRepos(), addRepo(*out)).
 		WithCandidates(unopenedRepos(candidates)).
-		WithDescribe(describeAnyTarget(sum)).
-		WithDescribeFile(describeOneFile(sum)).
+		WithDescribe(describeAnyTarget(pool.For(domain.Describe))).
+		WithDescribeFile(describeOneFile(pool.For(domain.Describe))).
 		WithRemoveRepo(removeRepo(*out)).
 		WithCompare(compareRefs()).
-		WithConfigure(configureAgent(sum, *configPath, &agent)).
+		WithConfigure(configureAgent(pool, *configPath, &agent)).
 		WithExchanges(exchangeStore(store), sess.Exchanges).
-		WithAsk(webAskFunc(sess, view.Units, view.Diffs, snap, sum)).
-		WithReanalyse(webReanalyseFunc(snap, sum, agent.Model)).
+		WithAsk(webAskFunc(sess, view.Units, view.Diffs, snap, pool.For(domain.Ask))).
+		WithReanalyse(webReanalyseFunc(snap, pool.For(domain.Describe), agent.For(domain.Describe).Model)).
 		WithAudit(workspaceAudit{writeTo: filepath.Join(storeRoot, initial, "audit.jsonl")})
 
 	// Narration is the only thing that calls the model unbidden, and it runs at
@@ -148,7 +164,7 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 		if targetID == "" {
 			targetID = initial
 		}
-		narrateTarget(ctx, handlerRef(), sum, targetID, agent.Model)
+		narrateTarget(ctx, handlerRef(), pool.For(domain.Narration), targetID, agent.For(domain.Narration).Model)
 	}
 	handler = handler.WithNarrate(narrate)
 	setHandler(handler)
@@ -168,13 +184,13 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 	// may still be moving, so the numbers are recomputed on a tick and pushed to
 	// open pages. Reading git every 15s is cheap; a model is never involved.
 	go refreshReview(ctx, reviewRefresher{
-		handler: handler, snap: snap, store: store, sum: sum,
+		handler: handler, snap: snap, store: store, sum: pool.For(domain.Narration),
 		sessionID: initial, repo: repo,
 		storeRel: storeRelativeTo(repo, storeRoot),
 		baseline: entry.target.From, model: agent.Model,
 		fingerprint: usecase.ReviewFingerprint(firstStats), narrate: narrate,
 	})
-	go refreshAgent(ctx, handler, sum, &agent)
+	go refreshAgent(ctx, handler, pool, &agent)
 
 	// The refresher above watches one review. This watches the repository
 	// itself, which is how a commit or a tag that belongs to some *other*
@@ -557,39 +573,53 @@ func short(fingerprint string) string {
 	return fingerprint[:8]
 }
 
-// configuredSummarizer builds the summarizer these settings describe, probing
-// once so an unreachable endpoint degrades to mechanical rather than hanging.
-func configuredSummarizer(agent domain.AgentConfig) port.Summarizer {
-	chosen := chooseSummarizer(agent.Endpoint, agent.Model)
-	if agent.NoThinking {
-		if adapter, ok := chosen.(*openai.Summarizer); ok {
-			return adapter.WithoutThinking()
+// summarizerFor builds a summarizer for one model, probing once so an
+// unreachable endpoint degrades to mechanical rather than hanging.
+//
+// NoThinking is a property of the settings as a whole rather than of one model:
+// it asks the chat template to skip the reasoning phase, and under llama-server
+// the real switch is --reasoning-budget 0 on the server itself (ADR 0019).
+func summarizerFor(agent domain.AgentConfig) buildFunc {
+	return func(ref domain.ModelRef) port.Summarizer {
+		chosen := chooseSummarizer(ref.Endpoint, ref.Model)
+		if agent.NoThinking {
+			if adapter, ok := chosen.(*openai.Summarizer); ok {
+				return adapter.WithoutThinking()
+			}
 		}
+		return chosen
 	}
-	return chosen
 }
 
 // configureAgent applies new settings and remembers them. It refuses settings it
 // cannot reach: telling the reviewer now is better than leaving them to wonder
 // why nothing is being described.
-func configureAgent(sum *switchable.Summarizer, path string, current *domain.AgentConfig) web.ConfigureFunc {
+func configureAgent(pool *agentPool, path string, current *domain.AgentConfig) web.ConfigureFunc {
 	return func(want domain.AgentConfig) error {
 		if want.Endpoint == "" || want.Model == "" {
 			return fmt.Errorf("an endpoint and a model are both needed")
 		}
 
-		next := configuredSummarizer(want)
-		if pinger, ok := next.(port.Pinger); ok {
-			probe, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-			defer cancel()
-			if err := pinger.Ping(probe); err != nil {
-				return fmt.Errorf("%s did not answer: %w", want.Endpoint, err)
+		// Every distinct model has to answer before any of them is adopted.
+		// Half-applying a split would leave one workload silently mechanical,
+		// which is the failure mode hardest to notice from the page.
+		build := summarizerFor(want)
+		for _, w := range domain.Workloads {
+			ref := want.For(w)
+			next := build(ref)
+			pinger, ok := next.(port.Pinger)
+			if !ok {
+				return fmt.Errorf("%s did not answer", ref.Endpoint)
 			}
-		} else {
-			return fmt.Errorf("%s did not answer", want.Endpoint)
+			probe, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			err := pinger.Ping(probe)
+			cancel()
+			if err != nil {
+				return fmt.Errorf("%s (%s) did not answer: %w", ref.Endpoint, ref.Model, err)
+			}
 		}
 
-		sum.Swap(next)
+		pool.Reconfigure(want, build)
 		*current = want
 		if err := config.Save(path, want); err != nil {
 			// It is working now; it just will not be remembered.
@@ -603,19 +633,28 @@ func configureAgent(sum *switchable.Summarizer, path string, current *domain.Age
 // answers right now, and what it has spent. Liveness and usage are optional
 // capabilities — a summarizer without them still yields a complete panel, just
 // a quieter one.
-func agentStatus(ctx context.Context, sum port.Summarizer, agent *domain.AgentConfig) web.AgentStatus {
+func agentStatus(ctx context.Context, pool *agentPool, agent *domain.AgentConfig) web.AgentStatus {
 	status := web.AgentStatus{
 		Model: agent.Model, Endpoint: agent.Endpoint,
 		NoThinking: agent.NoThinking, Checked: time.Now(),
 	}
 
-	if p, ok := sum.(port.Pinger); ok {
-		probe, cancel := context.WithTimeout(ctx, 2*time.Second)
-		defer cancel()
-		status.Online = p.Ping(probe) == nil
-	}
-	if u, ok := sum.(port.UsageReporter); ok {
-		status.Usage = u.Usage()
+	probe, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	// Online means every model answers. One of two being down is the assistant
+	// half-working, which must not read as green.
+	status.Online = pool.Ping(probe) == nil
+	status.Usage = pool.Usage()
+
+	// Only worth listing when they differ: saying "narration: qwen, describe:
+	// qwen, ask: qwen" is three lines that add nothing.
+	if agent.Split() {
+		for _, w := range domain.Workloads {
+			ref := agent.For(w)
+			status.Workloads = append(status.Workloads, web.WorkloadModel{
+				Workload: string(w), Endpoint: ref.Endpoint, Model: ref.Model,
+			})
+		}
 	}
 	return status
 }
@@ -623,7 +662,7 @@ func agentStatus(ctx context.Context, sum port.Summarizer, agent *domain.AgentCo
 // refreshAgent re-probes the model while the page is open. "Is it online" is a
 // live question: an endpoint that answered at start-up says nothing about the
 // one that died five minutes later.
-func refreshAgent(ctx context.Context, handler *web.Server, sum port.Summarizer, agent *domain.AgentConfig) {
+func refreshAgent(ctx context.Context, handler *web.Server, pool *agentPool, agent *domain.AgentConfig) {
 	ticker := time.NewTicker(20 * time.Second)
 	defer ticker.Stop()
 
@@ -632,7 +671,7 @@ func refreshAgent(ctx context.Context, handler *web.Server, sum port.Summarizer,
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			handler.SetAgent(agentStatus(ctx, sum, agent))
+			handler.SetAgent(agentStatus(ctx, pool, agent))
 		}
 	}
 }

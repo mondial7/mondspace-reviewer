@@ -66,8 +66,9 @@ No configuration, no database, no account, and **no session to record first** �
 it reads the git history that is already there.
 
 Everything works offline. The prose is optional: point `msr` at any
-OpenAI-compatible endpoint — a local [LM Studio](https://lmstudio.ai) server by
-default — and it degrades to a mechanical grouping when there is none.
+OpenAI-compatible endpoint — a local
+[llama.cpp](https://github.com/ggml-org/llama.cpp) server by default — and it
+degrades to a mechanical grouping when there is none.
 
 ## Why you would want it
 
@@ -259,35 +260,74 @@ the TUI will not catch up. Use `msr web`; use `--plain` when you want text.
 
 ## Summarizer configuration
 
-Headlines and interrogation use any OpenAI-compatible chat endpoint, defaulting
-to a local LM Studio server at `http://localhost:1234/v1`. The model turns each
-unit into a one-line storyline and infers the *why*; expanding a unit still shows
-the real diff regardless.
+The assistant uses any OpenAI-compatible chat endpoint. The default is a local
+[llama.cpp](https://github.com/ggml-org/llama.cpp) server:
 
 ```sh
-msr review --tui --session=<id> \
-  --summarizer-url=http://localhost:1234/v1 \
-  --model=qwen/qwen3.5-9b
+brew install llama.cpp
+
+llama-server -hf bartowski/Qwen_Qwen3-4B-Instruct-2507-GGUF:Q6_K \
+  --host 127.0.0.1 --port 8081 -c 32768 -fa on \
+  --cache-type-k q8_0 --cache-type-v q8_0 --jinja
 ```
 
-For an endpoint that requires authentication (e.g. an LM Studio server with a
-token), set a bearer token via the environment — it is never written to disk:
+That is the whole setup — `msr web` finds it at `http://127.0.0.1:8081/v1`. Any
+other OpenAI-compatible server works too:
+
+```sh
+msr web --summarizer-url=http://localhost:1234/v1 --model=qwen/qwen3.5-9b
+```
+
+For an endpoint that requires authentication, set a bearer token via the
+environment — it is never written to disk:
 
 ```sh
 export MSR_API_KEY=sk-…
 ```
 
+### Why this model
+
+The three jobs are not one problem: narration is a large schema whose area names
+are an `enum`, per-file description is short and high-volume, and asking is free
+prose. Measured on an M4 Pro with 24 GB, 6 runs each at temperature 0:
+
+| | Qwen3-4B-Instruct-2507 Q6_K | Qwen3.5-9B Q4_K_M |
+| --- | --- | --- |
+| narration | **6/6 valid**, every area name real | **0/6** — spends the whole budget thinking and never answers |
+| latency | 6.7–8.9s | 64–115s, no answer |
+| reasoning tokens | **none — no thinking mode at all** | cannot be turned off |
+
+The small instruct model wins outright, so it answers everything. Running the 9B
+alongside it made the 4B four times slower (6.8s → 28s) from memory pressure
+alone — on 24 GB a second model has to earn a lot to be worth loading.
+
+### A model per workload
+
+If you do want to split — a bigger model for narration, a fast one for the rest
+— every workload can be pointed somewhere else, from the flags, the environment,
+or the settings on `/status`:
+
+```sh
+msr web --narration-url=http://127.0.0.1:8082/v1 --narration-model=big
+```
+
+`--describe-*` and `--ask-*` work the same way, as do `MSR_NARRATION_URL`,
+`MSR_DESCRIBE_MODEL` and so on. Anything left empty falls back to the shared
+endpoint and model, field by field, so two models behind one server is just a
+model name. Distinct models are connected to once and their usage is added up:
+`/status` shows which model answers what, and reports online only when *all* of
+them do.
+
 ### Structured output
 
-When the endpoint supports it, the story is requested as **schema-enforced JSON**
-(`response_format: json_schema`). LM Studio compiles the schema into a llama.cpp
-grammar (GGUF) or Outlines (MLX), so the reply is valid JSON by construction, and
-the list of allowed area names is an `enum` — a model *cannot* name an area that
-does not exist. An endpoint that rejects the schema is retried without it, so
-this can never break a working setup.
+The story is requested as **schema-enforced JSON** (`response_format:
+json_schema`). llama.cpp compiles the schema into a GBNF grammar, so the reply is
+valid JSON by construction, and the list of allowed area names is an `enum` — a
+model *cannot* name an area that does not exist. An endpoint that rejects the
+schema is retried without it, so this can never break a working setup.
 
 The effect on a reasoning model is not subtle. Same prompt, same 32k context,
-`qwen/qwen3.5-9b`:
+`qwen3.5-9b`:
 
 | request | completion tokens | finish | time |
 | --- | --- | --- | --- |
@@ -297,32 +337,28 @@ The effect on a reasoning model is not subtle. Same prompt, same 32k context,
 Left to itself the model reasons until it runs out of budget and returns
 nothing. The grammar simply does not let it.
 
-### Reasoning models
+### Reasoning models, and two flags that do not help
 
-A reasoning model spends its budget thinking before it emits any output, which
-is what makes narration fail on a modest context window. Two things help, and
-one thing that sounds like it should does not:
+If you point msr at a model that thinks, two llama-server flags look like the
+answer and are worth knowing about before you reach for them.
 
-```sh
-lms load qwen/qwen3.5-9b -c 32768 --parallel 1 --ttl 3600   # room to think
-```
+`--reasoning-format none` **breaks schema-constrained requests**. With a
+`json_schema` in force on Qwen3.5-9B it fails outright — `400 Failed to
+initialize samplers`, for any schema, trivial ones included. It is harmless on a
+model with no thinking mode, which is also the only case where it does nothing.
+Leave it off.
 
-Loading at 32k instead of 4k costs ~1.4 GiB and is what makes the story view
-work at all. Structured output (above) is the other half.
+`--reasoning-budget 0` **does not stop the thinking**, at least on Qwen3.5-9B: it
+spent 334 completion tokens producing `{"a": "Hello"}`. This is the same result
+as LM Studio's `chat_template_kwargs.enable_thinking=false`, which msr can still
+send (`MSR_NO_THINKING=1`) and which was also measured as doing nothing on that
+model. Some templates honour these; do not count on yours without measuring.
 
-```sh
-export MSR_NO_THINKING=1          # send chat_template_kwargs.enable_thinking=false
-```
-
-`MSR_NO_THINKING` is opt-in and **had no measurable effect on qwen/qwen3.5-9b
-under LM Studio** — its chat template ignores the flag, and reasoning tokens
-were unchanged. It is kept because other templates do honour it; do not count
-on it without measuring your own model.
-
-One quirk worth knowing: a schema-constrained reply from LM Studio arrives in
-`reasoning_content` with `content` empty, because the grammar constrains
-sampling inside the template's thinking block. `msr` reads it either way — a
-reply filed as reasoning is still a reply.
+msr requires the answer in `content`. If a server puts it in `reasoning_content`
+instead — LM Studio does this for grammar-constrained replies — the call fails
+and says so, naming the flag that causes it. It used to read the answer out of
+the reasoning channel, which worked and hid the difference between a model that
+answered and one that only thought ([ADR 0019](ADR/0019-llama-server-and-a-model-per-workload.md)).
 
 If the endpoint is unreachable, `msr` silently falls back to mechanical headlines
 (files + change counts) and an offline notice for questions — **the queue never
@@ -337,11 +373,10 @@ go test -race ./...
 go vet ./...
 ```
 
-One contract test talks to a real LM Studio server and is gated behind a tag:
+One contract test talks to a real model server and is gated behind a tag:
 
 ```sh
-MSR_SUMMARIZER_URL=http://localhost:1234/v1 MSR_MODEL=qwen/qwen3.5-9b \
-  MSR_API_KEY=sk-… \
+MSR_SUMMARIZER_URL=http://127.0.0.1:8081/v1 MSR_MODEL=qwen3-4b-instruct-2507 \
   go test -tags=integration ./internal/adapter/summarizer/openai/...
 ```
 

@@ -165,11 +165,28 @@ func liveSource(name, eventsPath string) (port.EventSource, error) {
 	}
 }
 
-// Default summarizer endpoint: a local LM Studio server. Set MSR_API_KEY if the
-// endpoint requires a bearer token.
+// Default summarizer endpoint: a local llama-server (ADR 0019).
+//
+// One model answers all three workloads. That is measured rather than assumed:
+// Qwen3-4B-Instruct-2507 has no thinking mode at all, and it still gets the
+// enum-constrained narration schema right 6 times out of 6 in about 7 seconds.
+// A 9B alongside it made both slower, because two resident models on 24 GB cost
+// roughly four times the latency of one.
+//
+// Start it with:
+//
+//	llama-server -hf bartowski/Qwen_Qwen3-4B-Instruct-2507-GGUF:Q6_K \
+//	  --host 127.0.0.1 --port 8081 -c 32768 -fa on \
+//	  --cache-type-k q8_0 --cache-type-v q8_0 --jinja
+//
+// Deliberately no --reasoning-format none: it is unnecessary here (this model
+// never emits a reasoning channel) and on a model that does think it makes
+// json_schema requests fail outright with "failed to initialize samplers".
+//
+// Set MSR_API_KEY if the endpoint requires a bearer token.
 const (
-	defaultSummarizerURL = "http://localhost:1234/v1"
-	defaultModel         = "qwen/qwen3.5-9b"
+	defaultSummarizerURL = "http://127.0.0.1:8081/v1"
+	defaultModel         = "qwen3-4b-instruct-2507"
 )
 
 // runExport writes a review report for a stored session as Markdown or JSON.
