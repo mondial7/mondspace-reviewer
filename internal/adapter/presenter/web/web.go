@@ -235,6 +235,12 @@ type Server struct {
 	narrating  bool
 	agent      AgentStatus
 
+	// pending is work that arrived after this review was opened, waiting for
+	// the reviewer to decide what to do with it (ADR 0020).
+	pending domain.Pending
+	include IncludeFunc
+	split   SplitFunc
+
 	// subs are live subscribers (server-sent events). Each gets a buffered
 	// channel so a slow reader can never block a request handler.
 	subs   map[chan sseEvent]struct{}
@@ -969,6 +975,8 @@ func (s *Server) routes() {
 	// The workspace list folded into the status page.
 	s.mux.HandleFunc("GET /sessions", redirectStatus)
 	s.mux.HandleFunc("POST /story/narrate", s.handleNarrate)
+	s.mux.HandleFunc("POST /live/include", s.handleInclude)
+	s.mux.HandleFunc("POST /live/split", s.handleSplit)
 	s.mux.HandleFunc("GET /events", s.handleEvents)
 }
 
@@ -1116,6 +1124,117 @@ func (s *Server) send(ev sseEvent) {
 		default:
 		}
 	}
+}
+
+// SetPending records what has changed since this review was opened, classified
+// against what the reviewer has already read and ruled on.
+//
+// The classification happens here because this is where the units and the notes
+// are. "Three files changed" is a fact; "one of them is the file you marked ok"
+// is a reason to stop and decide, and only this side knows the difference.
+func (s *Server) SetPending(changed []domain.FileStat, from, to domain.SnapshotRef, since time.Time) {
+	s.mu.Lock()
+	p := usecase.PendingWork(s.sess.Units, s.sess.Notes, changed, from, to, since)
+	was := s.pending.Headline()
+	s.pending = p
+	s.mu.Unlock()
+
+	// Only wake open pages when the sentence would actually read differently.
+	// This is recomputed every couple of seconds; broadcasting each time would
+	// redraw the page for a line that has not changed.
+	if p.Headline() != was {
+		s.broadcast("pending")
+	}
+}
+
+// OpenTargetID is the review currently being read. The watcher needs it to ask
+// "what has arrived beyond this", which is a different question from "what has
+// changed in the repository".
+func (s *Server) OpenTargetID() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.sess.ID
+}
+
+// Pending is what is currently waiting on the reviewer's decision.
+func (s *Server) Pending() domain.Pending {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.pending
+}
+
+// ClearPending forgets the waiting work, because it has been taken into the
+// review or the reviewer has moved to it.
+func (s *Server) ClearPending() {
+	s.mu.Lock()
+	s.pending = domain.Pending{}
+	s.mu.Unlock()
+	s.broadcast("pending")
+}
+
+// IncludeFunc extends the open review to cover the work that arrived after it
+// was opened. SplitFunc instead opens a review of only that work, returning the
+// ref to send the reviewer to.
+type IncludeFunc func(ctx context.Context, targetID string) error
+
+// SplitFunc opens a review of only the work that has arrived since.
+type SplitFunc func(ctx context.Context, targetID string) (string, error)
+
+// WithLiveActions wires the two ways of resolving work that arrived mid-review.
+// The third way — carrying on reading — needs no server at all.
+func (s *Server) WithLiveActions(include IncludeFunc, split SplitFunc) *Server {
+	s.include, s.split = include, split
+	return s
+}
+
+// handleInclude folds the waiting work into the review being read.
+func (s *Server) handleInclude(w http.ResponseWriter, r *http.Request) {
+	s.mu.RLock()
+	include := s.include
+	s.mu.RUnlock()
+	if include == nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	target := strings.TrimSpace(r.FormValue("target"))
+	if err := include(r.Context(), target); err != nil {
+		// Leave the choice on the page: silently clearing it would lose the
+		// notification along with the failure.
+		s.Record(AuditEntry{SessionID: target, Action: "include-failed", Detail: err.Error()})
+		http.Redirect(w, r, backTo(r, "#pending"), http.StatusSeeOther)
+		return
+	}
+
+	s.ClearPending()
+	s.Record(AuditEntry{SessionID: target, Action: "include",
+		Detail: "took the work that arrived into this review"})
+	http.Redirect(w, r, "/?target="+url.QueryEscape(target), http.StatusSeeOther)
+}
+
+// handleSplit leaves this review as it stands and opens one of only what has
+// arrived since it was opened.
+func (s *Server) handleSplit(w http.ResponseWriter, r *http.Request) {
+	s.mu.RLock()
+	split := s.split
+	s.mu.RUnlock()
+	if split == nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	target := strings.TrimSpace(r.FormValue("target"))
+	ref, err := split(r.Context(), target)
+	if err != nil {
+		s.Record(AuditEntry{SessionID: target, Action: "split-failed", Detail: err.Error()})
+		http.Redirect(w, r, backTo(r, "#pending"), http.StatusSeeOther)
+		return
+	}
+
+	s.ClearPending()
+	s.Record(AuditEntry{SessionID: target, Action: "split",
+		Detail: "opened a review of only what arrived since"})
+	http.Redirect(w, r, "/?target="+url.QueryEscape(ref), http.StatusSeeOther)
 }
 
 // Pulse tells every open page what just moved in the repository. Nothing to
@@ -1660,6 +1779,7 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 
 	s.mu.RLock()
 	views := s.viewsOf(sess)
+	pending := s.pending
 	stats := sess.Stats
 	narrative := sess.Narrative
 	work := s.workLocked()
@@ -1750,9 +1870,11 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 		HasReanal       bool
 		CanRetry        bool
 		Narrating       bool
+		Pending         domain.Pending
 	}{
 		Session: sess, Workspace: workspace, Targets: targets,
 		Repos: repos, CanCompare: canCompare,
+		Pending:   pending,
 		Review:    describeReview(narrative, len(groups), narrating, s.narrate != nil, s.now()),
 		Stats:     statsFor(sess.Target.Kind, stats, sess.Target.Subtitle),
 		Narrative: narrative, Chapters: chapters, Groups: groups,

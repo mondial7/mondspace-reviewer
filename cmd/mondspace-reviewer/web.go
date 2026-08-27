@@ -151,6 +151,7 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 		WithDescribeFile(describeOneFile(pool.For(domain.Describe))).
 		WithRemoveRepo(removeRepo(*out)).
 		WithCompare(compareRefs()).
+		WithLiveActions(liveActions()).
 		WithConfigure(configureAgent(pool, *configPath, &agent)).
 		WithExchanges(exchangeStore(store), sess.Exchanges).
 		WithAsk(webAskFunc(sess, view.Units, view.Diffs, snap, pool.For(domain.Ask))).
@@ -885,8 +886,14 @@ func targetLoader() web.Loader {
 		// The target list was built once; HEAD has moved every time the agent
 		// committed since. Only the live target follows it.
 		if t.Kind == domain.TargetLive {
-			if head, err := snap.RecentCommits(ctx, 1); err == nil && len(head) > 0 {
-				t = usecase.ResolveLive(t, domain.SnapshotRef{Commit: head[0].Hash, Label: "HEAD"})
+			head, _ := currentHead(ctx, snap)
+			if head != "" {
+				t = usecase.ResolveLive(t, domain.SnapshotRef{Commit: head, Label: "HEAD"})
+			}
+			// ...and it stops at a pin rather than at the working tree, so the
+			// page holds still while it is being read (ADR 0020).
+			if p, err := pinFor(ctx, snap, targetID, head); err == nil {
+				t.To = p.ref
 			}
 		}
 
@@ -1367,6 +1374,10 @@ func watchRepo(ctx context.Context, handler *web.Server, snap *gitsnap.Snapshott
 			// Pulses is silent for the first observation, so opening a page
 			// never greets the reviewer with news about what was already there.
 			handler.Pulse(pulses)
+
+			// And separately from the toast: what has arrived beyond where the
+			// open review stops, so the page can offer the choice (ADR 0020).
+			reportPending(ctx, handler, snap, inStore)
 			prev = state
 		}
 		// A transient git failure (an index.lock during a commit, most often)
@@ -1382,6 +1393,34 @@ func watchRepo(ctx context.Context, handler *web.Server, snap *gitsnap.Snapshott
 		case <-time.After(wait):
 		}
 	}
+}
+
+// reportPending tells the page what has arrived beyond the pin of the review
+// being read.
+//
+// A toast says the repository moved; this says what it means for what is on
+// screen. The two are separate because the answers differ: a commit in some
+// other branch is news, and changes nothing about the review being read.
+func reportPending(ctx context.Context, handler *web.Server, snap *gitsnap.Snapshotter,
+	inStore func(string) bool) {
+
+	open := handler.OpenTargetID()
+	p, pinned := pinnedAt(open)
+	if !pinned {
+		return // not a live review, or nothing has been read yet
+	}
+
+	changed, err := snap.Numstat(ctx, p.ref, domain.SnapshotRef{})
+	if err != nil {
+		return
+	}
+	mine := changed[:0]
+	for _, f := range changed {
+		if !inStore(f.Path) {
+			mine = append(mine, f)
+		}
+	}
+	handler.SetPending(mine, p.ref, domain.SnapshotRef{Label: "now"}, p.at)
 }
 
 // newHistory reports whether anything happened that adds a target. A working

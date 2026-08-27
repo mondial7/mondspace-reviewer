@@ -13,7 +13,7 @@ const stream = new EventSource('/events');
 // would restart the animation every time a commit landed.
 const REGIONS = ['.cockpit__story', '.cockpit__changes', '.cockpit__stats',
   '.cockpit__status', '.reviewcard', '.brief', '.board', '.activity', '.queue',
-  '.storynav', '#refs'];
+  '.storynav', '#refs', '#pending'];
 
 let pending = false;
 
@@ -52,6 +52,10 @@ async function refresh() {
         if (caret != null) restored.setSelectionRange(caret, caret);
       }
     }
+
+    // The pending region's innerHTML is replaced wholesale, so a dismissal has
+    // to be re-applied to the new markup or the banner reappears every tick.
+    applyDismissal();
   } catch {
     // A failed refresh is not worth breaking the page over; the next event or a
     // manual reload will catch up.
@@ -60,7 +64,7 @@ async function refresh() {
   }
 }
 
-for (const event of ['narrative', 'note', 'headline', 'answer', 'targets']) {
+for (const event of ['narrative', 'note', 'headline', 'answer', 'targets', 'pending']) {
   stream.addEventListener(event, refresh);
 }
 
@@ -155,6 +159,31 @@ stream.addEventListener('pulse', (e) => {
   // wall of stale toasts on return is worse than none.
   if (document.hidden) return;
   for (const p of pulses) toast(p);
+});
+
+// ── Work that arrived mid-review ────────────────────────────────────────────
+//
+// "Keep reading" is a real answer and the most common one, so it has to stick:
+// a banner that reappears on the next two-second refresh is not dismissable,
+// it is just slower. It is remembered against the sentence it dismissed, so
+// the next *different* piece of news comes back.
+
+let dismissed = null;
+
+function pendingHead() {
+  return document.querySelector('.pending__head')?.textContent.trim() ?? null;
+}
+
+function applyDismissal() {
+  const banner = document.querySelector('.pending__inner');
+  if (!banner) return;
+  banner.hidden = pendingHead() !== null && pendingHead() === dismissed;
+}
+
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('[data-pending-dismiss]')) return;
+  dismissed = pendingHead();
+  applyDismissal();
 });
 
 // Catch up on anything missed while the tab was in the background.

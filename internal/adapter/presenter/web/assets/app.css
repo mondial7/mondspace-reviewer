@@ -1257,3 +1257,111 @@ a.toast:hover { border-color: var(--kind, var(--accent)); }
   font-size: 0.78em;
   overflow-wrap: anywhere;
 }
+
+/* ── Work that arrived mid-review ───────────────────────────────────────────
+   Spanning both reading columns, above the review card: it is about the page
+   as a whole, and it is a question rather than a status (ADR 0020). */
+
+.pending { grid-column: 1 / -1; }
+
+.pending:empty { display: none; }
+
+.pending__inner {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--inferred);
+  border-left-width: 3px;
+  border-radius: 8px;
+  /* Tinted, not alarming: new work is the normal state of watching an agent,
+     not an error. */
+  background: color-mix(in srgb, var(--inferred) 7%, var(--bg-raised));
+}
+
+.pending__head {
+  margin: 0;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.pending__files {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  margin: 0;
+  padding: 0;
+  max-height: 9rem;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.pending__file {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  font-size: 0.78rem;
+}
+
+.pending__path {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-family: var(--mono);
+  color: var(--fg);
+}
+
+.pending__churn {
+  margin-left: auto;
+  flex: none;
+  color: var(--fg-dim);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+}
+
+.pending__tag {
+  flex: none;
+  padding: 0.05rem 0.35rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--fg-dim) 22%, transparent);
+  color: var(--fg-dim);
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* A file the reviewer already ruled on is the one that decides the answer, so
+   it is the one thing here that is coloured. */
+.pending__tag--judged {
+  background: color-mix(in srgb, var(--inferred) 28%, transparent);
+  color: var(--inferred);
+}
+
+.pending__choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.pending__btn {
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--bg-raised);
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.pending__btn:hover { border-color: var(--accent); }
+
+.pending__btn--go {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--rule));
+  color: var(--accent);
+}
+
+/* "Keep reading" is the most common answer, so it sits first and quietest;
+   the two that change what you are looking at are pushed to the right. */
+.pending__choices form:first-of-type { margin-left: auto; }

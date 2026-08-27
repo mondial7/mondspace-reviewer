@@ -121,6 +121,48 @@
       </section>
     </aside>
 
+    <!-- Work that arrived while the reviewer was reading (ADR 0020).
+         Folding it in silently would change what they are judging underneath
+         them; withholding it would let them finish a review of something that
+         no longer exists. So it is named, and they choose. -->
+    <section class="pending" id="pending">
+      {{ with .Pending }}{{ if not .Empty }}
+      <div class="pending__inner">
+        <p class="pending__head">{{ .Headline }}</p>
+
+        <ul class="pending__files">
+          {{ range .Files }}
+          <li class="pending__file">
+            {{ if .Annotated }}<span class="pending__tag pending__tag--judged"
+              title="you have already written a note on this file">annotated</span>
+            {{ else if .InReview }}<span class="pending__tag">on screen</span>{{ end }}
+            <code class="pending__path">{{ .Path }}</code>
+            <span class="pending__churn">+{{ .Added }}&thinsp;&minus;{{ .Removed }}</span>
+          </li>
+          {{ end }}
+        </ul>
+
+        <div class="pending__choices">
+          <!-- Doing nothing is a real answer, and the most common one: the
+               reviewer is mid-thought and the new work can wait. -->
+          <button class="pending__btn" type="button" data-pending-dismiss>keep reading</button>
+
+          <form method="post" action="/live/include">
+            <input type="hidden" name="target" value="{{ $.Session.ID }}">
+            <button class="pending__btn pending__btn--go" type="submit"
+                    title="extend this review to cover the new work too">include them</button>
+          </form>
+
+          <form method="post" action="/live/split">
+            <input type="hidden" name="target" value="{{ $.Session.ID }}">
+            <button class="pending__btn pending__btn--go" type="submit"
+                    title="open a review of only what has arrived since">review just these</button>
+          </form>
+        </div>
+      </div>
+      {{ end }}{{ end }}
+    </section>
+
     <!-- Spanning the two reading columns: has the assistant read this, when,
          how far it got, and how to ask. Switching target is exactly when a
          reviewer needs all four at once. -->

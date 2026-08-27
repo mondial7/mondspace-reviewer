@@ -1673,3 +1673,146 @@ func TestTheStatusPageShowsWhichModelAnswersWhat(t *testing.T) {
 		}
 	}
 }
+
+func TestWorkThatArrivedMidReviewIsOfferedAsAChoice(t *testing.T) {
+	// The reviewer is reading. The agent keeps working. Silently folding the
+	// new work into the page would change what they are judging underneath
+	// them; silently withholding it would let them finish a review of
+	// something that no longer exists. So it is shown, and they choose
+	// (ADR 0020).
+	h := web.NewServer(testSession(), nil)
+	h.SetPending([]domain.FileStat{
+		{Path: "auth/token.go", Added: 6, Removed: 1},
+		{Path: "docs/new.md", Added: 3},
+	}, domain.SnapshotRef{Commit: "pin"}, domain.SnapshotRef{Commit: "now"}, time.Now())
+
+	body := get(t, h, "/").Body.String()
+
+	if !strings.Contains(body, "2 files changed since you opened this review") {
+		t.Errorf("the banner should say what is waiting:\n%s", body)
+	}
+	// The three ways out, which are the whole point of showing it.
+	for _, want := range []string{"/live/include", "/live/split", "data-pending-dismiss"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the banner should offer %q", want)
+		}
+	}
+	// And it must name the files, or "2 files" is not a basis for deciding.
+	if !strings.Contains(body, "auth/token.go") || !strings.Contains(body, "docs/new.md") {
+		t.Error("the banner should name the files that are waiting")
+	}
+}
+
+func TestAFileAlreadyJudgedIsCalledOutInTheBanner(t *testing.T) {
+	// A reviewer who marked a file ok formed that view against a version that
+	// no longer exists. Nothing else on the page would tell them.
+	sess := testSession()
+	sess.Notes = []domain.Note{{ID: "n1", UnitID: "s-f001", Kind: domain.NoteOK, Text: "fine"}}
+	h := web.NewServer(sess, nil)
+
+	h.SetPending([]domain.FileStat{{Path: "auth/token.go", Added: 2}},
+		domain.SnapshotRef{Commit: "pin"}, domain.SnapshotRef{Commit: "now"}, time.Now())
+
+	body := get(t, h, "/").Body.String()
+	if !strings.Contains(body, "1 you had already annotated") {
+		t.Errorf("the banner should say a judgement is now stale:\n%s", body)
+	}
+}
+
+func TestNothingWaitingShowsNoBanner(t *testing.T) {
+	// It is checked every couple of seconds and almost always finds nothing.
+	// A banner that is always there is furniture, not a notification.
+	h := web.NewServer(testSession(), nil)
+	if strings.Contains(get(t, h, "/").Body.String(), "since you opened this review") {
+		t.Error("no pending work should mean no banner")
+	}
+}
+
+func TestPendingIsClearedWhenTheWorkIsTakenIn(t *testing.T) {
+	h := web.NewServer(testSession(), nil)
+	h.SetPending([]domain.FileStat{{Path: "a.go", Added: 1}},
+		domain.SnapshotRef{}, domain.SnapshotRef{}, time.Now())
+	if h.Pending().Empty() {
+		t.Fatal("precondition: something should be waiting")
+	}
+
+	h.ClearPending()
+
+	if !h.Pending().Empty() {
+		t.Error("taking the work in should leave nothing waiting")
+	}
+	if strings.Contains(get(t, h, "/").Body.String(), "since you opened this review") {
+		t.Error("the banner should be gone")
+	}
+}
+
+func TestIncludingTheWaitingWorkExtendsTheReview(t *testing.T) {
+	var asked string
+	h := web.NewServer(testSession(), nil).
+		WithLiveActions(
+			func(_ context.Context, id string) error { asked = id; return nil },
+			nil)
+	h.SetPending([]domain.FileStat{{Path: "a.go", Added: 1}},
+		domain.SnapshotRef{}, domain.SnapshotRef{}, time.Now())
+
+	req := httptest.NewRequest(http.MethodPost, "/live/include", strings.NewReader("target=s"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("POST /live/include = %d, want 303", rec.Code)
+	}
+	if asked != "s" {
+		t.Errorf("extended %q, want the open review", asked)
+	}
+	// The work is no longer waiting: it is what you are now reading.
+	if !h.Pending().Empty() {
+		t.Error("including the work should stop it waiting")
+	}
+}
+
+func TestReviewingOnlyTheNewWorkOpensThatRange(t *testing.T) {
+	// The third choice: leave this review as it stands and go look at just what
+	// arrived. That is an ordinary range target, which is why it can be opened
+	// like anything else.
+	h := web.NewServer(testSession(), nil).
+		WithLiveActions(nil,
+			func(context.Context, string) (string, error) { return "since-you-looked", nil })
+	h.SetPending([]domain.FileStat{{Path: "a.go", Added: 1}},
+		domain.SnapshotRef{}, domain.SnapshotRef{}, time.Now())
+
+	req := httptest.NewRequest(http.MethodPost, "/live/split", strings.NewReader("target=s"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("POST /live/split = %d, want 303", rec.Code)
+	}
+	if got := rec.Header().Get("Location"); !strings.Contains(got, "since-you-looked") {
+		t.Errorf("Location = %q, want the new range", got)
+	}
+	if !h.Pending().Empty() {
+		t.Error("moving to the new work should stop it waiting")
+	}
+}
+
+func TestAFailedIncludeLeavesTheWorkWaiting(t *testing.T) {
+	// If it could not be done, the reviewer must still be able to see the
+	// choice — silently clearing it would lose the notification entirely.
+	h := web.NewServer(testSession(), nil).
+		WithLiveActions(func(context.Context, string) error {
+			return errors.New("git is busy")
+		}, nil)
+	h.SetPending([]domain.FileStat{{Path: "a.go", Added: 1}},
+		domain.SnapshotRef{}, domain.SnapshotRef{}, time.Now())
+
+	req := httptest.NewRequest(http.MethodPost, "/live/include", strings.NewReader("target=s"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	h.ServeHTTP(httptest.NewRecorder(), req)
+
+	if h.Pending().Empty() {
+		t.Error("a failed include must leave the choice on the page")
+	}
+}
