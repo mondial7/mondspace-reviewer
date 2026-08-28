@@ -52,7 +52,9 @@ configuration, no database, no account, and **no session to record first**.
 
 Then press **`?`** in the app, or open
 [`/tutorial`](http://127.0.0.1:7777/tutorial), for the four things to do in
-order. There is a fuller tour on the [project page](https://mondial7.github.io/mondspace-reviewer/).
+order — it is also on the [project page](https://mondial7.github.io/mondspace-reviewer/).
+
+![The built-in tour: four things in order](docs/img/tutorial.png)
 
 > **How much memory?** The 4B at Q6_K needs roughly 4–5 GB resident at a 32k
 > context — comfortable on 16 GB, easy on 32 GB. Running a *second*, larger
@@ -365,6 +367,8 @@ prose. Measured on an M4 Pro with 24 GB, 6 runs each at temperature 0:
 The small instruct model wins outright, so it answers everything. Running the 9B
 alongside it made the 4B four times slower (6.8s → 28s) from memory pressure
 alone — on 24 GB a second model has to earn a lot to be worth loading.
+
+![The status page: which model answers, whether it is online, and what it has cost](docs/img/cockpit-status.png)
 
 ### A model per workload
 

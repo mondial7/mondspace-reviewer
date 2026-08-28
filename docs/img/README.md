@@ -11,6 +11,7 @@ produce four groups, several flags and a story worth reading.
 | `cockpit-changes.png` | a file opened — diff, flags, key lines, annotation |
 | `cockpit-pending.png` | work that arrived mid-review, and the three ways out |
 | `cockpit-status.png` | the model, what it has cost, and the workspace |
+| `tutorial.png` | the built-in tour at `/tutorial` |
 
 To recapture: run `msr web`, narrate a target, then screenshot at 1600×1000.
 Headless Chrome works:
