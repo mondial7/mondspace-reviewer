@@ -2041,3 +2041,48 @@ func TestALongCommitSubtitleDoesNotOverflowItsTile(t *testing.T) {
 		t.Error("the tile should still identify the commit")
 	}
 }
+
+func TestTheTutorialExplainsThePageToSomeoneNew(t *testing.T) {
+	// msr opens on a page with three columns, a picker, flags and a keyboard
+	// nobody has been told about. Everything it does is discoverable by
+	// clicking around for twenty minutes; the tour is for the first five.
+	h := web.NewServer(testSession(), nil)
+
+	rec := get(t, h, "/tutorial")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /tutorial = %d, want 200", rec.Code)
+	}
+	body := rec.Body.String()
+
+	// The four things someone has to do, in order.
+	for _, want := range []string{
+		"Pick what to review",
+		"ask it to read",
+		"then annotate",
+		"Mark it reviewed",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the tour should cover %q", want)
+		}
+	}
+	// And the keys, which are the least discoverable part.
+	for _, want := range []string{">j<", ">k<", "⌘K"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the tour should list %q", want)
+		}
+	}
+	// It has to lead back to work rather than being a dead end.
+	if !strings.Contains(body, `href="/"`) {
+		t.Error("the tour should offer a way back to the cockpit")
+	}
+}
+
+func TestEveryPageOffersTheTour(t *testing.T) {
+	// A tour nobody can find is not a tour.
+	h := web.NewServer(testSession(), nil)
+	for _, page := range []string{"/", "/status", "/activity"} {
+		if !strings.Contains(get(t, h, page).Body.String(), "/tutorial") {
+			t.Errorf("%s should link to the tour", page)
+		}
+	}
+}

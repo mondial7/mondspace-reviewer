@@ -1,39 +1,25 @@
 # Screenshots
 
-`plain-review.png` is current — it matches the output of
+Captured from a real `msr` against a real repository, with a real local model —
+never mocked. The demo repo is a small Go service (`auth`, `api`, `store`) whose
+second commit adds bearer auth and Postgres-backed sessions, which is enough to
+produce four groups, several flags and a story worth reading.
 
-```sh
-msr review --source=replay --file=testdata/sessions/basic.jsonl --plain
-```
-
-`tui-review.png`, `ask.png` and `export.png` are of the **terminal UI**, which is
-unmaintained (v5.0.0). They are kept for history and are not referenced by the
-README or the site: illustrating a web-first product with terminal shots
-misrepresents it.
-
-## What is still missing
-
-Shots of the **cockpit**, which is the product. To capture them:
-
-```sh
-cd ~/some-project-with-history
-msr web
-```
-
-Then, at a window around **1600×1000** so all three columns are visible:
-
-| file | what to capture |
+| file | what it shows |
 | --- | --- |
-| `cockpit.png` | the whole page on a target with a few described groups — the panel, the story, and the changes side by side. **The lead image.** |
-| `cockpit-changes.png` | one group expanded: its sentence, then a file open with its diff and annotation row |
-| `cockpit-status.png` | `/status` with the assistant mid-call, so the activity card shows something running |
+| `cockpit.png` | the whole page: panel, story, changes |
+| `cockpit-changes.png` | a file opened — diff, flags, key lines, annotation |
+| `cockpit-pending.png` | work that arrived mid-review, and the three ways out |
+| `cockpit-status.png` | the model, what it has cost, and the workspace |
 
-Two things worth doing before capturing:
+To recapture: run `msr web`, narrate a target, then screenshot at 1600×1000.
+Headless Chrome works:
 
-- Press **review this** and let it finish, so the groups have their descriptions
-  rather than reading "not yet described" throughout.
-- Pick a target with real substance — a tag, or a commit that touched several
-  directories — so the grouping has something to show.
+```sh
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+  --headless=new --hide-scrollbars --window-size=1600,1000 \
+  --screenshot=out.png http://127.0.0.1:7777/
+```
 
-Dark theme is the default and the one the palette was designed against; `⌘J`
-switches if a light shot is wanted too.
+The page follows the viewer's theme, so pass `data-theme="dark"` on `<html>` (or
+run with a dark system setting) to match the ones committed here.

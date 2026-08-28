@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>How to use this — mondspace-reviewer</title>
+  <link rel="stylesheet" href="/assets/app.css">
+  <script type="module" src="/assets/chrome.js" defer></script>
+</head>
+<body class="page">
+  <canvas class="backdrop" id="backdrop" aria-hidden="true"></canvas>
+
+  <nav class="storynav">
+    <a class="storynav__brand" href="/">msr</a>
+    <a class="storynav__link" href="/">cockpit</a>
+    <a class="storynav__link" href="/activity">activity</a>
+    <a class="storynav__link" href="/status">status</a>
+    <a class="storynav__link" href="/tutorial" aria-current="page">tour</a>
+    <span class="storynav__spacer"></span>
+    <button class="storynav__zen" type="button" data-theme-toggle title="Theme">auto</button>
+    <button class="storynav__zen" type="button" data-zen-toggle
+            aria-pressed="false" title="Zen mode (⌘Z) · palette (⌘K)">zen</button>
+  </nav>
+
+  <header class="masthead">
+    <h1 class="masthead__title">How to use this</h1>
+    <p class="masthead__meta">
+      <span class="masthead__hint">Four things, in order. Everything else is
+        discoverable by clicking around — this is for the first five minutes.</span>
+    </p>
+  </header>
+
+  <main class="board tour">
+
+    <!-- Ordered, because the order is the content: you cannot annotate a review
+         you have not chosen, and signing off is last by definition. -->
+    <ol class="tour__steps">
+
+      <li class="tour__step">
+        <h2 class="tour__title">Pick what to review</h2>
+        <p class="tour__body">
+          Top left of the cockpit, under <em>reviewing</em>. Type a tag, a commit,
+          a branch — it searches as you type. Or leave it on <strong>live</strong>,
+          which is your working tree against HEAD and where msr opens.
+        </p>
+        <p class="tour__body tour__body--dim">
+          Anything in git is reviewable: one commit, a tag (everything since the
+          previous one), a pull request, a recorded agent session, or any two
+          points compared against each other. A signed-off review is ticked in
+          the list, so what is left to look at is readable without opening it.
+        </p>
+      </li>
+
+      <li class="tour__step">
+        <h2 class="tour__title">Ask the assistant to read it</h2>
+        <p class="tour__body">
+          The card across the top says whether it has. Press
+          <strong>ask it to read this</strong> and it groups the files by folder,
+          writes one sentence about what each group is <em>for</em>, and tells the
+          whole change as two to five chapters. About seven seconds on a local
+          model.
+        </p>
+        <p class="tour__body tour__body--dim">
+          Optional, always. Without a model you still get the grouping, the flags,
+          the diffs and the review log — just no prose. The review never waits on
+          the model, and the model can never assert a reason nobody gave: a
+          rationale in the agent's own words is labelled
+          <span class="why why--stated">stated</span>, one the model guessed is
+          labelled <span class="why why--inferred">inferred</span>.
+        </p>
+      </li>
+
+      <li class="tour__step">
+        <h2 class="tour__title">Read, then annotate</h2>
+        <p class="tour__body">
+          Click a filename for its diff. Under each one the assistant calls out
+          the one to three lines actually worth reading, and flags like
+          <code>no-test</code>, <code>new-dep</code> or <code>swallowed-err</code>
+          mark what deserves a second look — those are computed offline, with no
+          model involved at all.
+        </p>
+        <p class="tour__body">
+          Every change takes a note and one of <code>ok</code> ·
+          <code>question</code> · <code>objection</code> · <code>debt</code> ·
+          <code>note</code>. <strong>That log is the thing you are producing.</strong>
+          The prose and the assistant exist only to help you produce it.
+        </p>
+      </li>
+
+      <li class="tour__step">
+        <h2 class="tour__title">Mark it reviewed</h2>
+        <p class="tour__body">
+          When you are done, <strong>mark this reviewed</strong> on the card, with
+          a closing comment on the change as a whole if you have one. Reopening it
+          tomorrow says so.
+        </p>
+        <p class="tour__body tour__body--dim">
+          And if the code moved after you signed off, it says that instead of
+          reading as current — a verdict about a version that no longer exists is
+          worse than no verdict.
+        </p>
+      </li>
+
+    </ol>
+
+    <section class="board__panel tour__panel">
+      <h2 class="board__title">while the agent keeps working</h2>
+      <p class="tour__body">
+        The page you are reading <strong>holds still</strong>. Work the agent does
+        after you opened a review does not appear underneath you — it queues in a
+        banner above the card, naming the files and flagging any you have already
+        annotated. Then you choose: <strong>keep reading</strong>,
+        <strong>include them</strong>, or <strong>review just these</strong>,
+        which opens the new work on its own.
+      </p>
+      <p class="tour__body tour__body--dim">
+        Separately, a small toast in the corner says when the repository moves —
+        a commit, a tag, files changing. Clicking it opens what it names.
+      </p>
+    </section>
+
+    <section class="board__panel tour__panel">
+      <h2 class="board__title">keys</h2>
+      <p class="tour__body tour__body--dim">
+        Reading is the common case, so it has the short keys. All of them are
+        ignored while you are typing. Press <kbd class="keysheet__key">?</kbd>
+        anywhere for this list.
+      </p>
+      <ul class="keysheet__list tour__keys">
+        <li class="keysheet__row"><kbd class="keysheet__key">j</kbd><span class="keysheet__what">next file</span></li>
+        <li class="keysheet__row"><kbd class="keysheet__key">k</kbd><span class="keysheet__what">previous file</span></li>
+        <li class="keysheet__row"><kbd class="keysheet__key">o</kbd><span class="keysheet__what">open or close the file</span></li>
+        <li class="keysheet__row"><kbd class="keysheet__key">g / G</kbd><span class="keysheet__what">first / last file</span></li>
+        <li class="keysheet__row"><kbd class="keysheet__key">[ / ]</kbd><span class="keysheet__what">previous / next review</span></li>
+        <li class="keysheet__row"><kbd class="keysheet__key">{ / }</kbd><span class="keysheet__what">previous / next repository</span></li>
+        <li class="keysheet__row"><kbd class="keysheet__key">/</kbd><span class="keysheet__what">jump to the picker</span></li>
+        <li class="keysheet__row"><kbd class="keysheet__key">a</kbd><span class="keysheet__what">ask about these changes</span></li>
+        <li class="keysheet__row"><kbd class="keysheet__key">r</kbd><span class="keysheet__what">mark this review done</span></li>
+        <li class="keysheet__row"><kbd class="keysheet__key">⌘K</kbd><span class="keysheet__what">go to anything</span></li>
+        <li class="keysheet__row"><kbd class="keysheet__key">⌘Z</kbd><span class="keysheet__what">zen mode</span></li>
+        <li class="keysheet__row"><kbd class="keysheet__key">⌘J</kbd><span class="keysheet__what">dark, light, or follow the system</span></li>
+      </ul>
+    </section>
+
+    <section class="board__panel tour__panel">
+      <h2 class="board__title">two things worth knowing</h2>
+      <p class="tour__body">
+        <strong>It never writes to your repository.</strong> No commits, no
+        branches, no changes to HEAD, the index or your working tree. Snapshots go
+        to refs of their own.
+      </p>
+      <p class="tour__body">
+        <strong>Everything is local.</strong> The only network call msr makes is
+        to the model endpoint you started yourself. No account, no telemetry.
+        <a href="/status">The status page</a> shows which model is answering and
+        what it has cost.
+      </p>
+    </section>
+
+    <p class="tour__out">
+      <a class="hero__retrybtn" href="/">start reviewing</a>
+    </p>
+
+  </main>
+</body>
+</html>

@@ -122,6 +122,8 @@ function buildSheet() {
     <div class="palette__sheet" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
       <p class="keysheet__title">Keyboard</p>
       <ul class="keysheet__list"></ul>
+      <p class="keysheet__more"><a href="/tutorial">take the tour</a> — what this
+        page is and how to work through it</p>
     </div>`;
 
   const list = sheet.querySelector('.keysheet__list');

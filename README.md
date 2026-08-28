@@ -13,15 +13,52 @@ your code or your agent.
 
 ---
 
-## Install and run
+## Install
+
+Two things: the reviewer, and a local model for the prose. The model is
+optional — without it you still get grouping, flags, diffs and the review log,
+just no sentences.
+
+**1. Install msr**
 
 ```sh
 brew install mondial7/tap/mondspace-reviewer   # macOS
 # or: go install github.com/mondial7/mondspace-reviewer/cmd/mondspace-reviewer@latest
+```
 
+**2. Start a local model** (optional, but it is most of the value)
+
+```sh
+brew install llama.cpp
+
+llama-server -hf bartowski/Qwen_Qwen3-4B-Instruct-2507-GGUF:Q6_K \
+  --host 127.0.0.1 --port 8081 -c 32768 -fa on \
+  --cache-type-k q8_0 --cache-type-v q8_0 --jinja
+```
+
+About 3.3 GB, downloaded once. Leave it running — `msr` looks for it at
+`127.0.0.1:8081`. Any OpenAI-compatible server works instead: point `msr` at it
+on `/status`, or with `--summarizer-url`.
+
+**3. Open a repository**
+
+```sh
 cd ~/your-project
 msr web
 ```
+
+It opens `http://127.0.0.1:7777` on the newest thing worth reviewing. No
+configuration, no database, no account, and **no session to record first**.
+
+Then press **`?`** in the app, or open
+[`/tutorial`](http://127.0.0.1:7777/tutorial), for the four things to do in
+order. There is a fuller tour on the [project page](https://mondial7.github.io/mondspace-reviewer/).
+
+> **How much memory?** The 4B at Q6_K needs roughly 4–5 GB resident at a 32k
+> context — comfortable on 16 GB, easy on 32 GB. Running a *second*, larger
+> model alongside it is measurably not worth it: on a 24 GB machine that made
+> every call about four times slower, and the larger model was *less* reliable
+> on the hardest request ([ADR 0019](ADR/0019-llama-server-and-a-model-per-workload.md)).
 
 <details>
 <summary><strong>macOS: "Apple could not verify mondspace-reviewer…"</strong></summary>
@@ -113,6 +150,8 @@ it, so the intent behind a commit is one click away ([ADR 0017](ADR/0017-git-fir
 
 ## Using the cockpit
 
+![The msr cockpit](docs/img/cockpit.png)
+
 One page, three columns. Only the two right-hand ones scroll.
 
 | | |
@@ -124,6 +163,8 @@ One page, three columns. Only the two right-hand ones scroll.
 A card across the top says whether the assistant has read what you are looking
 at, how long ago, how far it got, and gives you the button to read it again —
 which is the first thing you want to know after switching target.
+
+![A file opened, with its diff, flags and annotation controls](docs/img/cockpit-changes.png)
 
 **Read.** Start with what happened in a folder, then ask what happened to one
 file in it — both are a click, and both are one sentence about what the change
@@ -144,6 +185,8 @@ your own notes. Never a re-read of the repo, never the open internet.
 msr opens. It keeps its identity when a commit lands, so your notes and the
 story survive the commit instead of being swapped out from under you
 ([ADR 0018](ADR/0018-live-target-and-pulses.md)).
+
+![Work that arrived mid-review, offered as a choice](docs/img/cockpit-pending.png)
 
 While you read, it **holds still**. Work the agent does after you opened it does
 not appear underneath you — it queues up in a banner that names the files and
@@ -263,13 +306,9 @@ Try the whole pipeline with no agent, terminal or network:
 msr review --source=replay --file=testdata/sessions/basic.jsonl --plain
 ```
 
-<p align="center">
-  <img src="docs/img/plain-review.png" alt="msr review --plain output" width="680">
-</p>
-
-Note the two colours on the `WHY` lines: green where the agent said why in its
-own words, amber where a model inferred it. That distinction is the same
-everywhere, including the web app.
+Each unit prints a `WHAT` and a `WHY`, coloured by source: green where the agent
+said why in its own words, amber where a model inferred it. That distinction is
+the same everywhere, including the web app.
 
 <details>
 <summary><strong>The terminal UI (unmaintained)</strong></summary>
@@ -408,7 +447,7 @@ MSR_SUMMARIZER_URL=http://127.0.0.1:8081/v1 MSR_MODEL=qwen3-4b-instruct-2507 \
 
 ## Status
 
-**v5.4.0** — the web app is the product.
+**v5.5.0** — the web app is the product.
 
 - **Cockpit** (`msr web`) — one page: the change as a story, the diffs,
   annotation, re-analysis, a live isometric field, and a workspace spanning any
@@ -426,6 +465,7 @@ MSR_SUMMARIZER_URL=http://127.0.0.1:8081/v1 MSR_MODEL=qwen3-4b-instruct-2507 \
   ([ADR 0021](ADR/0021-finishing-a-review.md)).
 - **Keyboard navigation** across files, reviews and repositories
   ([ADR 0022](ADR/0022-keyboard-navigation.md)).
+- **A tour built in** at `/tutorial`, and a project page with real screenshots.
 - **Schema-enforced model output**, on-demand descriptions, persisted
   conversations, and full accounting of every call and token at `/activity` and
   `/status`.

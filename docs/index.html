@@ -1,0 +1,634 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mondspace-reviewer — review what your coding agent actually did</title>
+<meta name="description" content="A local review companion for autonomous coding agents. Reads your git history, tells the change as a story beside the real diffs, and never writes back to your code.">
+<meta property="og:title" content="mondspace-reviewer">
+<meta property="og:description" content="Review what your coding agent actually did — in your browser, while it works.">
+<meta property="og:image" content="https://mondial7.github.io/mondspace-reviewer/img/cockpit.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🛰️</text></svg>">
+<style>
+/* The site wears the application's own palette. Someone arriving here and then
+   running msr should recognise the second from the first. */
+:root {
+  --bg: #05070e;
+  --bg-raised: #0c0f1b;
+  --panel: #090c16;
+  --rule: #2b3455;
+  --fg: #ccd4ec;
+  --fg-dim: #737e9e;
+  --add: #4fdc95;
+  --del: #ff6b83;
+  --hunk: #5cc2ff;
+  --accent: #a78bfa;
+  --inferred: #ffcc70;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif;
+  --gutter: clamp(1rem, 4vw, 2.5rem);
+  --max: 68rem;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--sans);
+  font-size: 16px;
+  line-height: 1.6;
+  overflow-x: hidden;
+}
+
+/* A slow starfield behind the page, the same idea as the app's backdrop, done
+   in CSS so it costs nothing and needs no script. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: -50%;
+  z-index: -1;
+  background-image:
+    radial-gradient(1px 1px at 20% 30%, rgba(167,139,250,.35), transparent),
+    radial-gradient(1px 1px at 70% 12%, rgba(92,194,255,.30), transparent),
+    radial-gradient(1px 1px at 40% 70%, rgba(204,212,236,.22), transparent),
+    radial-gradient(1px 1px at 85% 55%, rgba(167,139,250,.25), transparent),
+    radial-gradient(1px 1px at 12% 85%, rgba(204,212,236,.18), transparent),
+    radial-gradient(1px 1px at 60% 92%, rgba(92,194,255,.22), transparent);
+  background-size: 55rem 55rem;
+  opacity: .7;
+  animation: drift 240s linear infinite;
+}
+
+@keyframes drift { to { transform: translate3d(-55rem, 0, 0); } }
+
+@media (prefers-reduced-motion: reduce) {
+  body::before { animation: none; }
+}
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+code, kbd { font-family: var(--mono); font-size: 0.9em; }
+
+.wrap { max-width: var(--max); margin: 0 auto; padding: 0 var(--gutter); }
+
+/* ── Rail ──────────────────────────────────────────────────────────────── */
+
+.rail {
+  position: sticky; top: 0; z-index: 10;
+  display: flex; align-items: center; gap: 1.25rem;
+  padding: 0.7rem var(--gutter);
+  border-bottom: 1px solid var(--rule);
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(8px);
+  font-family: var(--mono); font-size: 0.78rem;
+  letter-spacing: 0.08em; text-transform: uppercase;
+}
+.rail__mark { color: var(--fg); font-weight: 700; }
+.rail__mark span { color: var(--accent); }
+.rail a { color: var(--fg-dim); }
+.rail a:hover { color: var(--fg); text-decoration: none; }
+.rail__spacer { margin-left: auto; }
+
+/* ── Hero ──────────────────────────────────────────────────────────────── */
+
+.hero { padding: clamp(3rem, 9vw, 6rem) 0 2.5rem; }
+
+.hero__kicker {
+  margin: 0 0 1rem;
+  color: var(--accent);
+  font-family: var(--mono); font-size: 0.75rem;
+  letter-spacing: 0.16em; text-transform: uppercase;
+}
+
+.hero h1 {
+  margin: 0 0 1rem;
+  font-size: clamp(2rem, 5.5vw, 3.4rem);
+  line-height: 1.1; letter-spacing: -0.02em;
+}
+
+.hero h1 em {
+  font-style: normal;
+  background: linear-gradient(100deg, var(--accent), var(--hunk));
+  -webkit-background-clip: text; background-clip: text;
+  color: transparent;
+}
+
+.hero__lede {
+  max-width: 44rem; margin: 0 0 2rem;
+  color: var(--fg-dim); font-size: clamp(1rem, 2vw, 1.16rem);
+}
+
+.hero__lede strong { color: var(--fg); font-weight: 600; }
+
+/* ── Terminal blocks ───────────────────────────────────────────────────── */
+
+.term {
+  margin: 0 0 1rem;
+  border: 1px solid var(--rule); border-radius: 10px;
+  background: var(--panel);
+  overflow: hidden;
+  box-shadow: 0 18px 50px rgb(0 0 0 / 45%);
+}
+
+.term__bar {
+  display: flex; align-items: center; gap: 0.4rem;
+  padding: 0.5rem 0.8rem;
+  border-bottom: 1px solid var(--rule);
+  background: var(--bg-raised);
+}
+.term__dot { width: 9px; height: 9px; border-radius: 50%; background: var(--rule); }
+.term__dot:nth-child(1) { background: color-mix(in srgb, var(--del) 70%, var(--rule)); }
+.term__dot:nth-child(2) { background: color-mix(in srgb, var(--inferred) 70%, var(--rule)); }
+.term__dot:nth-child(3) { background: color-mix(in srgb, var(--add) 70%, var(--rule)); }
+.term__name {
+  margin-left: 0.5rem; color: var(--fg-dim);
+  font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.06em;
+}
+
+.term pre {
+  margin: 0; padding: 1rem 1.1rem;
+  overflow-x: auto;
+  font-family: var(--mono); font-size: 0.86rem; line-height: 1.75;
+}
+
+.term .p { color: var(--accent); }        /* prompt */
+.term .c { color: var(--fg-dim); }        /* comment */
+.term .o { color: var(--add); }           /* output */
+.term .f { color: var(--hunk); }          /* flag */
+
+/* ── Sections ──────────────────────────────────────────────────────────── */
+
+section { padding: clamp(2.5rem, 6vw, 4.5rem) 0; }
+
+h2 {
+  margin: 0 0 0.6rem;
+  font-size: clamp(1.4rem, 3.2vw, 2rem);
+  letter-spacing: -0.01em;
+}
+
+.sub { margin: 0 0 2rem; max-width: 46rem; color: var(--fg-dim); }
+
+.rule { height: 1px; background: var(--rule); opacity: .55; }
+
+/* ── Steps ─────────────────────────────────────────────────────────────── */
+
+.steps { display: grid; gap: 1.1rem; counter-reset: step; }
+
+.step {
+  display: grid; grid-template-columns: auto 1fr; gap: 0 1rem;
+  align-items: start;
+}
+
+.step__n {
+  display: grid; place-items: center;
+  width: 1.85rem; height: 1.85rem;
+  border: 1px solid var(--accent); border-radius: 50%;
+  color: var(--accent);
+  font-family: var(--mono); font-size: 0.8rem;
+}
+
+.step h3 { margin: 0.15rem 0 0.35rem; font-size: 1.02rem; }
+.step p { margin: 0 0 0.7rem; color: var(--fg-dim); font-size: 0.94rem; }
+.step > .term, .step > p, .step > h3 { grid-column: 2; }
+.step__n { grid-row: span 1; }
+
+/* ── Feature grid ──────────────────────────────────────────────────────── */
+
+.grid {
+  display: grid; gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+}
+
+.card {
+  padding: 1.1rem 1.2rem;
+  border: 1px solid var(--rule); border-radius: 10px;
+  background: var(--panel);
+}
+
+.card h3 {
+  margin: 0 0 0.4rem;
+  font-size: 0.95rem;
+  display: flex; align-items: center; gap: 0.5rem;
+}
+
+.card h3::before {
+  content: ""; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--accent); flex: none;
+}
+
+.card p { margin: 0; color: var(--fg-dim); font-size: 0.9rem; }
+
+/* ── Shots ─────────────────────────────────────────────────────────────── */
+
+.shot { margin: 0 0 2.5rem; }
+
+.shot img {
+  display: block; width: 100%; height: auto;
+  border: 1px solid var(--rule); border-radius: 10px;
+  box-shadow: 0 22px 60px rgb(0 0 0 / 50%);
+}
+
+.shot figcaption {
+  margin-top: 0.7rem;
+  color: var(--fg-dim); font-size: 0.86rem;
+}
+
+.shot figcaption b { color: var(--fg); font-weight: 600; }
+
+/* ── Keys ──────────────────────────────────────────────────────────────── */
+
+.keys {
+  display: grid; gap: 0.35rem 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+}
+.keys div { display: flex; align-items: baseline; gap: 0.6rem; font-size: 0.9rem; }
+.keys kbd {
+  flex: none; min-width: 3.4rem; text-align: center;
+  padding: 0.1rem 0.4rem;
+  border: 1px solid var(--rule); border-radius: 4px;
+  background: var(--bg-raised); color: var(--fg);
+  font-size: 0.76rem;
+}
+.keys span { color: var(--fg-dim); }
+
+/* ── Table ─────────────────────────────────────────────────────────────── */
+
+.tbl { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+.tbl th, .tbl td { padding: 0.5rem 0.7rem; text-align: left; border-bottom: 1px solid var(--rule); }
+.tbl th { color: var(--fg-dim); font-weight: 600; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.06em; }
+.tbl td:first-child { font-family: var(--mono); color: var(--fg); white-space: nowrap; }
+.tbl td { color: var(--fg-dim); }
+
+.scroller { overflow-x: auto; }
+
+/* ── Callout ───────────────────────────────────────────────────────────── */
+
+.note {
+  padding: 0.9rem 1.1rem;
+  border: 1px solid var(--rule); border-left: 3px solid var(--inferred);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--inferred) 6%, var(--panel));
+  color: var(--fg-dim); font-size: 0.92rem;
+}
+.note b { color: var(--fg); }
+
+/* ── Footer ────────────────────────────────────────────────────────────── */
+
+footer {
+  padding: 2.5rem 0 3.5rem;
+  border-top: 1px solid var(--rule);
+  color: var(--fg-dim); font-size: 0.86rem;
+}
+footer p { margin: 0.3rem 0; }
+
+.btn {
+  display: inline-block;
+  padding: 0.55rem 1.1rem;
+  border: 1px solid var(--accent); border-radius: 8px;
+  color: var(--accent);
+  font-family: var(--mono); font-size: 0.82rem;
+  letter-spacing: 0.04em;
+}
+.btn:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); text-decoration: none; }
+.btn--solid { background: var(--accent); color: #0b0713; font-weight: 600; }
+.btn--solid:hover { background: color-mix(in srgb, var(--accent) 85%, white); }
+
+.btns { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-top: 1.5rem; }
+
+/* Someone reading in daylight gets the same page, not a different one. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #fbfbfd; --bg-raised: #ffffff; --panel: #ffffff;
+    --rule: #dcdce6; --fg: #1e1e30; --fg-dim: #5f6076;
+    --add: #1d7a45; --del: #b3283f; --hunk: #0d6a86;
+    --accent: #6d3fb5; --inferred: #7a5c00;
+  }
+  :root:not([data-theme="dark"]) body::before { opacity: .25; }
+  :root:not([data-theme="dark"]) .term,
+  :root:not([data-theme="dark"]) .shot img { box-shadow: 0 10px 30px rgb(20 20 45 / 10%); }
+}
+</style>
+</head>
+<body>
+
+<nav class="rail">
+  <span class="rail__mark">▚ <span>msr</span></span>
+  <a href="#install">install</a>
+  <a href="#first">first run</a>
+  <a href="#what">what you get</a>
+  <span class="rail__spacer"></span>
+  <a href="https://github.com/mondial7/mondspace-reviewer">github</a>
+</nav>
+
+<div class="wrap">
+
+<header class="hero">
+  <p class="hero__kicker">local · offline · read-only</p>
+  <h1>Review what your coding agent <em>actually did</em>.</h1>
+  <p class="hero__lede">
+    Your agent wrote four hundred lines while you were in a meeting. <strong>msr</strong>
+    reads the git history that is already there and turns any part of it into a review you
+    can actually read — the change told as a story, beside the real diffs, with a local
+    model explaining what each piece is <em>for</em>. It watches. It never writes back to
+    your code.
+  </p>
+
+  <div class="term">
+    <div class="term__bar">
+      <span class="term__dot"></span><span class="term__dot"></span><span class="term__dot"></span>
+      <span class="term__name">two commands</span>
+    </div>
+<pre><span class="p">$</span> brew install mondial7/tap/mondspace-reviewer
+<span class="p">$</span> cd ~/your-project &amp;&amp; msr web
+<span class="o">reviewing live "Live · uncommitted work" — http://127.0.0.1:7777</span></pre>
+  </div>
+
+  <div class="btns">
+    <a class="btn btn--solid" href="#install">Install it</a>
+    <a class="btn" href="https://github.com/mondial7/mondspace-reviewer">Source on GitHub</a>
+  </div>
+</header>
+
+<div class="rule"></div>
+
+<section id="shots">
+  <figure class="shot">
+    <img src="img/cockpit.png" alt="The msr cockpit: a fixed panel with what the change is and its numbers, the change told as chapters of prose, and every changed file with its flags and key lines." loading="lazy" width="1600" height="1000">
+    <figcaption><b>One page.</b> What this change is and its numbers on the left, the story in the middle, every file on the right. Nothing on the panel is model-derived — every number is a git fact.</figcaption>
+  </figure>
+
+  <figure class="shot">
+    <img src="img/cockpit-changes.png" alt="A file opened in msr, showing its diff, its flags, the lines worth reading, and the annotation controls." loading="lazy" width="1600" height="1120">
+    <figcaption><b>Open a file</b> for its diff, the one to three lines worth reading, and the flags that made you stop — then annotate it <code>ok</code>, <code>question</code>, <code>objection</code>, <code>debt</code> or <code>note</code>. The review log is the product.</figcaption>
+  </figure>
+
+  <figure class="shot">
+    <img src="img/cockpit-pending.png" alt="msr showing a banner: two files changed since the review was opened, with buttons to keep reading, include them, or review just those." loading="lazy" width="1600" height="900">
+    <figcaption><b>The agent kept working while you read.</b> The page holds still, and what arrived queues up — naming the files, and flagging any you had already annotated. Then you choose: keep reading, fold it in, or review just the new work.</figcaption>
+  </figure>
+</section>
+
+<div class="rule"></div>
+
+<section id="install">
+  <h2>Install</h2>
+  <p class="sub">
+    Two things: the reviewer, and a local model for the prose. The second is optional —
+    without it you still get grouping, flags, diffs and the review log, just no sentences.
+  </p>
+
+  <div class="steps">
+
+    <article class="step">
+      <span class="step__n">1</span>
+      <h3>Install msr</h3>
+      <div class="term">
+        <div class="term__bar">
+          <span class="term__dot"></span><span class="term__dot"></span><span class="term__dot"></span>
+          <span class="term__name">macOS</span>
+        </div>
+<pre><span class="p">$</span> brew install mondial7/tap/mondspace-reviewer</pre>
+      </div>
+      <p>
+        Homebrew is the way in on macOS: the cask strips the quarantine attribute during
+        install, <em>before</em> the binary is ever run. That ordering matters — macOS caches
+        its refusal per path, so a download opened first stays refused. Elsewhere, or if you
+        prefer Go: <code>go install github.com/mondial7/mondspace-reviewer/cmd/mondspace-reviewer@latest</code>
+      </p>
+    </article>
+
+    <article class="step">
+      <span class="step__n">2</span>
+      <h3>Install a local model</h3>
+      <div class="term">
+        <div class="term__bar">
+          <span class="term__dot"></span><span class="term__dot"></span><span class="term__dot"></span>
+          <span class="term__name">the reviewer's assistant</span>
+        </div>
+<pre><span class="p">$</span> brew install llama.cpp
+
+<span class="p">$</span> llama-server <span class="f">-hf</span> bartowski/Qwen_Qwen3-4B-Instruct-2507-GGUF:Q6_K \
+    <span class="f">--host</span> 127.0.0.1 <span class="f">--port</span> 8081 <span class="f">-c</span> 32768 <span class="f">-fa</span> on \
+    <span class="f">--cache-type-k</span> q8_0 <span class="f">--cache-type-v</span> q8_0 <span class="f">--jinja</span>
+<span class="c"># ~3.3 GB, downloaded once. Leave it running.</span></pre>
+      </div>
+      <p>
+        That is the whole setup — msr looks for it at <code>127.0.0.1:8081</code> by default.
+        Any OpenAI-compatible server works instead; point msr at it on the status page, or with
+        <code>--summarizer-url</code>.
+      </p>
+    </article>
+
+    <article class="step">
+      <span class="step__n">3</span>
+      <h3>Open a repository</h3>
+      <div class="term">
+        <div class="term__bar">
+          <span class="term__dot"></span><span class="term__dot"></span><span class="term__dot"></span>
+          <span class="term__name">no configuration, no database, no account</span>
+        </div>
+<pre><span class="p">$</span> cd ~/your-project
+<span class="p">$</span> msr web
+<span class="o">reviewing live "Live · uncommitted work" — http://127.0.0.1:7777</span></pre>
+      </div>
+      <p>
+        It opens on the newest thing worth reviewing. There is nothing to record first — it
+        reads the git history that is already there.
+      </p>
+    </article>
+
+  </div>
+
+  <p style="margin-top:2rem">
+  <span class="note" style="display:block">
+    <b>How much memory?</b> The 4B at Q6_K needs roughly 4–5 GB resident with a 32k context,
+    so it is comfortable on 16 GB and easy on 32 GB. Running a <em>second</em> larger model
+    alongside it is measurably not worth it: on a 24 GB machine that made every call about
+    four times slower, and the bigger model was <em>less</em> reliable on the hardest request.
+    One model, all three jobs.
+  </span>
+  </p>
+</section>
+
+<div class="rule"></div>
+
+<section id="first">
+  <h2>Your first five minutes</h2>
+  <p class="sub">
+    A short tour of the page. The same tour is built into the app — press
+    <kbd>?</kbd> then <b>take the tour</b>, or open <code>/tutorial</code>.
+  </p>
+
+  <div class="steps">
+    <article class="step">
+      <span class="step__n">1</span>
+      <h3>Pick what to review</h3>
+      <p>
+        Top left. Type a tag, a commit, a branch — or leave it on <b>live</b>, which is your
+        working tree against HEAD and where msr opens. Anything in git is reviewable: a
+        commit, a tag (everything since the previous one), a pull request, an agent session,
+        or any two points compared.
+      </p>
+    </article>
+
+    <article class="step">
+      <span class="step__n">2</span>
+      <h3>Ask the assistant to read it</h3>
+      <p>
+        Hit <b>ask it to read this</b> on the card at the top. It groups the files by folder,
+        writes one sentence about what each group is <em>for</em>, and tells the change as
+        two to five chapters. Takes about seven seconds locally. Everything below it works
+        with or without that.
+      </p>
+    </article>
+
+    <article class="step">
+      <span class="step__n">3</span>
+      <h3>Read, then annotate</h3>
+      <p>
+        Click a filename for its diff. <kbd>j</kbd> and <kbd>k</kbd> walk the files without the
+        mouse. Every change takes a note and one of <code>ok</code> · <code>question</code> ·
+        <code>objection</code> · <code>debt</code> · <code>note</code>. That log is the thing
+        you are producing; the prose exists to help you produce it.
+      </p>
+    </article>
+
+    <article class="step">
+      <span class="step__n">4</span>
+      <h3>Finish it</h3>
+      <p>
+        <b>Mark this reviewed</b>, with a closing comment if you have one. Reopening tomorrow
+        says so, and the picker ticks what is done. If the code moved after you signed off,
+        it tells you that too rather than reading as current.
+      </p>
+    </article>
+  </div>
+
+  <h3 style="margin-top:2.5rem">Keys worth knowing</h3>
+  <div class="keys">
+    <div><kbd>j</kbd> <span>next file</span></div>
+    <div><kbd>k</kbd> <span>previous file</span></div>
+    <div><kbd>o</kbd> <span>open or close it</span></div>
+    <div><kbd>[</kbd> <span>previous review</span></div>
+    <div><kbd>]</kbd> <span>next review</span></div>
+    <div><kbd>{</kbd> <kbd>}</kbd> <span>switch repository</span></div>
+    <div><kbd>/</kbd> <span>jump to the picker</span></div>
+    <div><kbd>a</kbd> <span>ask about these changes</span></div>
+    <div><kbd>r</kbd> <span>mark this reviewed</span></div>
+    <div><kbd>⌘K</kbd> <span>go to anything</span></div>
+    <div><kbd>⌘Z</kbd> <span>zen mode</span></div>
+    <div><kbd>?</kbd> <span>all of them</span></div>
+  </div>
+</section>
+
+<div class="rule"></div>
+
+<section id="what">
+  <h2>What you get</h2>
+  <p class="sub">
+    Reviewing an agent's work is a specific kind of miserable: the diff is large, it arrives
+    all at once, and the <em>why</em> is buried in a transcript you no longer want to read.
+  </p>
+
+  <div class="grid">
+    <div class="card">
+      <h3>Net change, not keystrokes</h3>
+      <p>One reviewable unit per changed file, so an agent editing the same file eleven times reads as one change — and you can still open the eleven.</p>
+    </div>
+    <div class="card">
+      <h3>Meaning, not filenames</h3>
+      <p>Files that changed together are grouped, and each group gets one sentence about what it is for. "edited jsonl.go" is never shown: the filename already said that.</p>
+    </div>
+    <div class="card">
+      <h3><code>stated</code> vs <code>inferred</code></h3>
+      <p>A rationale in the agent's own words looks different — different colour and label — from one a model guessed. A model can sharpen a headline; it can never assert a reason nobody gave.</p>
+    </div>
+    <div class="card">
+      <h3>Flags with no model at all</h3>
+      <p><code>no-test</code>, <code>new-dep</code>, <code>swallowed-err</code>, <code>public-api</code>, <code>large</code>, <code>todo</code> — offline, instant, and what make you stop.</p>
+    </div>
+    <div class="card">
+      <h3>Every number is a git fact</h3>
+      <p>Files, lines, commits, tags, pull requests. Nothing on the panel is model-derived, which is rather the point of putting it beside a narration feature.</p>
+    </div>
+    <div class="card">
+      <h3>It never writes to your repo</h3>
+      <p>No commits, no branches, no changes to HEAD, the index or your working tree. Snapshots go to their own refs. Read-only, by construction.</p>
+    </div>
+  </div>
+</section>
+
+<div class="rule"></div>
+
+<section id="review">
+  <h2>What you can review</h2>
+  <p class="sub">Anything in git — not just recorded agent runs.</p>
+  <div class="scroller">
+    <table class="tbl">
+      <thead><tr><th>target</th><th></th></tr></thead>
+      <tbody>
+        <tr><td>live</td><td>the working tree against HEAD, updating as you watch — offered first, always</td></tr>
+        <tr><td>a commit</td><td><code>parent..commit</code> — what that one commit did</td></tr>
+        <tr><td>a tag</td><td>everything since the previous tag — "what shipped in v5.4.0"</td></tr>
+        <tr><td>a pull request</td><td>the commits that reference it, together</td></tr>
+        <tr><td>an agent session</td><td>a recorded run, if you installed the hooks</td></tr>
+        <tr><td>any two points</td><td>a tag against a tag, a branch against a commit, anything against your working tree</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<div class="rule"></div>
+
+<section id="status">
+  <h2>The model is yours</h2>
+  <p class="sub">
+    It runs on your machine, on a port you started. The status page says whether it is
+    answering, what it has cost, and lets you point msr somewhere else without a restart.
+  </p>
+  <figure class="shot">
+    <img src="img/cockpit-status.png" alt="The msr status page: the reviewer model, whether it is online, what it has spent, and the repositories being watched." loading="lazy" width="1600" height="1000">
+    <figcaption>If the model is unreachable, msr degrades to mechanical headlines and carries on — <b>the review never waits on it.</b></figcaption>
+  </figure>
+</section>
+
+<div class="rule"></div>
+
+<section id="agent">
+  <h2>Watching an agent live</h2>
+  <p class="sub">
+    Reviewing git needs nothing. To also capture an agent's <em>stated intent</em> — its own
+    words about why it did something — install the hooks:
+  </p>
+  <div class="term">
+    <div class="term__bar">
+      <span class="term__dot"></span><span class="term__dot"></span><span class="term__dot"></span>
+      <span class="term__name">optional</span>
+    </div>
+<pre><span class="p">$</span> msr install-hooks --dir=.</pre>
+  </div>
+  <p style="color:var(--fg-dim);font-size:.94rem">
+    Each hook is an atomic append of one JSON line that exits immediately: your agent runs
+    fine whether or not msr is attached, and attaching later replays the whole log.
+  </p>
+</section>
+
+<footer>
+  <div class="btns" style="margin-bottom:1.5rem">
+    <a class="btn btn--solid" href="https://github.com/mondial7/mondspace-reviewer">GitHub</a>
+    <a class="btn" href="https://github.com/mondial7/mondspace-reviewer#readme">Full documentation</a>
+    <a class="btn" href="https://github.com/mondial7/mondspace-reviewer/tree/main/ADR">Design decisions</a>
+  </div>
+  <p>MIT licensed. Everything runs on your machine — no account, no telemetry, no network calls beyond the model endpoint you started yourself.</p>
+  <p style="margin-top:1rem;color:var(--accent);font-family:var(--mono);font-size:.8rem;letter-spacing:.08em">STAY ORIENTED WHILE THE AGENT WORKS.</p>
+</footer>
+
+</div>
+</body>
+</html>

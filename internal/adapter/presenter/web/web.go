@@ -977,6 +977,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /cockpit", s.handleCockpit)
 	s.mux.HandleFunc("GET /activity", s.handleActivity)
 	s.mux.HandleFunc("GET /status", s.handleStatus)
+	s.mux.HandleFunc("GET /tutorial", s.handleTutorial)
 	s.mux.HandleFunc("POST /repos", s.handleAddRepo)
 	// The workspace list folded into the status page.
 	s.mux.HandleFunc("GET /sessions", redirectStatus)
@@ -2053,6 +2054,15 @@ func humanDuration(d time.Duration) string {
 		return fmt.Sprintf("%dm", m)
 	}
 	return fmt.Sprintf("%dh %dm", h, m)
+}
+
+// handleTutorial explains the page to someone who has just installed msr.
+//
+// Everything the cockpit does is discoverable by clicking around for twenty
+// minutes. This is for the first five: three columns, a picker, flags and a
+// keyboard nobody has been told about are a lot to meet at once.
+func (s *Server) handleTutorial(w http.ResponseWriter, r *http.Request) {
+	s.render(w, "tutorial.html", nil)
 }
 
 // handleStatus answers "is everything working": the reviewer's own model, what

@@ -1492,3 +1492,85 @@ a.toast:hover { border-color: var(--kind, var(--accent)); }
   color: var(--fg-dim);
   font-size: 0.8rem;
 }
+
+/* ── The tour ───────────────────────────────────────────────────────────────
+   A reading page, so it is narrow: the cockpit is three columns because it is
+   dense, and prose is not (ADR 0023). */
+
+/* One column, not the board's two: the board is a dashboard and this is prose.
+   A reading measure of about 70 characters, centred. */
+.tour {
+  display: block;
+  max-width: 54rem;
+  margin: 0 auto;
+}
+
+.tour__steps {
+  margin: 0 0 1.5rem;
+  padding: 0;
+  list-style: none;
+  counter-reset: tourstep;
+  display: flex;
+  flex-direction: column;
+  gap: 1.4rem;
+}
+
+.tour__step {
+  counter-increment: tourstep;
+  position: relative;
+  padding: 1rem 1.2rem 1rem 3.4rem;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: var(--panel-glow);
+}
+
+.tour__step::before {
+  content: counter(tourstep);
+  position: absolute;
+  left: 1.1rem;
+  top: 1.05rem;
+  display: grid;
+  place-items: center;
+  width: 1.7rem;
+  height: 1.7rem;
+  border: 1px solid var(--accent);
+  border-radius: 50%;
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 0.78rem;
+}
+
+.tour__title {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+  color: var(--fg);
+}
+
+.tour__body {
+  margin: 0 0 0.6rem;
+  font-size: 0.9rem;
+  line-height: 1.65;
+  color: var(--fg);
+}
+
+.tour__body:last-child { margin-bottom: 0; }
+
+.tour__body--dim { color: var(--fg-dim); }
+
+.tour__panel { margin-bottom: 1.2rem; }
+
+.tour__keys {
+  margin-top: 0.6rem;
+  grid-template-columns: auto 1fr;
+}
+
+.tour__out { margin: 1.6rem 0 3rem; }
+
+.keysheet__more {
+  margin: 0.8rem 0 0;
+  padding-top: 0.7rem;
+  border-top: 1px solid var(--rule);
+  color: var(--fg-dim);
+  font-size: 0.78rem;
+}

@@ -524,7 +524,15 @@ func refreshReview(ctx context.Context, r reviewRefresher) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			stats, err := r.snap.Numstat(ctx, r.baseline, domain.SnapshotRef{})
+			// A pinned review is deliberately still (ADR 0020). Rebuilding it
+			// against the working tree here would undo the pin every fifteen
+			// seconds — the page would hold still between ticks and then jump.
+			far := domain.SnapshotRef{}
+			if p, pinned := pinnedAt(r.sessionID); pinned {
+				far = p.ref
+			}
+
+			stats, err := r.snap.Numstat(ctx, r.baseline, far)
 			if err != nil {
 				continue // a transient git failure must not kill the ticker
 			}
@@ -537,7 +545,7 @@ func refreshReview(ctx context.Context, r reviewRefresher) {
 			}
 
 			units, diffs, err := usecase.BuildFileUnits(ctx, r.snap, r.sessionID,
-				r.baseline, domain.SnapshotRef{}, usecase.InStore(r.storeRel))
+				r.baseline, far, usecase.InStore(r.storeRel))
 			if err != nil {
 				continue
 			}
@@ -1423,7 +1431,7 @@ func reportPending(ctx context.Context, handler *web.Server, snap *gitsnap.Snaps
 		return // not a live review, or nothing has been read yet
 	}
 
-	changed, err := snap.Numstat(ctx, p.ref, domain.SnapshotRef{})
+	changed, err := snap.NumstatSince(ctx, p.ref)
 	if err != nil {
 		return
 	}
