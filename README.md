@@ -168,6 +168,29 @@ which is the first thing you want to know after switching target.
 
 ![A file opened, with its diff, flags and annotation controls](docs/img/cockpit-changes.png)
 
+**Analyse, on demand.** Three readings of the same change, each run when you
+ask and never before:
+
+| | |
+| --- | --- |
+| **Story** | what changed here, and why — as chapters |
+| **Security pass** | what in this change is worth a second look |
+| **Breaking changes** | what this could break for existing callers |
+
+![The three analysis cards, each run independently](docs/img/cockpit-analyses.png)
+
+They share nothing. No analysis is shown another's findings, and running one
+never triggers another — two independent readings of a diff are worth more than
+one reading twice. Each is capped at five findings by its schema rather than by
+asking the model nicely, and each finding is a file and one sentence. There is
+no severity: a small local model rating something "critical" is false precision,
+so the card says `inferred — worth a look, not a verdict`
+([ADR 0024](ADR/0024-analyses-as-independent-cards.md)).
+
+A card is never ambiguous about which of these it means: *nobody has run this*,
+*it could not run*, and *it ran and found nothing* look different, which on a
+security card is the difference between information and a false sense of safety.
+
 **Read.** Start with what happened in a folder, then ask what happened to one
 file in it — both are a click, and both are one sentence about what the change
 is *for*. Click a chapter and its files come up beside it. Click a filename to
@@ -451,7 +474,7 @@ MSR_SUMMARIZER_URL=http://127.0.0.1:8081/v1 MSR_MODEL=qwen3-4b-instruct-2507 \
 
 ## Status
 
-**v5.5.0** — the web app is the product.
+**v5.6.0** — the web app is the product.
 
 - **Cockpit** (`msr web`) — one page: the change as a story, the diffs,
   annotation, re-analysis, a live isometric field, and a workspace spanning any
@@ -470,6 +493,9 @@ MSR_SUMMARIZER_URL=http://127.0.0.1:8081/v1 MSR_MODEL=qwen3-4b-instruct-2507 \
 - **Keyboard navigation** across files, reviews and repositories
   ([ADR 0022](ADR/0022-keyboard-navigation.md)).
 - **A tour built in** at `/tutorial`, and a project page with real screenshots.
+- **Analysis cards** — story, security pass and breaking-change check, each run
+  on demand and independent of the others
+  ([ADR 0024](ADR/0024-analyses-as-independent-cards.md)).
 - **Schema-enforced model output**, on-demand descriptions, persisted
   conversations, and full accounting of every call and token at `/activity` and
   `/status`.

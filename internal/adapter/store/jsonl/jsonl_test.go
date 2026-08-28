@@ -321,3 +321,46 @@ func TestATargetNobodyFinishedIsNotAnError(t *testing.T) {
 		t.Errorf("got %+v, want nothing recorded", got)
 	}
 }
+
+func TestEachAuditIsStoredSeparately(t *testing.T) {
+	// Two audits can be running at once and must not overwrite each other, so
+	// they do not share a file (ADR 0024).
+	dir := t.TempDir()
+	s := jsonl.New(dir)
+
+	sec := domain.Analysis{TargetID: "t1", Kind: "security", At: time.Now().UTC().Truncate(time.Second),
+		Verdict: "Nothing worth a second look.", Print: "p1"}
+	brk := domain.Analysis{TargetID: "t1", Kind: "breaking", At: time.Now().UTC().Truncate(time.Second),
+		Verdict: "One signature changed.", Print: "p1",
+		Findings: []domain.Finding{{File: "api/handler.go", Note: "Routes now takes a Validator."}}}
+
+	if err := s.SaveAnalysis(sec); err != nil {
+		t.Fatalf("SaveAnalysis: %v", err)
+	}
+	if err := s.SaveAnalysis(brk); err != nil {
+		t.Fatalf("SaveAnalysis: %v", err)
+	}
+
+	gotSec, err := jsonl.New(dir).LoadAnalysis("t1", "security")
+	if err != nil {
+		t.Fatalf("LoadAnalysis: %v", err)
+	}
+	if gotSec.Verdict != sec.Verdict || len(gotSec.Findings) != 0 {
+		t.Errorf("security = %+v, want it unchanged by the other audit", gotSec)
+	}
+
+	gotBrk, _ := jsonl.New(dir).LoadAnalysis("t1", "breaking")
+	if len(gotBrk.Findings) != 1 || gotBrk.Findings[0].File != "api/handler.go" {
+		t.Errorf("breaking = %+v, want its own finding", gotBrk)
+	}
+}
+
+func TestAnAuditNeverRunIsNotAnError(t *testing.T) {
+	got, err := jsonl.New(t.TempDir()).LoadAnalysis("t1", "security")
+	if err != nil {
+		t.Fatalf("never run should not error: %v", err)
+	}
+	if got.Done() {
+		t.Errorf("got %+v, want nothing recorded", got)
+	}
+}

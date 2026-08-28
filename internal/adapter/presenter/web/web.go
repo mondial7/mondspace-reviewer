@@ -240,12 +240,14 @@ type Server struct {
 
 	// pending is work that arrived after this review was opened, waiting for
 	// the reviewer to decide what to do with it (ADR 0020).
-	pending   domain.Pending
-	include   IncludeFunc
-	split     SplitFunc
-	signoff   SignoffFunc
-	signoffOf SignoffOf
-	signErr   string
+	pending     domain.Pending
+	include     IncludeFunc
+	split       SplitFunc
+	signoff     SignoffFunc
+	signoffOf   SignoffOf
+	signErr     string
+	runAnalysis RunAnalysisFunc
+	analysisOf  AnalysisOf
 
 	// subs are live subscribers (server-sent events). Each gets a buffered
 	// channel so a slow reader can never block a request handler.
@@ -762,6 +764,46 @@ func (s *Server) openSession(r *http.Request) Session {
 	return loadedSess
 }
 
+// actionTarget resolves the review an action names, and refuses rather than
+// guessing.
+//
+// openSession falls back to whatever is open when a ref cannot be resolved,
+// which is right for rendering — a stale link should not be a dead end. It is
+// wrong for anything that acts: auditing or signing off a review other than the
+// one named is worse than doing nothing, and it is invisible, because the
+// result lands under something nobody was looking at.
+func (s *Server) actionTarget(r *http.Request) (string, bool) {
+	want := strings.TrimSpace(r.FormValue("target"))
+	if want == "" {
+		want = strings.TrimSpace(r.URL.Query().Get("target"))
+	}
+	if want == "" {
+		// Nothing named: the review being read is what is meant.
+		return s.openSession(r).ID, true
+	}
+
+	s.mu.RLock()
+	current := s.sess.ID
+	_, cached := s.loaded[want]
+	s.mu.RUnlock()
+
+	if want == current || cached {
+		return want, true
+	}
+	if id, ok := s.targetByRef(want); ok {
+		return id, true
+	}
+	if !validSessionID(want) {
+		return "", false
+	}
+	// An id this server has not loaded yet is still resolvable by the loader,
+	// which is how a target from another repository in the workspace is reached.
+	if got := s.openSession(r); got.ID == want {
+		return want, true
+	}
+	return "", false
+}
+
 // isLive reports whether a target id follows HEAD rather than naming a fixed
 // point in history (ADR 0018).
 func (s *Server) isLive(id string) bool {
@@ -983,6 +1025,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /sessions", redirectStatus)
 	s.mux.HandleFunc("POST /story/narrate", s.handleNarrate)
 	s.mux.HandleFunc("POST /review/signoff", s.handleSignoff)
+	s.mux.HandleFunc("POST /analysis/{kind}", s.handleAnalysis)
 	s.mux.HandleFunc("POST /live/include", s.handleInclude)
 	s.mux.HandleFunc("POST /live/split", s.handleSplit)
 	s.mux.HandleFunc("GET /events", s.handleEvents)
@@ -1180,6 +1223,69 @@ func (s *Server) ClearPending() {
 	s.broadcast("pending")
 }
 
+// RunAnalysisFunc runs one audit over one target. AnalysisOf reads back
+// whatever the last run of one recorded.
+type RunAnalysisFunc func(ctx context.Context, targetID string, kind domain.AnalysisKind) error
+
+// AnalysisOf reads one audit's stored result, zero when it has never run.
+type AnalysisOf func(targetID string, kind domain.AnalysisKind) domain.Analysis
+
+// WithAnalyses wires the audit cards: running one, and reading back what the
+// last run found (ADR 0024).
+func (s *Server) WithAnalyses(run RunAnalysisFunc, of AnalysisOf) *Server {
+	s.runAnalysis, s.analysisOf = run, of
+	return s
+}
+
+// handleAnalysis runs one audit, and only that one. Each is an independent
+// reading of the same change: nothing here reads another audit's result, and
+// running one never triggers another.
+func (s *Server) handleAnalysis(w http.ResponseWriter, r *http.Request) {
+	kind := domain.AnalysisKind(r.PathValue("kind"))
+	audit, known := usecase.AuditFor(kind)
+	if !known {
+		http.NotFound(w, r)
+		return
+	}
+
+	s.mu.RLock()
+	run := s.runAnalysis
+	s.mu.RUnlock()
+	if run == nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	// Every link on the page carries a ref rather than an id, so this resolves
+	// it the way the rest of the app does — but refuses an unknown one rather
+	// than auditing whatever happens to be open.
+	target, ok := s.actionTarget(r)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+
+	// Registered before the goroutine starts, so the card shows "running" on
+	// the redirect rather than a tick later.
+	done := s.BeginWork(string(kind), target, audit.Title)
+	go func() {
+		// A panicking audit must not take the server down, and must not leave
+		// the card spinning forever.
+		defer func() {
+			if p := recover(); p != nil {
+				done(fmt.Errorf("%s audit panicked: %v", kind, p))
+				s.broadcast("analysis")
+			}
+		}()
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
+		defer cancel()
+		done(run(ctx, target, kind))
+		s.broadcast("analysis")
+	}()
+
+	http.Redirect(w, r, backTo(r, "#analyses"), http.StatusSeeOther)
+}
+
 // SignoffFunc records that a reviewer has finished with a target; SignoffOf
 // reads back whatever was recorded for one.
 type SignoffFunc func(ctx context.Context, v domain.Signoff) error
@@ -1205,7 +1311,18 @@ func (s *Server) handleSignoff(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	target, ok := s.actionTarget(r)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
 	sess := s.openSession(r)
+	if sess.ID != target {
+		// Named a review this server can resolve but is not showing: sign off
+		// what was named, never what is on screen.
+		http.NotFound(w, r)
+		return
+	}
 	// Fingerprinting what was reviewed is what lets a later visit say whether
 	// the code has moved underneath the judgement (ADR 0021).
 	stats := make([]domain.FileStat, 0, len(sess.Units))
@@ -1903,6 +2020,11 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 	pending := s.pending
 	signoffOf := s.signoffOf
 	canSignoff := s.signoff != nil
+	analysisOf := s.analysisOf
+	// Reading what an audit found and being able to run one are separate: a
+	// stored result is worth showing even where nothing can be run.
+	canAnalyse := s.runAnalysis != nil || s.analysisOf != nil
+	canRunAnalysis := s.runAnalysis != nil
 	stats := sess.Stats
 	narrative := sess.Narrative
 	work := s.workLocked()
@@ -1935,6 +2057,26 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 		signoff = usecase.SignoffState(signoffOf(sess.ID),
 			usecase.ReviewFingerprint(nowStats), len(nowStats), s.now())
 	}
+
+	// Which audits are in flight right now, so a card can say "running" rather
+	// than looking idle while a model is thinking about it.
+	running := map[string]bool{}
+	failedAudit := map[string]string{}
+	for _, w := range work {
+		switch {
+		case w.Running():
+			running[w.Kind] = true
+			delete(failedAudit, w.Kind)
+		case w.Err != "":
+			failedAudit[w.Kind] = w.Err
+		default:
+			// A later success clears an earlier failure.
+			delete(failedAudit, w.Kind)
+		}
+	}
+	// An audit fingerprints the units it read, so the same function decides
+	// whether what it read is still what is on screen.
+	analyses := analysisCards(analysisOf, running, failedAudit, sess.ID, usecase.Fingerprint(sess.Units), s.now())
 
 	byID := map[string]unitView{}
 	for _, v := range views {
@@ -2013,11 +2155,15 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 		Signoff         usecase.SignoffView
 		HasSignoff      bool
 		CanSignoff      bool
+		Analyses        []analysisCard
+		CanAnalyse      bool
+		CanRunAnalysis  bool
 	}{
 		Session: sess, Workspace: workspace, Targets: targets,
 		Repos: repos, CanCompare: canCompare,
 		Pending: pending,
 		Signoff: signoff, HasSignoff: signoffOf != nil, CanSignoff: canSignoff,
+		Analyses: analyses, CanAnalyse: canAnalyse, CanRunAnalysis: canRunAnalysis,
 		Review:    describeReview(narrative, groupIDs(groups), narrating, s.narrate != nil, s.now()),
 		Stats:     statsFor(sess.Target.Kind, stats, sess.Target.Subtitle),
 		Narrative: narrative, Chapters: chapters, Groups: groups,
@@ -2140,6 +2286,74 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.render(w, "status.html", data)
+}
+
+// analysisCard is one audit as the page needs it: what it is, whether it has
+// run, and what it said (ADR 0024).
+type analysisCard struct {
+	Kind    string
+	Title   string
+	Purpose string
+	// State is one of "idle", "running", "failed", "clean", "found" or "stale".
+	// The card is coloured and worded from this, so "never run", "could not
+	// run" and "found nothing" can never look the same — which is the
+	// distinction that matters most on a security card.
+	State    string
+	When     string
+	Verdict  string
+	Err      string
+	Findings []domain.Finding
+}
+
+// analysisCards builds one card per audit on offer, in a fixed order.
+//
+// Each is read independently and none is told about the others: two readings of
+// the same change are worth more than one reading twice.
+func analysisCards(of AnalysisOf, running map[string]bool, failed map[string]string,
+	targetID, print string, now time.Time) []analysisCard {
+
+	out := make([]analysisCard, 0, len(usecase.Audits()))
+	for _, a := range usecase.Audits() {
+		card := analysisCard{
+			Kind: string(a.Kind), Title: a.Title, Purpose: a.Purpose, State: "idle",
+		}
+		if running[string(a.Kind)] {
+			card.State = "running"
+			out = append(out, card)
+			continue
+		}
+		// A failed audit outranks a stored result: whatever is on the card is
+		// from before, and saying so is the only way it is not read as current.
+		if why, bad := failed[string(a.Kind)]; bad {
+			card.State, card.Err = "failed", why
+			out = append(out, card)
+			continue
+		}
+
+		var got domain.Analysis
+		if of != nil {
+			got = of(targetID, a.Kind)
+		}
+		if !got.Done() {
+			out = append(out, card)
+			continue
+		}
+
+		card.Verdict, card.Findings = got.Verdict, got.Findings
+		card.When = usecase.Since(now.Sub(got.At)) + " ago"
+		switch {
+		case got.Print != "" && print != "" && got.Print != print:
+			// A reading of a version that no longer exists must not present
+			// itself as current (ADR 0021).
+			card.State = "stale"
+		case got.Clean():
+			card.State = "clean"
+		default:
+			card.State = "found"
+		}
+		out = append(out, card)
+	}
+	return out
 }
 
 // workloadForm is a row per workload for the settings form, pre-filled with

@@ -238,6 +238,81 @@
       {{ end }}
       </div>
     </section>
+
+    <!-- Three readings of the same change, each run when the reviewer asks and
+         never before (ADR 0024). They share no context: what one found is never
+         shown to another, because two independent readings are worth more than
+         one reading twice. -->
+    {{ if .CanAnalyse }}
+    <section class="analyses" id="analyses">
+
+      <!-- The story is an analysis too. It is listed first because it is the
+           one that answers "what even is this", which is where reading starts. -->
+      <article class="acard acard--{{ .Review.State }}">
+        <header class="acard__head">
+          <h2 class="acard__title">Story</h2>
+          <span class="acard__state">
+            {{ if eq .Review.State "reading" }}<span class="ask__spinner" aria-hidden="true"></span>reading…
+            {{ else if eq .Review.State "read" }}read {{ .Review.When }}
+            {{ else }}not run yet{{ end }}
+          </span>
+        </header>
+        <p class="acard__purpose">what changed here, and why — as chapters</p>
+        {{ if .Review.CanRead }}
+        <form method="post" action="/story/narrate?target={{ .Session.ID }}">
+          <button class="acard__run" type="submit">
+            {{ if eq .Review.State "read" }}run again{{ else }}run{{ end }}
+          </button>
+        </form>
+        {{ end }}
+      </article>
+
+      {{ range .Analyses }}
+      <article class="acard acard--{{ .State }}">
+        <header class="acard__head">
+          <h2 class="acard__title">{{ .Title }}</h2>
+          <span class="acard__state">
+            {{ if eq .State "running" }}<span class="ask__spinner" aria-hidden="true"></span>running…
+            {{ else if eq .State "clean" }}clean · {{ .When }}
+            {{ else if eq .State "found" }}{{ len .Findings }} to look at · {{ .When }}
+            {{ else if eq .State "stale" }}changed since · {{ .When }}
+            {{ else if eq .State "failed" }}could not run
+            {{ else }}not run yet{{ end }}
+          </span>
+        </header>
+        <p class="acard__purpose">{{ .Purpose }}</p>
+
+        {{ with .Err }}<p class="acard__err">{{ . }}</p>{{ end }}
+        {{ with .Verdict }}<p class="acard__verdict">{{ . }}</p>{{ end }}
+
+        {{ if .Findings }}
+        <ul class="acard__findings">
+          {{ range .Findings }}
+          <li class="acard__finding">
+            {{ with .File }}<code class="acard__file">{{ . }}</code>{{ end }}
+            <span class="acard__note">{{ .Note }}</span>
+          </li>
+          {{ end }}
+        </ul>
+        <!-- The same discipline as everywhere else: a model reading a diff is
+             suggesting where to look, never ruling (ADR 0003). -->
+        <p class="acard__caveat"><span class="why why--inferred">inferred</span>
+          worth a look, not a verdict</p>
+        {{ end }}
+
+        {{ if $.CanRunAnalysis }}
+        <form method="post" action="/analysis/{{ .Kind }}?target={{ $.Session.ID }}">
+          <input type="hidden" name="target" value="{{ $.Session.ID }}">
+          <button class="acard__run" type="submit" {{ if eq .State "running" }}disabled{{ end }}>
+            {{ if eq .State "idle" }}run{{ else if eq .State "running" }}running{{ else }}run again{{ end }}
+          </button>
+        </form>
+        {{ end }}
+      </article>
+      {{ end }}
+
+    </section>
+    {{ end }}
     </div>
 
     <!-- Middle: the session read as prose. Text only — the files each chapter

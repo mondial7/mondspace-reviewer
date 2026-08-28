@@ -1112,6 +1112,8 @@
 .cockpit__panel { grid-row: 1 / span 2; }
 .cockpit__head {
   grid-column: 2 / span 2;
+  /* The whole header stack scrolls with nothing: it is short, and pushing the
+     reading columns down by a row of cards is the point of putting them here. */
   grid-row: 1;
   display: flex;
   flex-direction: column;
@@ -1573,4 +1575,145 @@ a.toast:hover { border-color: var(--kind, var(--accent)); }
   border-top: 1px solid var(--rule);
   color: var(--fg-dim);
   font-size: 0.78rem;
+}
+
+/* ── Analysis cards ─────────────────────────────────────────────────────────
+   Three readings of the same change, run on demand and independent of each
+   other (ADR 0024). They sit under the review card, above the reading columns:
+   they are about the change as a whole, like the card, and unlike it they are
+   something you act on. */
+
+.analyses {
+  display: grid;
+  gap: 0.6rem;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+}
+
+.acard {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-width: 0;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--rule);
+  border-top: 2px solid var(--rule);
+  border-radius: 9px;
+  background: var(--panel);
+  box-shadow: var(--panel-glow);
+}
+
+/* The top edge carries the state, so a glance across the row says which have
+   run and which found something — without reading a word. */
+.acard--clean { border-top-color: var(--stated); }
+.acard--found { border-top-color: var(--inferred); }
+.acard--stale { border-top-color: var(--fg-dim); }
+.acard--running { border-top-color: var(--accent); }
+.acard--read { border-top-color: var(--stated); }
+.acard--reading { border-top-color: var(--accent); }
+
+.acard__head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.acard__title {
+  margin: 0;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.acard__state {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--fg-dim);
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  white-space: nowrap;
+}
+
+.acard--clean .acard__state { color: var(--stated); }
+.acard--found .acard__state { color: var(--inferred); }
+
+.acard__purpose {
+  margin: 0;
+  color: var(--fg-dim);
+  font-size: 0.76rem;
+  line-height: 1.4;
+}
+
+.acard__verdict {
+  margin: 0.15rem 0 0;
+  color: var(--fg);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.acard__findings {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0.1rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.acard__finding {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding-left: 0.55rem;
+  border-left: 2px solid color-mix(in srgb, var(--inferred) 45%, transparent);
+}
+
+.acard__file {
+  color: var(--hunk);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  overflow-wrap: anywhere;
+}
+
+.acard__note {
+  color: var(--fg);
+  font-size: 0.79rem;
+  line-height: 1.45;
+}
+
+.acard__caveat {
+  margin: 0.1rem 0 0;
+  color: var(--fg-dim);
+  font-size: 0.7rem;
+}
+
+.acard__run {
+  align-self: flex-start;
+  margin-top: 0.15rem;
+  padding: 0.24rem 0.7rem;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--bg-raised);
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.74rem;
+  cursor: pointer;
+}
+
+.acard__run:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.acard__run:disabled { opacity: 0.55; cursor: default; }
+
+/* An audit that could not run says why on its own card. Silence here would be
+   read as "nothing found", which is the one thing it must never mean. */
+.acard--failed { border-top-color: var(--del); }
+.acard--failed .acard__state { color: var(--del); }
+
+.acard__err {
+  margin: 0;
+  color: var(--del);
+  font-size: 0.78rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
 }

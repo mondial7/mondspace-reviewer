@@ -48,6 +48,11 @@ func SignoffState(s domain.Signoff, print string, files int, now time.Time) Sign
 	return view
 }
 
+// Since renders an age the way a reviewer would say it out loud. Exported
+// because the audit cards say the same thing about their own age, and two
+// spellings of "an hour ago" on one page would look like two different facts.
+func Since(d time.Duration) string { return since(d) }
+
 // since renders an age the way a reviewer would say it out loud.
 func since(d time.Duration) string {
 	switch {

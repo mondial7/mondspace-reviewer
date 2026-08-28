@@ -153,6 +153,7 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 		WithCompare(compareRefs()).
 		WithLiveActions(liveActions()).
 		WithSignoff(saveSignoff(), loadSignoff()).
+		WithAnalyses(runAnalysis(pool, agent.For(domain.Narration).Model), analysisOf()).
 		WithConfigure(configureAgent(pool, *configPath, &agent)).
 		WithExchanges(exchangeStore(store), sess.Exchanges).
 		WithAsk(webAskFunc(sess, view.Units, view.Diffs, snap, pool.For(domain.Ask))).
@@ -473,6 +474,14 @@ type signoffStore interface {
 	LoadSignoff(targetID string) (domain.Signoff, error)
 }
 
+// analysisStore is the ability to remember what an audit found. Asserted below
+// for the same reason as the others: a store without it would silently forget
+// every result, and the only symptom would be cards that never look run.
+type analysisStore interface {
+	SaveAnalysis(domain.Analysis) error
+	LoadAnalysis(targetID string, kind domain.AnalysisKind) (domain.Analysis, error)
+}
+
 // Every store must remember stories. This is asserted rather than left to the
 // runtime type switch because the failure is silent: a store that does not
 // satisfy it simply re-narrates on every launch, costing several model calls
@@ -482,6 +491,8 @@ var (
 	_ narrativeCache = (*pgstore.Store)(nil)
 	_ signoffStore   = (*jsonl.Store)(nil)
 	_ signoffStore   = (*pgstore.Store)(nil)
+	_ analysisStore  = (*jsonl.Store)(nil)
+	_ analysisStore  = (*pgstore.Store)(nil)
 )
 
 // reviewRefresher is everything the background refresh needs. It is a struct

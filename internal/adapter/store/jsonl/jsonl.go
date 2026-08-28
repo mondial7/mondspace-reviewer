@@ -246,3 +246,58 @@ func (s *Store) LoadSignoff(targetID string) (domain.Signoff, error) {
 	}
 	return v, nil
 }
+
+// analysisFile is where one audit's result lives, one file per kind.
+//
+// Per kind rather than one file holding all of them: two audits can be running
+// at once, and a single file would mean read-modify-write races between two
+// results that are supposed to be independent (ADR 0024).
+func analysisFile(kind domain.AnalysisKind) string {
+	return "analysis-" + string(kind) + ".json"
+}
+
+// SaveAnalysis stores one audit's result for one target.
+func (s *Store) SaveAnalysis(a domain.Analysis) error {
+	dir := filepath.Join(s.root, a.TargetID)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	body, err := json.Marshal(a)
+	if err != nil {
+		return err
+	}
+
+	name := analysisFile(a.Kind)
+	tmp, err := os.CreateTemp(dir, name+".*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	if _, err := tmp.Write(body); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), filepath.Join(dir, name))
+}
+
+// LoadAnalysis returns one audit's result, or a zero Analysis when it has never
+// been run. Never run is the ordinary state, not a failure.
+func (s *Store) LoadAnalysis(targetID string, kind domain.AnalysisKind) (domain.Analysis, error) {
+	body, err := os.ReadFile(filepath.Join(s.root, targetID, analysisFile(kind)))
+	if errors.Is(err, fs.ErrNotExist) {
+		return domain.Analysis{}, nil
+	}
+	if err != nil {
+		return domain.Analysis{}, err
+	}
+	var a domain.Analysis
+	if err := json.Unmarshal(body, &a); err != nil {
+		// A corrupt result reads as "never run", which invites running it again
+		// rather than presenting something unreadable as a finding.
+		return domain.Analysis{}, nil
+	}
+	return a, nil
+}

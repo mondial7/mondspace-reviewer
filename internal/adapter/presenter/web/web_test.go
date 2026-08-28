@@ -16,6 +16,7 @@ import (
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/presenter/web"
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
 	"github.com/mondial7/mondspace-reviewer/internal/port"
+	"github.com/mondial7/mondspace-reviewer/internal/usecase"
 )
 
 func testSession() web.Session {
@@ -2058,6 +2059,7 @@ func TestTheTutorialExplainsThePageToSomeoneNew(t *testing.T) {
 	for _, want := range []string{
 		"Pick what to review",
 		"ask it to read",
+		"security pass",
 		"then annotate",
 		"Mark it reviewed",
 	} {
@@ -2084,5 +2086,279 @@ func TestEveryPageOffersTheTour(t *testing.T) {
 		if !strings.Contains(get(t, h, page).Body.String(), "/tutorial") {
 			t.Errorf("%s should link to the tour", page)
 		}
+	}
+}
+
+func TestTheAnalysisCardsAreOfferedAndRunOnDemand(t *testing.T) {
+	// Three readings of the same change, each run when the reviewer asks for it
+	// and never before: a model call is slow and costs something, so nothing
+	// here happens by itself (ADR 0024).
+	h := web.NewServer(testSession(), nil).
+		WithAnalyses(
+			func(context.Context, string, domain.AnalysisKind) error { return nil },
+			func(string, domain.AnalysisKind) domain.Analysis { return domain.Analysis{} })
+
+	body := get(t, h, "/").Body.String()
+
+	for _, want := range []string{"Security pass", "Breaking changes"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the cards should offer %q:\n%s", want, body)
+		}
+	}
+	for _, want := range []string{"/analysis/security", "/analysis/breaking"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("there should be a way to run %q", want)
+		}
+	}
+	// Never run is a state the card has to show, or a reviewer cannot tell it
+	// apart from one that found nothing.
+	if !strings.Contains(body, "not run yet") {
+		t.Error("an audit nobody has run should say so")
+	}
+}
+
+func TestRunningOneAuditAsksForThatOneOnly(t *testing.T) {
+	// The request returns at once and the model is asked in the background: a
+	// local audit takes seconds, and a browser must not sit on it.
+	ran := make(chan domain.AnalysisKind, 4)
+	h := web.NewServer(testSession(), nil).
+		WithAnalyses(
+			func(_ context.Context, _ string, k domain.AnalysisKind) error {
+				ran <- k
+				return nil
+			},
+			func(string, domain.AnalysisKind) domain.Analysis { return domain.Analysis{} })
+
+	req := httptest.NewRequest(http.MethodPost, "/analysis/security", strings.NewReader("target=s"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("POST /analysis/security = %d, want 303", rec.Code)
+	}
+
+	select {
+	case got := <-ran:
+		if got != usecase.AuditSecurity {
+			t.Errorf("ran %q, want the security audit", got)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the audit was never run")
+	}
+	// ...and nothing else was set going with it.
+	select {
+	case also := <-ran:
+		t.Errorf("running one audit also ran %q", also)
+	case <-time.After(200 * time.Millisecond):
+	}
+}
+
+func TestAnUnknownAuditIsNotFound(t *testing.T) {
+	h := web.NewServer(testSession(), nil).
+		WithAnalyses(
+			func(context.Context, string, domain.AnalysisKind) error {
+				t.Error("an audit that does not exist must not be run")
+				return nil
+			},
+			func(string, domain.AnalysisKind) domain.Analysis { return domain.Analysis{} })
+
+	req := httptest.NewRequest(http.MethodPost, "/analysis/astrology", strings.NewReader("target=s"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("POST /analysis/astrology = %d, want 404", rec.Code)
+	}
+}
+
+func TestACleanAuditReadsAsAnAnswer(t *testing.T) {
+	// The common result. It has to look like the audit ran and found nothing,
+	// not like it failed to run.
+	h := web.NewServer(testSession(), nil).
+		WithAnalyses(nil, func(_ string, k domain.AnalysisKind) domain.Analysis {
+			if k != usecase.AuditSecurity {
+				return domain.Analysis{}
+			}
+			return domain.Analysis{
+				TargetID: "s", Kind: k, At: time.Now().Add(-3 * time.Minute),
+				Verdict: "Nothing here worth a second look.",
+				// The fingerprint of what is actually on screen, so this reads
+				// as current rather than as a stale run.
+				Print: usecase.Fingerprint(testSession().Units),
+			}
+		})
+
+	body := get(t, h, "/").Body.String()
+	if !strings.Contains(body, "Nothing here worth a second look.") {
+		t.Errorf("a clean verdict should be shown:\n%s", body)
+	}
+	if !strings.Contains(body, "clean") {
+		t.Error("a clean audit should be marked as such")
+	}
+}
+
+func TestFindingsAreShownWithTheirFile(t *testing.T) {
+	h := web.NewServer(testSession(), nil).
+		WithAnalyses(nil, func(_ string, k domain.AnalysisKind) domain.Analysis {
+			if k != usecase.AuditBreaking {
+				return domain.Analysis{}
+			}
+			return domain.Analysis{
+				TargetID: "s", Kind: k, At: time.Now(),
+				Verdict: "One exported signature changed.",
+				Findings: []domain.Finding{
+					{File: "api/handler.go", Note: "Routes now requires a Validator; existing callers will not compile."},
+				},
+				Print: usecase.Fingerprint(testSession().Units),
+			}
+		})
+
+	body := get(t, h, "/").Body.String()
+	if !strings.Contains(body, "api/handler.go") {
+		t.Error("a finding should name its file")
+	}
+	if !strings.Contains(body, "existing callers will not compile") {
+		t.Error("a finding should say what it found")
+	}
+	// The honesty label: a model reading a diff is suggesting, not ruling.
+	if !strings.Contains(body, "inferred") {
+		t.Error("findings are model-inferred and should say so")
+	}
+}
+
+func TestAnAuditRunBeforeTheCodeMovedSaysSo(t *testing.T) {
+	// Same discipline as a sign-off: a reading of a version that no longer
+	// exists must not present itself as current (ADR 0021).
+	h := web.NewServer(testSession(), nil).
+		WithAnalyses(nil, func(_ string, k domain.AnalysisKind) domain.Analysis {
+			return domain.Analysis{
+				TargetID: "s", Kind: k, At: time.Now().Add(-time.Hour),
+				Verdict: "Nothing found.", Print: "a-stale-print",
+			}
+		})
+
+	body := get(t, h, "/").Body.String()
+	if !strings.Contains(body, "changed since") {
+		t.Errorf("a stale audit must be qualified:\n%s", body)
+	}
+}
+
+func TestAFailedAuditSaysSoRatherThanLookingUnrun(t *testing.T) {
+	// An audit that could not run must never look like one nobody has started,
+	// and above all must never look clean.
+	h := web.NewServer(testSession(), nil).
+		WithAnalyses(
+			func(context.Context, string, domain.AnalysisKind) error {
+				return errors.New("the model refused")
+			},
+			func(string, domain.AnalysisKind) domain.Analysis { return domain.Analysis{} })
+
+	req := httptest.NewRequest(http.MethodPost, "/analysis/security", strings.NewReader("target=s"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	h.ServeHTTP(httptest.NewRecorder(), req)
+
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		body := get(t, h, "/").Body.String()
+		if strings.Contains(body, "the model refused") {
+			return // it said what went wrong
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("a failed audit should say why:\n%s", body)
+		}
+		time.Sleep(30 * time.Millisecond)
+	}
+}
+
+func TestAnAuditCanBeAskedForByRefNotOnlyByID(t *testing.T) {
+	// Every link on the page carries a ref — /?target=v5.4.0 — so the audit
+	// endpoint has to speak the same language as the rest of the app.
+	ran := make(chan string, 2)
+	sess := testSession()
+	h := web.NewServer(sess, nil).
+		WithTargets([]web.TargetSummary{
+			{ID: "s", Ref: "abc12345", Kind: domain.TargetCommit, Title: "a commit"},
+		}).
+		WithAnalyses(
+			func(_ context.Context, target string, _ domain.AnalysisKind) error {
+				ran <- target
+				return nil
+			},
+			func(string, domain.AnalysisKind) domain.Analysis { return domain.Analysis{} })
+
+	req := httptest.NewRequest(http.MethodPost, "/analysis/security?target=abc12345",
+		strings.NewReader("target=abc12345"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	h.ServeHTTP(httptest.NewRecorder(), req)
+
+	select {
+	case got := <-ran:
+		if got != "s" {
+			t.Errorf("audited %q, want the ref resolved to its id", got)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the audit never ran")
+	}
+}
+
+func TestAnActionOnAnUnknownTargetRefusesRatherThanGuessing(t *testing.T) {
+	// Falling back to whatever is open is right when *rendering* a stale link:
+	// it beats a dead end. It is wrong for an action. Auditing, or signing off,
+	// something other than what was named is worse than doing nothing, and it
+	// is invisible — the result lands under a review nobody was looking at.
+	ran := make(chan string, 2)
+	h := web.NewServer(testSession(), nil).
+		WithTargets([]web.TargetSummary{
+			{ID: "s", Ref: "abc12345", Kind: domain.TargetCommit, Title: "a commit"},
+		}).
+		WithAnalyses(
+			func(_ context.Context, target string, _ domain.AnalysisKind) error {
+				ran <- target
+				return nil
+			},
+			func(string, domain.AnalysisKind) domain.Analysis { return domain.Analysis{} })
+
+	req := httptest.NewRequest(http.MethodPost, "/analysis/security?target=deadbeef",
+		strings.NewReader("target=deadbeef"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("POST with an unknown target = %d, want 404", rec.Code)
+	}
+	select {
+	case got := <-ran:
+		t.Errorf("it audited %q instead of refusing", got)
+	case <-time.After(300 * time.Millisecond):
+	}
+}
+
+func TestSigningOffAnUnknownTargetAlsoRefuses(t *testing.T) {
+	signed := make(chan string, 2)
+	h := web.NewServer(testSession(), nil).
+		WithTargets([]web.TargetSummary{
+			{ID: "s", Ref: "abc12345", Kind: domain.TargetCommit, Title: "a commit"},
+		}).
+		WithSignoff(func(_ context.Context, v domain.Signoff) error {
+			signed <- v.TargetID
+			return nil
+		}, func(string) domain.Signoff { return domain.Signoff{} })
+
+	req := httptest.NewRequest(http.MethodPost, "/review/signoff?target=deadbeef",
+		strings.NewReader("target=deadbeef&comment=fine"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("POST with an unknown target = %d, want 404", rec.Code)
+	}
+	select {
+	case got := <-signed:
+		t.Errorf("it signed off %q instead of refusing", got)
+	case <-time.After(300 * time.Millisecond):
 	}
 }

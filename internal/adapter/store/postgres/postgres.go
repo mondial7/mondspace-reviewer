@@ -98,6 +98,15 @@ func (s *Store) migrate(ctx context.Context) error {
 			updated_at  timestamptz NOT NULL DEFAULT now(),
 			payload     jsonb NOT NULL
 		)`,
+		// One row per (target, audit), because two audits run independently and
+		// must not overwrite each other (ADR 0024).
+		`CREATE TABLE IF NOT EXISTS ` + s.table("analyses") + ` (
+			target_id   text NOT NULL,
+			kind        text NOT NULL,
+			updated_at  timestamptz NOT NULL DEFAULT now(),
+			payload     jsonb NOT NULL,
+			PRIMARY KEY (target_id, kind)
+		)`,
 		`CREATE TABLE IF NOT EXISTS ` + s.table("exchanges") + ` (
 			id          text PRIMARY KEY,
 			session_id  text NOT NULL,
@@ -241,6 +250,42 @@ func (s *Store) LoadSignoff(targetID string) (domain.Signoff, error) {
 		return domain.Signoff{}, nil
 	}
 	return v, nil
+}
+
+// SaveAnalysis stores one audit's result for one target.
+func (s *Store) SaveAnalysis(a domain.Analysis) error {
+	payload, err := json.Marshal(a)
+	if err != nil {
+		return err
+	}
+	_, err = s.pool.Exec(context.Background(),
+		`INSERT INTO `+s.table("analyses")+` (target_id, kind, payload)
+		 VALUES ($1, $2, $3)
+		 ON CONFLICT (target_id, kind) DO UPDATE SET payload = EXCLUDED.payload, updated_at = now()`,
+		a.TargetID, string(a.Kind), payload)
+	return err
+}
+
+// LoadAnalysis returns one audit's result, or a zero Analysis when it has never
+// been run. Never run is the ordinary state, not a failure.
+func (s *Store) LoadAnalysis(targetID string, kind domain.AnalysisKind) (domain.Analysis, error) {
+	var payload []byte
+	err := s.pool.QueryRow(context.Background(),
+		`SELECT payload FROM `+s.table("analyses")+` WHERE target_id = $1 AND kind = $2`,
+		targetID, string(kind)).Scan(&payload)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return domain.Analysis{}, nil
+	}
+	if err != nil {
+		return domain.Analysis{}, err
+	}
+	var a domain.Analysis
+	if err := json.Unmarshal(payload, &a); err != nil {
+		// A corrupt result reads as "never run", which invites running it again
+		// rather than presenting something unreadable as a finding.
+		return domain.Analysis{}, nil
+	}
+	return a, nil
 }
 
 // Load reconstructs a session. The task prompt is the first prompt event's

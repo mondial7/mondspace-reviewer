@@ -174,3 +174,78 @@ func loadSignoff() web.SignoffOf {
 		return v
 	}
 }
+
+// runAnalysis runs one audit over one target and stores what it found.
+//
+// The model call is per audit and shares nothing with the others: each is a
+// fresh question about the same diff, which is the point of having more than
+// one (ADR 0024).
+func runAnalysis(pool *agentPool, model string) web.RunAnalysisFunc {
+	return func(ctx context.Context, targetID string, kind domain.AnalysisKind) (err error) {
+		started := time.Now()
+		// Every way of failing gets recorded, not only the model call. A card
+		// that goes quiet with nothing in the log is indistinguishable from one
+		// nobody ran, and for a security card that is the worst way to be wrong.
+		defer func() {
+			if err != nil {
+				handlerRef().Record(web.AuditEntry{
+					SessionID: targetID, Action: string(kind), Model: model,
+					Millis: time.Since(started).Milliseconds(),
+					Failed: true, Detail: err.Error(),
+				})
+			}
+		}()
+
+		audit, known := usecase.AuditFor(kind)
+		if !known {
+			return fmt.Errorf("no such analysis %q", kind)
+		}
+		entry, found := lookupTarget(targetID)
+		if !found {
+			return fmt.Errorf("no such review %q", targetID)
+		}
+
+		units, diffs, err := unitsFor(ctx, entry)
+		if err != nil {
+			return err
+		}
+		// An audit is a judgement about a change, so it uses the model that
+		// answers the hardest questions rather than the quick per-file one.
+		result, err := usecase.RunAudit(ctx, pool.For(domain.Narration), audit, targetID, units, diffs)
+		if err != nil {
+			return err
+		}
+
+		result.Model = model
+		handlerRef().Record(web.AuditEntry{
+			SessionID: targetID, Action: string(kind), Model: model,
+			Millis: time.Since(started).Milliseconds(),
+			Detail: fmt.Sprintf("%s: %d finding(s) — %s",
+				audit.Title, len(result.Findings), usecase.Brief(result.Verdict, 60)),
+		})
+
+		store := jsonl.New(entry.out)
+		if err := store.SaveAnalysis(result); err != nil {
+			// It ran and the reviewer will see it; it simply will not survive a
+			// restart.
+			return fmt.Errorf("ran, but could not be saved: %w", err)
+		}
+		return nil
+	}
+}
+
+// analysisOf reads back what an audit last found. A store that cannot answer
+// reads as "never run", which invites running it rather than showing nothing.
+func analysisOf() web.AnalysisOf {
+	return func(targetID string, kind domain.AnalysisKind) domain.Analysis {
+		entry, known := lookupTarget(targetID)
+		if !known {
+			return domain.Analysis{}
+		}
+		got, err := jsonl.New(entry.out).LoadAnalysis(targetID, kind)
+		if err != nil {
+			return domain.Analysis{}
+		}
+		return got
+	}
+}
