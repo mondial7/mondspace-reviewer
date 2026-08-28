@@ -1705,10 +1705,20 @@ type reviewStatus struct {
 
 // describeReview builds that answer. It is presentation only: every fact comes
 // from the stored story or from work already in flight.
-func describeReview(n domain.Narrative, groups int, reading, canRead bool, now time.Time) reviewStatus {
+func describeReview(n domain.Narrative, groupIDs []string, reading, canRead bool, now time.Time) reviewStatus {
+	// Group descriptions and per-file descriptions share one map, keyed
+	// differently. Counting the map counted both, so describing a few files
+	// pushed the card to "8/4 described" — a ratio that cannot be true.
+	described := 0
+	for _, id := range groupIDs {
+		if strings.TrimSpace(n.Meanings[id]) != "" {
+			described++
+		}
+	}
+
 	st := reviewStatus{
 		Model: n.Model, Chapters: len(n.Chapters),
-		Described: len(n.Meanings), Groups: groups,
+		Described: described, Groups: len(groupIDs),
 		CanRead: canRead && !reading,
 	}
 	switch {
@@ -1723,6 +1733,33 @@ func describeReview(n domain.Narrative, groups int, reading, canRead bool, now t
 		st.State = "unread"
 	}
 	return st
+}
+
+// shortOf is the identifying half of a "hash · author" subtitle.
+func shortOf(subtitle string) string {
+	if hash, _, found := strings.Cut(subtitle, " · "); found {
+		return hash
+	}
+	return usecase.Brief(subtitle, 12)
+}
+
+// dirName is how a folder is written on the page. The repository root arrives
+// as "." from the grouping, which is correct as a path and wrong as a label.
+func dirName(dir string) string {
+	if dir == "." || dir == "" {
+		return "root"
+	}
+	return dir
+}
+
+// groupIDs is the identity of each group on the page, which is what the
+// progress count has to be measured against.
+func groupIDs(groups []groupView) []string {
+	out := make([]string, 0, len(groups))
+	for _, g := range groups {
+		out = append(out, g.ID)
+	}
+	return out
 }
 
 // cockpitStats is the session's numbers rendered for display: durations and
@@ -1757,6 +1794,10 @@ type statTile struct {
 	// Lines renders as a +/- pair rather than a single figure.
 	Added, Removed int
 	IsLines        bool
+	// IsRef marks an identifier rather than a quantity — a hash, a tag name.
+	// Counts may wrap mid-token because a wrapped number is still readable; a
+	// hash broken across two lines just looks broken.
+	IsRef bool
 }
 
 // cockpitStats is the panel's numbers, chosen for what is being reviewed.
@@ -1784,14 +1825,17 @@ func statsFor(kind domain.TargetKind, st domain.SessionStats, subtitle string) c
 	switch kind {
 	case domain.TargetCommit:
 		if subtitle != "" {
-			add(statTile{Value: subtitle, Label: "commit"})
+			// The hash alone. A subtitle is "hash · author", and an author name
+			// is unbounded — in a tile this narrow it broke the hash across
+			// three lines to make room for a name nobody is reading here.
+			add(statTile{Value: shortOf(subtitle), Label: "commit", IsRef: true})
 		}
 	case domain.TargetWorktree:
 		add(statTile{Value: "—", Label: "uncommitted", Hint: "not committed yet"})
 	case domain.TargetLive:
 		// "Watching" rather than a number: this review has no fixed size, and a
 		// count that changes under the reader is worse than no count at all.
-		add(statTile{Value: "live", Label: "watching HEAD",
+		add(statTile{Value: "live", Label: "watching HEAD", IsRef: true,
 			Hint: "updates as files change, and follows HEAD when you commit"})
 	case domain.TargetTag, domain.TargetPR, domain.TargetRange:
 		add(statTile{Value: thousands(st.Commits), Label: plural("commit", st.Commits)})
@@ -1834,7 +1878,10 @@ type feedItem struct {
 // groupView is a set of files that changed together, with one model-written
 // sentence about what they are for.
 type groupView struct {
-	ID      string
+	ID string
+	// Dir is the folder the group covers, as a person would name it. Files at
+	// the repository root group under ".", which beside real directory names
+	// reads as a rendering fault rather than as a place.
 	Dir     string
 	Meaning string
 	Added   int
@@ -1925,7 +1972,7 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 	groups := make([]groupView, 0, 8)
 	for _, g := range usecase.GroupChanges(ordered, sess.Diffs) {
 		gv := groupView{
-			ID: g.ID, Dir: g.Dir, Added: g.Added, Removed: g.Removed,
+			ID: g.ID, Dir: dirName(g.Dir), Added: g.Added, Removed: g.Removed,
 			Meaning: narrative.Meanings[g.ID],
 		}
 		for _, u := range g.Units {
@@ -1970,7 +2017,7 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 		Repos: repos, CanCompare: canCompare,
 		Pending: pending,
 		Signoff: signoff, HasSignoff: signoffOf != nil, CanSignoff: canSignoff,
-		Review:    describeReview(narrative, len(groups), narrating, s.narrate != nil, s.now()),
+		Review:    describeReview(narrative, groupIDs(groups), narrating, s.narrate != nil, s.now()),
 		Stats:     statsFor(sess.Target.Kind, stats, sess.Target.Subtitle),
 		Narrative: narrative, Chapters: chapters, Groups: groups,
 		Tree:        usecase.FileTree(sess.Units, sess.Diffs),

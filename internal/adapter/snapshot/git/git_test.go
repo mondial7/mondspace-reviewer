@@ -758,3 +758,55 @@ func TestCommitsBetweenHandlesAnOpenEnd(t *testing.T) {
 		t.Errorf("got %+v, want everything since the tag", got)
 	}
 }
+
+func TestNumstatSinceASnapshotIgnoresFilesThatHaveNotMoved(t *testing.T) {
+	// A snapshot records untracked files too, because that is where an agent's
+	// new work lives. Diffing against one therefore has to compare like with
+	// like: `git diff` alone reports every still-untracked file as *deleted*
+	// (the real index never had it) and the untracked scan then reports it as
+	// added, so one unchanged file arrived twice with opposite signs.
+	dir := newRepo(t)
+	gitCmd(t, dir, "commit", "--allow-empty", "-m", "root")
+
+	os.WriteFile(filepath.Join(dir, "new.go"), []byte("package a\n\nfunc A() {}\n"), 0o644)
+	snap := gitsnap.New(dir, "s")
+	pin, err := snap.Snapshot(context.Background(), "pin")
+	if err != nil {
+		t.Fatalf("Snapshot: %v", err)
+	}
+
+	// Nothing has happened since the pin.
+	got, err := snap.NumstatSince(context.Background(), pin)
+	if err != nil {
+		t.Fatalf("NumstatSince: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("nothing changed since the pin, got %+v", got)
+	}
+
+	// Now something does.
+	os.WriteFile(filepath.Join(dir, "new.go"), []byte("package a\n\nfunc A() {}\nfunc B() {}\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, "later.go"), []byte("package a\n"), 0o644)
+
+	got, err = snap.NumstatSince(context.Background(), pin)
+	if err != nil {
+		t.Fatalf("NumstatSince: %v", err)
+	}
+
+	seen := map[string]domain.FileStat{}
+	for _, f := range got {
+		if _, dup := seen[f.Path]; dup {
+			t.Errorf("%s reported twice: %+v", f.Path, got)
+		}
+		seen[f.Path] = f
+	}
+	if len(seen) != 2 {
+		t.Fatalf("got %+v, want new.go and later.go", got)
+	}
+	if seen["new.go"].Added != 1 || seen["new.go"].Removed != 0 {
+		t.Errorf("new.go = %+v, want one line added", seen["new.go"])
+	}
+	if seen["later.go"].Added != 1 {
+		t.Errorf("later.go = %+v, want a new file", seen["later.go"])
+	}
+}

@@ -313,6 +313,59 @@ func (s *Snapshotter) Numstat(ctx context.Context, from, to domain.SnapshotRef) 
 	return stats, nil
 }
 
+// NumstatSince is what has changed between a snapshot and the working tree.
+//
+// It exists because Numstat cannot answer this correctly. A snapshot records
+// untracked files — that is where an agent's new work lives — so diffing one
+// against the working tree has to compare like with like. `git diff` alone
+// reports every still-untracked file as *deleted*, because the real index never
+// had it, and Numstat's untracked scan then reports the same file as added: one
+// unchanged file, arriving twice with opposite signs.
+//
+// So the working tree is written to a tree object of its own and the two trees
+// are compared. That costs a `git add -A` against a throwaway index, which is
+// why callers should ask only when something has actually moved.
+func (s *Snapshotter) NumstatSince(ctx context.Context, from domain.SnapshotRef) ([]domain.FileStat, error) {
+	tree, err := s.worktreeTree(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	out, err := s.run(ctx, os.Environ(), "diff", "--numstat", from.Commit, tree)
+	if err != nil {
+		return nil, err
+	}
+
+	var stats []domain.FileStat
+	for _, line := range strings.Split(out, "\n") {
+		if f, ok := parseNumstat(line); ok {
+			stats = append(stats, f)
+		}
+	}
+	return stats, nil
+}
+
+// worktreeTree writes the working tree — tracked and untracked alike — to a
+// tree object, without touching the user's HEAD, index or files.
+func (s *Snapshotter) worktreeTree(ctx context.Context) (string, error) {
+	tmpIndex, err := os.CreateTemp("", "msr-index-*")
+	if err != nil {
+		return "", err
+	}
+	indexPath := tmpIndex.Name()
+	tmpIndex.Close()
+	// git builds the throwaway index from scratch: an empty pre-existing file
+	// is rejected as a malformed index.
+	os.Remove(indexPath)
+	defer os.Remove(indexPath)
+
+	env := append(os.Environ(), "GIT_INDEX_FILE="+indexPath)
+	if _, err := s.run(ctx, env, "add", "-A"); err != nil {
+		return "", err
+	}
+	return s.run(ctx, env, "write-tree")
+}
+
 // parseNumstat reads one `added\tremoved\tpath` record. A binary file reports
 // "-" for both counts and is recorded as changed with no line count.
 func parseNumstat(line string) (domain.FileStat, bool) {

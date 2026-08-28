@@ -81,7 +81,10 @@
           ask the model to skip its reasoning phase
           <span class="agentform__note">
             msr always sends the request; whether it does anything is decided by
-            the model's own chat template, inside your server
+            the model's chat template. Measured as doing nothing on Qwen3.5-9B,
+            under both LM Studio and llama-server — the real switch there is
+            <code>--reasoning-budget 0</code> on the server, and that did not
+            work either. A model with no thinking mode needs none of this.
           </span>
         </label>
 

@@ -117,13 +117,19 @@
             <span class="unit__stat--del">-{{ .Removed }}</span>
           </span>
           {{ else }}
-          <span class="stat__value">{{ .Value }}</span>
+          <span class="stat__value{{ if .IsRef }} stat__value--ref{{ end }}">{{ .Value }}</span>
           {{ end }}
           <span class="stat__label">{{ .Label }}</span>
         </div>
         {{ end }}
       </section>
     </aside>
+
+    <!-- Both of these are about the review as a whole rather than about the
+         story or the changes separately, so they share the row above both
+         columns. Wrapped rather than placed individually: an empty pending
+         section must contribute no height and no gap. -->
+    <div class="cockpit__head">
 
     <!-- Work that arrived while the reviewer was reading (ADR 0020).
          Folding it in silently would change what they are judging underneath
@@ -204,11 +210,11 @@
         </button>
       </form>
       {{ end }}
-      </div>
 
       <!-- Your own verdict on the whole thing, as opposed to a note on one file.
            It is the first thing you need on reopening something you looked at
-           yesterday (ADR 0021). -->
+           yesterday (ADR 0021). Inside the card: it is part of the same answer
+           to "where is this review up to". -->
       {{ if or .HasSignoff .CanSignoff }}
       <div class="signoff {{ if .Signoff.Done }}signoff--done{{ end }} {{ if .Signoff.Moved }}signoff--moved{{ end }}">
         <p class="signoff__state">{{ .Signoff.Sentence }}</p>
@@ -229,7 +235,9 @@
         {{ end }}
       </div>
       {{ end }}
+      </div>
     </section>
+    </div>
 
     <!-- Middle: the session read as prose. Text only — the files each chapter
          covers are in the column beside it, and the two scroll together. -->

@@ -714,6 +714,16 @@
   overflow-wrap: anywhere;
   white-space: normal;
 }
+/* An identifier, not a quantity. Sized to fit a short hash on one line and
+   allowed to shrink rather than break: a hash split across two lines reads as
+   a rendering fault. */
+.stat__value--ref {
+  font-family: var(--mono);
+  font-size: clamp(0.7rem, 1.05vw, 0.92rem);
+  overflow-wrap: normal;
+  word-break: keep-all;
+}
+
 .stat__value--lines {
   font-size: clamp(0.75rem, 1.1vw, 0.95rem);
   display: flex; gap: 0.3rem; flex-wrap: wrap;
@@ -1100,7 +1110,15 @@
    not about the story or the changes separately. */
 .cockpit { grid-template-rows: auto minmax(0, 1fr); }
 .cockpit__panel { grid-row: 1 / span 2; }
-.reviewcard { grid-column: 2 / span 2; grid-row: 1; }
+.cockpit__head {
+  grid-column: 2 / span 2;
+  grid-row: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  min-width: 0;
+}
+.reviewcard { min-width: 0; }
 .cockpit__story { grid-column: 2; grid-row: 2; }
 .cockpit__changes { grid-column: 3; grid-row: 2; }
 
@@ -1262,8 +1280,8 @@ a.toast:hover { border-color: var(--kind, var(--accent)); }
    Spanning both reading columns, above the review card: it is about the page
    as a whole, and it is a question rather than a status (ADR 0020). */
 
-.pending { grid-column: 1 / -1; }
-
+/* Empty is the normal state, and an empty box must take no room: it sits above
+   the review card, which would otherwise be pushed down by a gap for nothing. */
 .pending:empty { display: none; }
 
 .pending__inner {
@@ -1370,11 +1388,16 @@ a.toast:hover { border-color: var(--kind, var(--accent)); }
    Distinct from the assistant having read it: that is a fact about the model,
    this is a fact about you (ADR 0021). */
 
+/* Inside the review card, below the assistant's line: the two together are the
+   answer to "where is this review up to". */
 .signoff {
+  grid-column: 1 / -1;
   display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  padding-top: 0.55rem;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 0.7rem;
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
   border-top: 1px solid var(--rule);
 }
 

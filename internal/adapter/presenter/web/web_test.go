@@ -1970,3 +1970,74 @@ func TestThePickerCarriesWhatNavigationNeeds(t *testing.T) {
 		t.Errorf("each option should name its repository:\n%s", body)
 	}
 }
+
+func TestDescribedCountsGroupsAndNotEveryMeaningStored(t *testing.T) {
+	// Group descriptions and per-file descriptions live in the same map, keyed
+	// differently. Counting the map counted both, so describing files pushed
+	// the card to "8/4 described" — a ratio that cannot be true.
+	sess := testSession()
+	sess.Narrative = domain.Narrative{
+		Source: domain.NarrativeModel,
+		Chapters: []domain.Chapter{
+			{Title: "auth", UnitIDs: []string{"s-f001"}},
+			{Title: "http", UnitIDs: []string{"s-f002"}},
+		},
+		Meanings: map[string]string{
+			// two groups...
+			"auth": "what the auth change is for",
+			"http": "what the middleware change is for",
+			// ...and per-file descriptions, which are not groups.
+			"file:auth/token.go":      "what this file does",
+			"file:http/middleware.go": "what this one does",
+		},
+	}
+	h := web.NewServer(sess, nil)
+
+	body := get(t, h, "/").Body.String()
+
+	if strings.Contains(body, "4/2 described") {
+		t.Error("per-file descriptions must not be counted as groups")
+	}
+	if !strings.Contains(body, "described") {
+		t.Fatalf("the card should report progress:\n%s", body)
+	}
+}
+
+func TestTheRepositoryRootIsNamedNotPunctuated(t *testing.T) {
+	// Files at the repository root group under ".", which renders as a lone
+	// full stop beside real directory names — it reads as a rendering fault
+	// rather than as a place.
+	sess := testSession()
+	sess.Units = []domain.Unit{
+		{ID: "s-f001", Files: []string{"go.mod"},
+			Headline: domain.Headline{Text: "added a dependency"}},
+	}
+	sess.Diffs = map[string]domain.Diff{"s-f001": {Text: "@@\n+require x\n"}}
+
+	body := get(t, web.NewServer(sess, nil), "/").Body.String()
+
+	if !strings.Contains(body, `class="group__dir">root<`) {
+		t.Errorf("the repository root should be named:\n%s",
+			body[max(0, strings.Index(body, "group__dir")-100):])
+	}
+}
+
+func TestALongCommitSubtitleDoesNotOverflowItsTile(t *testing.T) {
+	// The tiles are small and fixed; a commit subtitle is a hash plus an author
+	// name of unbounded length, and it was wrapping to three lines and spilling.
+	sess := testSession()
+	sess.Target = domain.Target{Kind: domain.TargetCommit,
+		Subtitle: "01ce10d0 · A Developer With A Very Long Name Indeed"}
+	h := web.NewServer(sess, nil).WithStats(domain.SessionStats{Files: 1})
+
+	body := get(t, h, "/").Body.String()
+
+	// The panel may show the subtitle in full; the tile shows the hash alone.
+	tile := body[strings.Index(body, "cockpit__stats"):]
+	if strings.Contains(tile, "A Developer With A Very Long Name Indeed") {
+		t.Errorf("the author does not belong in the tile:\n%s", tile[:400])
+	}
+	if !strings.Contains(tile, "01ce10d0") {
+		t.Error("the tile should still identify the commit")
+	}
+}
