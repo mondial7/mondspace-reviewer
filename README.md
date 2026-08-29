@@ -5,7 +5,8 @@
 `msr` reads a repository's git history and turns any part of it into a review you
 can actually read: the change told as a story, beside the real diffs, with a
 local model explaining what each piece is *for*. It watches; it never writes to
-your code or your agent.
+your code or your agent — and when your agent wants to know what you said, it
+asks over MCP.
 
 [![CI](https://github.com/mondial7/mondspace-reviewer/actions/workflows/ci.yml/badge.svg)](https://github.com/mondial7/mondspace-reviewer/actions/workflows/ci.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/mondial7/mondspace-reviewer.svg)](https://pkg.go.dev/github.com/mondial7/mondspace-reviewer)
@@ -378,6 +379,54 @@ whole log. `--source=opencode` tails an OpenCode log instead.
 That is the only thing sessions add — and it is why they are worth having, not
 why they should be the index.
 
+## Handing the review back to your agent
+
+The point of a review is that the thing being reviewed changes. Until v6.1 that
+meant reading the cockpit and retyping the relevant parts into your agent's
+prompt.
+
+`msr mcp` serves the review over MCP, on stdin/stdout. Point your coding agent's
+client at it:
+
+```json
+{"mcpServers": {"msr": {"command": "msr", "args": ["mcp"]}}}
+```
+
+`.mcp.json` for Claude Code, or the equivalent in whatever you use. Then ask
+your agent to *"check what the reviewer said"* and it pulls.
+
+**It never speaks first.** There is no hook, no injected message, no file it
+watches. A working agent is not interrupted with something nobody asked for at a
+moment nobody chose — it asks when it wants to know, and msr answers.
+
+| tool | what it gives back |
+| --- | --- |
+| `review_status` | which change is open, whether a human signed it off and what they said, how much is outstanding. Cheap — ask this first |
+| `review_feedback` | what the reviewer is **still asking for**: questions, objections, debt, in their own words. Optionally one file |
+| `review_file` | the whole human record of one file, approvals included |
+| `model_findings` | what msr's audits **inferred**, behind a name that says so |
+| `workspace_feedback` | outstanding feedback across *every* review. Expensive |
+| `workspace_search` | find anything written anywhere in the workspace. Expensive |
+
+The split is the point. The first three serve only what a person typed. The
+judge msr runs is a small local model: right often enough to be worth reading,
+wrong often enough that acting on it unverified is a mistake. So its findings
+have their own call, each reply opens by disowning human authorship, and each
+finding names the model and asks to be checked. Without that, a finding the
+model invented arrives in your agent's context indistinguishable from your
+objection — and msr then audits the result with the same model, a loop with no
+human in it.
+
+A finding you **dismissed** is still shown, marked settled: an agent that cannot
+see the dismissal raises the same thing again.
+
+It is read-only, and it reads the store rather than your code — no git, no
+model, no network. Leave it configured; the worst it can do is report what you
+wrote. Your agent cannot write to the review, which is deliberate: a review log
+the agent can edit is not a review of the agent.
+
+See [ADR 0031](ADR/0031-an-agent-pulls-the-review.md).
+
 ## The command line
 
 The web app is the product. The CLI is there for scripting and for looking at a
@@ -392,6 +441,7 @@ msr export --format=slack --session=<id>    # one message, ready to post
 msr ask --session=<id> "did the retry change have a stated reason?"
 msr review --plain --since=v4.0.0           # line-oriented, scriptable
 msr gc --dry-run                            # tidy throwaway review refs
+msr mcp                                     # serve the review to a coding agent
 ```
 
 Try the whole pipeline with no agent, terminal or network:
@@ -569,7 +619,7 @@ MSR_SUMMARIZER_URL=http://127.0.0.1:8081/v1 MSR_MODEL=qwen3-4b-instruct-2507 \
 
 ## Status
 
-**v6.0.0** — the web app is the product.
+**v6.1.0** — the review reaches the agent.
 
 - **Cockpit** (`msr web`) — one page: the change as a story, the diffs,
   annotation, re-analysis, a live isometric field, and a workspace spanning any
@@ -604,6 +654,9 @@ MSR_SUMMARIZER_URL=http://127.0.0.1:8081/v1 MSR_MODEL=qwen3-4b-instruct-2507 \
 - **Schema-enforced model output**, on-demand descriptions, persisted
   conversations, and full accounting of every call and token at `/activity` and
   `/status`.
+- **MCP server** (`msr mcp`) — your coding agent pulls the review when it wants
+  it, never interrupted. What a human wrote and what a model inferred arrive
+  through separate calls ([ADR 0031](ADR/0031-an-agent-pulls-the-review.md)).
 - **Deterministic flags** and the `stated`/`inferred` discipline, both offline.
 - **Storage**: append-only JSONL by default, or PostgreSQL in a dedicated schema.
 - **Ingestion** from Claude Code hooks or OpenCode, for stated intent.
