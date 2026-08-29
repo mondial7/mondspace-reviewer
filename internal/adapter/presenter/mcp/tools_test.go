@@ -166,3 +166,80 @@ func TestAToolThatNeedsAPathSaysSoRatherThanAnsweringAboutNothing(t *testing.T) 
 		t.Errorf("want the missing argument named, got:\n%s", got)
 	}
 }
+
+func findings(kind domain.AnalysisKind, model string, fs ...domain.Finding) domain.Analysis {
+	return domain.Analysis{
+		Kind: kind, At: time.Date(2026, 8, 29, 11, 0, 0, 0, time.UTC),
+		Model: model, Verdict: "two things worth a look", Findings: fs,
+	}
+}
+
+func TestModelFindingsArriveLabelledAsGuessesToCheck(t *testing.T) {
+	// The judge is a small local model. Its output reaching an agent as though
+	// it were a reviewer's instruction is exactly the loop ADR 0003 exists to
+	// prevent, so the labelling is part of the payload, not just the docs.
+	w := space{open: mcp.Review{
+		ID: "abc123", Title: "add retries",
+		Analyses: []domain.Analysis{findings("security", "qwen3.5-9b",
+			domain.Finding{File: "http.go", Note: "token in a log line", Severity: domain.SeverityHigh},
+		)},
+	}}
+
+	got := tool(t, w, "model_findings", nil)
+
+	for _, want := range []string{
+		"token in a log line", // the finding itself
+		"security",            // which reading produced it
+		"high",                // how much it claims to matter
+		"qwen3.5-9b",          // and by what
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q from:\n%s", want, got)
+		}
+	}
+	if !strings.Contains(strings.ToLower(got), "verify") {
+		t.Errorf("the payload itself must ask for verification:\n%s", got)
+	}
+	if !strings.Contains(strings.ToLower(got), "not written by a human") {
+		t.Errorf("the payload itself must disown human authorship:\n%s", got)
+	}
+}
+
+func TestAFindingAHumanDismissedIsNotHandedOverAsWork(t *testing.T) {
+	// It is still shown — an agent that cannot see the dismissal will raise the
+	// same thing again — but shown as settled, not as something to do.
+	w := space{open: mcp.Review{
+		ID: "abc123", Title: "add retries",
+		Analyses: []domain.Analysis{findings("security", "qwen3.5-9b",
+			domain.Finding{File: "http.go", Note: "token in a log line", Severity: domain.SeverityHigh},
+			domain.Finding{File: "http.go", Note: "the sleep is unbounded",
+				Severity: domain.SeverityLow, Verdict: domain.VerdictDismissed},
+		)},
+	}}
+
+	got := tool(t, w, "model_findings", nil)
+
+	if !strings.Contains(got, "the sleep is unbounded") {
+		t.Errorf("a dismissal is worth knowing about:\n%s", got)
+	}
+	settled := strings.Index(got, "the sleep is unbounded")
+	if !strings.Contains(got[max(0, settled-200):settled+80], "dismissed") {
+		t.Errorf("want it marked dismissed:\n%s", got)
+	}
+}
+
+func TestModelFindingsNarrowToAFileWhenAsked(t *testing.T) {
+	w := space{open: mcp.Review{
+		ID: "abc123",
+		Analyses: []domain.Analysis{findings("security", "qwen3.5-9b",
+			domain.Finding{File: "http.go", Note: "token in a log line"},
+			domain.Finding{File: "main.go", Note: "flag parsed twice"},
+		)},
+	}}
+
+	got := tool(t, w, "model_findings", map[string]any{"path": "http.go"})
+
+	if !strings.Contains(got, "token in a log line") || strings.Contains(got, "flag parsed twice") {
+		t.Errorf("want only http.go:\n%s", got)
+	}
+}

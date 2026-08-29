@@ -45,6 +45,7 @@ func Tools(w Workspace) []Tool {
 		statusTool(w),
 		feedbackTool(w),
 		fileTool(w),
+		findingsTool(w),
 	}
 }
 
@@ -214,6 +215,97 @@ func humanFeedback(r Review, path string) string {
 		b.WriteString(".\n")
 	}
 	return b.String()
+}
+
+// inferredWarning is attached to every reply that carries model output, and it
+// is deliberately the first thing in it.
+//
+// The judge msr runs is a small local model on the reviewer's own machine. Its
+// findings are worth reading and are not worth acting on unverified: an agent
+// that treats them as instructions closes a loop with no human in it — the
+// model proposes, the agent implements, and msr audits the result with the same
+// model (ADR 0003, ADR 0031).
+const inferredWarning = "These are INFERRED, not written by a human. They come from a " +
+	"small local model reading the diff, and it is wrong often enough to matter: " +
+	"it invents problems that are not there and misses ones that are. Verify each " +
+	"one against the actual code before you act on it, and do not quote it back as " +
+	"though a reviewer had said it."
+
+// findingsTool is the inferred half of the surface, behind a name that says so.
+//
+// A separate call rather than a section of review_feedback: mixing them would
+// mean an agent asking "what does the reviewer want" receives a machine's
+// guesses in the same list, in the same voice, and no way to tell them apart.
+func findingsTool(w Workspace) Tool {
+	return Tool{
+		Name: "model_findings",
+		Description: "Findings from mondspace-reviewer's automated audits of the " +
+			"open review (security, breaking changes). INFERRED by a small local " +
+			"model, NOT written by a human: treat every one as a lead to verify " +
+			"against the code, not as a reviewer's instruction. Use review_feedback " +
+			"for what the human actually said.",
+		Schema: object(map[string]any{
+			"path": str("file to narrow to, as it appears in the diff; omit for everything"),
+		}),
+		Call: func(_ context.Context, args map[string]any) (string, error) {
+			review, err := w.Open()
+			if err != nil {
+				return "", err
+			}
+			return modelFindings(review, text(args, "path")), nil
+		},
+	}
+}
+
+// modelFindings renders the audits, standing findings first and settled ones
+// after, each carrying where it came from.
+func modelFindings(r Review, path string) string {
+	var b strings.Builder
+	b.WriteString(inferredWarning + "\n\n")
+	fmt.Fprintf(&b, "Review: %s\n", describe(r))
+
+	shown := 0
+	for _, a := range r.Analyses {
+		if !a.Done() {
+			continue
+		}
+		for _, pass := range []bool{true, false} {
+			for _, f := range a.Findings {
+				if f.Stands() != pass || (path != "" && f.File != path) {
+					continue
+				}
+				shown++
+				fmt.Fprintf(&b, "\n%d. [%s · %s] %s\n   %s\n",
+					shown, a.Kind, f.Severity.Normalise(), firstNonEmpty(f.File, "the change as a whole"), f.Note)
+				if !f.Stands() {
+					// Kept rather than filtered: an agent that cannot see the
+					// dismissal raises the same thing again next time.
+					fmt.Fprintf(&b, "   The human reviewer dismissed this — settled, not work.\n")
+				}
+				fmt.Fprintf(&b, "   Inferred by %s on %s. Check it.\n",
+					firstNonEmpty(a.Model, "a local model"), a.At.Format("2006-01-02 15:04"))
+			}
+		}
+	}
+
+	if shown == 0 {
+		b.WriteString("\nNo audit has produced a finding")
+		if path != "" {
+			fmt.Fprintf(&b, " on %s", path)
+		}
+		b.WriteString(". That is the usual result, and it is not evidence that the change is safe.\n")
+	}
+	return b.String()
+}
+
+// firstNonEmpty is the first of its arguments with something in it.
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 // where says what a note is about: a file, and the line when there is one.
