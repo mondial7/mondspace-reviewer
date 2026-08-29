@@ -64,6 +64,8 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout io.Writer) 
 		return runExport(args, stdout)
 	case "web":
 		return runWeb(ctx, args, stdout)
+	case "mcp":
+		return runMCP(ctx, args, stdin, stdout)
 	case "gc":
 		return runGC(ctx, args, stdout)
 	default:

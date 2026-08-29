@@ -938,6 +938,11 @@ func targetLoader() web.Loader {
 		}
 		t := entry.target
 
+		// Opening a review is what tells the MCP server which one to answer
+		// about. The two are separate processes with no channel between them,
+		// so the trace goes in the store (ADR 0031).
+		recordOpen(entry)
+
 		// A session target carries its recorded log — the stated intent and the
 		// event history. Every other kind has only git for its *content*, but
 		// every kind accumulates a review: notes and a conversation, written

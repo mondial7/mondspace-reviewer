@@ -67,6 +67,25 @@ var commands = []struct {
 		[]string{"--dir=<path>     project to install into", "--command=<path> the msr binary the hooks should call"},
 	},
 	{
+		"mcp", "Serve the review to a coding agent over MCP, on stdin/stdout.",
+		"msr mcp [--out=.mondspace-reviewer]",
+		[]string{
+			"--out=<dir>      store root to read (default .mondspace-reviewer)",
+			"",
+			"Read-only, and it reads the store rather than the code: no git, no",
+			"model, no network. The agent pulls when it wants to — msr never",
+			"interrupts it.",
+			"",
+			"What the human wrote is served by review_status, review_feedback and",
+			"review_file. What a model inferred is behind model_findings, which",
+			"says on every reply that it needs checking. workspace_feedback and",
+			"workspace_search read every review and say so.",
+			"",
+			"Point your agent's MCP client at it, e.g. in .mcp.json:",
+			`  {"mcpServers":{"msr":{"command":"msr","args":["mcp"]}}}`,
+		},
+	},
+	{
 		"gc", "Delete the throwaway review refs left under refs/mondspace/review/.",
 		"msr gc [--session=<id>] [--repo=.] [--dry-run]",
 		[]string{"--dry-run        print what would be removed, remove nothing"},
@@ -138,6 +157,13 @@ Docs: https://github.com/mondial7/mondspace-reviewer#readme
 // runVersion reports the build. goreleaser stamps `version`; a plain `go build`
 // or `go install` falls back to the module's own build info.
 func runVersion(stdout io.Writer) error {
+	fmt.Fprintln(stdout, "msr "+strings.TrimPrefix(released(), "v"))
+	return nil
+}
+
+// released is the version this binary claims to be. goreleaser stamps it; a
+// plain `go build` leaves it empty and the module's own build info answers.
+func released() string {
 	v := version
 	if v == "" {
 		if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" {
@@ -145,8 +171,7 @@ func runVersion(stdout io.Writer) error {
 		}
 	}
 	if v == "" || v == "(devel)" {
-		v = "dev"
+		return "dev"
 	}
-	fmt.Fprintln(stdout, "msr "+strings.TrimPrefix(v, "v"))
-	return nil
+	return v
 }
