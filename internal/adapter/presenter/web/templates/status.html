@@ -14,6 +14,7 @@
   <nav class="storynav">
     <a class="storynav__brand" href="/">msr</a>
     <a class="storynav__link" href="/">cockpit</a>
+    <a class="storynav__link" href="/branches">branches</a>
     <a class="storynav__link" href="/activity">activity</a>
     <a class="storynav__link" href="/status" aria-current="page">status</a>
     <a class="storynav__link" href="/tutorial">tour</a>
@@ -110,6 +111,43 @@
       {{ with .AgentErr }}<p class="addrepo__err">{{ . }}</p>{{ end }}
       {{ end }}
     </section>
+
+    <!-- Fetching is the one thing msr does that talks to the network and
+         writes to the repository, so what it is doing has to be on the page
+         rather than only in how it was started (ADR 0025, ADR 0026). -->
+    {{ if or .HasWatch .CanWatch }}
+    <section class="board__panel">
+      <h2 class="board__title">watching the remote</h2>
+      <div class="board__row">
+        <span class="board__key">state</span>
+        <span class="board__val {{ if not .Watching }}board__val--down{{ end }}">
+          {{ if .Watching }}fetching every {{ .WatchEvery }}{{ else }}not fetching{{ end }}
+        </span>
+      </div>
+      <p class="agentform__note">
+        Off, msr reads whatever your own last <code>git fetch</code> brought in.
+        On, it fetches for you so you see what the rest of the team pushes. It
+        writes remote-tracking refs and talks to your remote — it never touches
+        HEAD, your index or your working tree.
+      </p>
+
+      {{ if .CanWatch }}
+      <form class="agentform" method="post" action="/remote">
+        <label class="agentform__check">
+          <input type="checkbox" name="watch" {{ if .Watching }}checked{{ end }}>
+          fetch in the background
+        </label>
+        <label class="agentform__label" for="watch-every">how often</label>
+        <input class="addrepo__input" id="watch-every" name="every" type="text"
+               value="{{ if .WatchEvery }}{{ .WatchEvery }}{{ else }}2m{{ end }}"
+               placeholder="2m" autocomplete="off" spellcheck="false">
+        <button class="addrepo__btn" type="submit">apply</button>
+      </form>
+      {{ end }}
+
+      <p class="agentform__note"><a href="/branches">See every branch →</a></p>
+    </section>
+    {{ end }}
 
     <!-- What it has spent. Reasoning is broken out because on a thinking model
          it is most of the bill, and it is what exhausts a context window. -->

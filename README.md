@@ -198,8 +198,17 @@ colleague has pushed that is not here yet. Every row opens that commit.
 
 ![The history card, showing an incoming commit from a colleague](docs/img/cockpit-log.png)
 
-By default it reads whatever your own last `git fetch` or `git pull` brought in.
-To have msr watch the remote itself:
+**The wider view.** `/branches` lists every branch on the remote with how far
+each has drifted from the mainline, who last pushed to it and when. **Ahead is
+the number that matters** — it is how much there would be to review, and the row
+opens exactly that: the range `main..their-branch`, reviewed like anything else.
+Merged branches stay listed but dimmed, since there is nothing left on them.
+
+![Every branch on the remote, with how much there is to review on each](docs/img/branches.png)
+
+By default msr reads whatever your own last `git fetch` or `git pull` brought
+in. To have it watch the remote itself, either start it with the flag or flip it
+on `/status` while it runs:
 
 ```sh
 msr web --fetch --fetch-every=2m
@@ -494,7 +503,7 @@ MSR_SUMMARIZER_URL=http://127.0.0.1:8081/v1 MSR_MODEL=qwen3-4b-instruct-2507 \
 
 ## Status
 
-**v5.7.0** — the web app is the product.
+**v5.8.0** — the web app is the product.
 
 - **Cockpit** (`msr web`) — one page: the change as a story, the diffs,
   annotation, re-analysis, a live isometric field, and a workspace spanning any
@@ -516,8 +525,10 @@ MSR_SUMMARIZER_URL=http://127.0.0.1:8081/v1 MSR_MODEL=qwen3-4b-instruct-2507 \
 - **Analysis cards** — story, security pass and breaking-change check, each run
   on demand and independent of the others
   ([ADR 0024](ADR/0024-analyses-as-independent-cards.md)).
-- **A history card**, and an opt-in watch on the remote so you see what the rest
-  of the team pushes ([ADR 0025](ADR/0025-watching-the-remote.md)).
+- **A history card** and a **branches page**, with an opt-in watch on the remote
+  so you see what the rest of the team pushes — toggled from `/status` without a
+  restart ([ADR 0025](ADR/0025-watching-the-remote.md),
+  [ADR 0026](ADR/0026-the-wider-view.md)).
 - **Schema-enforced model output**, on-demand descriptions, persisted
   conversations, and full accounting of every call and token at `/activity` and
   `/status`.

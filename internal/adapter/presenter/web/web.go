@@ -240,15 +240,18 @@ type Server struct {
 
 	// pending is work that arrived after this review was opened, waiting for
 	// the reviewer to decide what to do with it (ADR 0020).
-	pending     domain.Pending
-	include     IncludeFunc
-	split       SplitFunc
-	signoff     SignoffFunc
-	signoffOf   SignoffOf
-	signErr     string
-	runAnalysis RunAnalysisFunc
-	analysisOf  AnalysisOf
-	logOf       LogOf
+	pending        domain.Pending
+	include        IncludeFunc
+	split          SplitFunc
+	signoff        SignoffFunc
+	signoffOf      SignoffOf
+	signErr        string
+	runAnalysis    RunAnalysisFunc
+	analysisOf     AnalysisOf
+	logOf          LogOf
+	branchesOf     BranchesOf
+	remoteWatch    RemoteWatchState
+	setRemoteWatch SetRemoteWatch
 
 	// subs are live subscribers (server-sent events). Each gets a buffered
 	// channel so a slow reader can never block a request handler.
@@ -1021,6 +1024,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /activity", s.handleActivity)
 	s.mux.HandleFunc("GET /status", s.handleStatus)
 	s.mux.HandleFunc("GET /tutorial", s.handleTutorial)
+	s.mux.HandleFunc("GET /branches", s.handleBranches)
+	s.mux.HandleFunc("POST /remote", s.handleRemoteWatch)
 	s.mux.HandleFunc("POST /repos", s.handleAddRepo)
 	// The workspace list folded into the status page.
 	s.mux.HandleFunc("GET /sessions", redirectStatus)
@@ -1222,6 +1227,117 @@ func (s *Server) ClearPending() {
 	s.pending = domain.Pending{}
 	s.mu.Unlock()
 	s.broadcast("pending")
+}
+
+// BranchView is every branch the remote has, with how far each has drifted
+// (ADR 0026).
+type BranchView struct {
+	Base     string
+	Branches []domain.Branch
+}
+
+// branchRow is a branch as the page reads it: the facts, plus how long ago.
+type branchRow struct {
+	domain.Branch
+	Ago string
+}
+
+// BranchesOf lists the branches. Nil when there is no remote to ask about.
+type BranchesOf func() BranchView
+
+// WithBranches wires the branches page.
+func (s *Server) WithBranches(of BranchesOf) *Server {
+	s.branchesOf = of
+	return s
+}
+
+// RemoteWatchState reports whether msr is fetching, and how often.
+type RemoteWatchState func() (on bool, every time.Duration)
+
+// SetRemoteWatch changes it while msr runs.
+type SetRemoteWatch func(on bool, every time.Duration) error
+
+// WithRemoteWatch wires the fetch toggle. Reading the state and changing it are
+// separate, so a build that can report without being able to change still says
+// what it is doing.
+func (s *Server) WithRemoteWatch(state RemoteWatchState, set SetRemoteWatch) *Server {
+	s.remoteWatch, s.setRemoteWatch = state, set
+	return s
+}
+
+// handleBranches lists what everyone is working on.
+func (s *Server) handleBranches(w http.ResponseWriter, r *http.Request) {
+	s.mu.RLock()
+	of := s.branchesOf
+	work := s.workLocked()
+	on, every := false, time.Duration(0)
+	if s.remoteWatch != nil {
+		on, every = s.remoteWatch()
+	}
+	s.mu.RUnlock()
+
+	if of == nil {
+		http.NotFound(w, r)
+		return
+	}
+	view := of()
+
+	// Ages are formatted here rather than carried on the domain type: how long
+	// ago something was is a presentation question, and the answer differs by
+	// where it is shown.
+	rows := make([]branchRow, 0, len(view.Branches))
+	for _, b := range view.Branches {
+		rows = append(rows, branchRow{Branch: b, Ago: usecase.Ago(s.now().Sub(b.TS))})
+	}
+
+	s.render(w, "branches.html", struct {
+		Base     string
+		Repo     string
+		Branches []branchRow
+		Work     []Work
+		Watching bool
+		Every    string
+	}{
+		Base: view.Base, Repo: s.openSession(r).Repo, Branches: rows, Work: work,
+		Watching: on, Every: every.String(),
+	})
+}
+
+// handleRemoteWatch turns fetching on or off while msr runs.
+func (s *Server) handleRemoteWatch(w http.ResponseWriter, r *http.Request) {
+	s.mu.RLock()
+	set := s.setRemoteWatch
+	s.mu.RUnlock()
+	if set == nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	// An unchecked box sends nothing at all, so absent has to mean off — treat
+	// it as "leave as it was" and it could never be turned off.
+	on := r.FormValue("watch") != ""
+
+	every := 2 * time.Minute
+	if d, err := time.ParseDuration(strings.TrimSpace(r.FormValue("every"))); err == nil && d > 0 {
+		every = d
+	}
+
+	if err := set(on, every); err != nil {
+		s.mu.Lock()
+		s.agentErr = err.Error()
+		s.mu.Unlock()
+	} else {
+		s.Record(AuditEntry{Action: "remote-watch",
+			Detail: fmt.Sprintf("fetching %s (every %s)", onOff(on), every)})
+	}
+	http.Redirect(w, r, "/status", http.StatusSeeOther)
+}
+
+func onOff(on bool) string {
+	if on {
+		return "on"
+	}
+	return "off"
 }
 
 // LogView is recent history as the card shows it, with where the branch sits
@@ -2249,6 +2365,18 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	candidates := s.candidates
 	agentErr := s.agentErr
 	canConfigure := s.configure != nil
+	// Whether msr is fetching has to be visible: it writes to the repository
+	// and talks to the network, and neither should be inferable only from how
+	// the process was started (ADR 0026).
+	hasWatch, canWatch := s.remoteWatch != nil, s.setRemoteWatch != nil
+	watching, watchEvery := false, ""
+	if hasWatch {
+		on, every := s.remoteWatch()
+		// The interval is shown in the syntax the form accepts, so what is on
+		// the page can be typed straight back into it. humanDuration drops
+		// seconds, which is right for "open 2h 10m" and wrong for "every 45s".
+		watching, watchEvery = on, every.String()
+	}
 	repoErr := s.repoErr
 	canAddRepo := s.addRepo != nil
 	sessions := s.workspace
@@ -2300,6 +2428,10 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		CanRemoveRepo      bool
 		CanConfigure       bool
 		WorkloadForm       []WorkloadModel
+		Watching           bool
+		WatchEvery         string
+		CanWatch           bool
+		HasWatch           bool
 	}{
 		SessionID: sessionID, Repo: repo, Agent: agent,
 		Calls: thousands(u.Calls), Failures: thousands(u.Failures),
@@ -2311,6 +2443,8 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		RepoErr: repoErr, AgentErr: agentErr,
 		CanAddRepo: canAddRepo, CanRemoveRepo: s.removeRepo != nil,
 		CanConfigure: canConfigure, WorkloadForm: workloadForm(agent),
+		Watching: watching, WatchEvery: watchEvery,
+		CanWatch: canWatch, HasWatch: hasWatch,
 	}
 
 	s.render(w, "status.html", data)

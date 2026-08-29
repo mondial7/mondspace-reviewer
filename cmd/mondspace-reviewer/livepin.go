@@ -309,17 +309,38 @@ func targetIDForCommit(hash string) (string, bool) {
 	return "", false
 }
 
+// branchesOf lists every remote branch with how far it has drifted, for the
+// wider view (ADR 0026).
+func branchesOf(repo string) web.BranchesOf {
+	return func() web.BranchView {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+
+		snap := gitsnap.New(repo, "branches")
+		branches, err := snap.Branches(ctx, "")
+		if err != nil || len(branches) == 0 {
+			return web.BranchView{}
+		}
+		base := ""
+		if len(branches) > 0 {
+			base = branches[0].Base
+		}
+		return web.BranchView{Base: base, Branches: branches}
+	}
+}
+
 // watchRemote keeps an eye on what the rest of the team is pushing.
 //
 // Fetching is the one thing msr does that talks to the network and writes to
 // the repository, so it happens only when asked for. Without it this still
 // works: it reports whatever the reviewer's own last `git fetch` or `git pull`
 // brought in, which is honest, just as fresh as their last one (ADR 0025).
-func watchRemote(ctx context.Context, handler *web.Server, repo string, fetch bool, every time.Duration) {
+func watchRemote(ctx context.Context, handler *web.Server, repo string, watch *remoteWatch) {
 	snap := gitsnap.New(repo, "remote")
 	var prev domain.RemoteState
 
 	for {
+		fetch, every := watch.Get()
 		select {
 		case <-ctx.Done():
 			return

@@ -925,3 +925,99 @@ func TestRemoteBranchesExcludeTheOriginHeadAlias(t *testing.T) {
 		t.Error("a clone has at least one remote-tracking branch")
 	}
 }
+
+func TestBranchesReportDriftFromTheMainline(t *testing.T) {
+	// The wider view: what is everyone else working on, and how much of it
+	// would there be to review (ADR 0026).
+	origin := newRepo(t)
+	gitCmd(t, origin, "commit", "--allow-empty", "-m", "shared history")
+	gitCmd(t, origin, "branch", "-M", "main")
+
+	// A colleague's branch with two commits on it.
+	gitCmd(t, origin, "checkout", "-q", "-b", "feature-x")
+	gitAs(t, origin, "Alice", "commit", "--allow-empty", "-m", "Alice: start the cache")
+	gitAs(t, origin, "Alice", "commit", "--allow-empty", "-m", "Alice: finish the cache")
+	// ...and one that is already merged into main.
+	gitCmd(t, origin, "checkout", "-q", "main")
+	gitCmd(t, origin, "branch", "already-done")
+	gitCmd(t, origin, "checkout", "-q", "main")
+
+	clone := t.TempDir()
+	gitCmd(t, filepath.Dir(clone), "clone", "--quiet", origin, filepath.Base(clone))
+
+	got, err := gitsnap.New(clone, "s").Branches(context.Background(), "origin/main")
+	if err != nil {
+		t.Fatalf("Branches: %v", err)
+	}
+
+	by := map[string]domain.Branch{}
+	for _, b := range got {
+		by[b.Short] = b
+	}
+
+	feature, ok := by["feature-x"]
+	if !ok {
+		t.Fatalf("feature-x missing from %+v", got)
+	}
+	if feature.Ahead != 2 {
+		t.Errorf("feature-x ahead = %d, want 2", feature.Ahead)
+	}
+	if feature.Merged {
+		t.Error("feature-x has work on it and is not merged")
+	}
+	if feature.Author != "Alice" {
+		t.Errorf("Author = %q, want the person who pushed", feature.Author)
+	}
+	if feature.Subject != "Alice: finish the cache" {
+		t.Errorf("Subject = %q, want the newest commit", feature.Subject)
+	}
+
+	if done, ok := by["already-done"]; !ok {
+		t.Error("already-done missing")
+	} else if !done.Merged {
+		t.Errorf("already-done = %+v, want it marked merged", done)
+	}
+}
+
+func TestBranchesFindTheDefaultWithoutBeingTold(t *testing.T) {
+	origin := newRepo(t)
+	gitCmd(t, origin, "commit", "--allow-empty", "-m", "one")
+	gitCmd(t, origin, "branch", "-M", "main")
+
+	clone := t.TempDir()
+	gitCmd(t, filepath.Dir(clone), "clone", "--quiet", origin, filepath.Base(clone))
+
+	got, _ := gitsnap.New(clone, "s").Branches(context.Background(), "")
+	if len(got) == 0 {
+		t.Fatal("a clone has remote branches")
+	}
+	if got[0].Base != "origin/main" {
+		t.Errorf("Base = %q, want origin/main found on its own", got[0].Base)
+	}
+}
+
+func TestBranchesSkipTheSymbolicHeadRef(t *testing.T) {
+	// refs/remotes/origin/HEAD is a symbolic alias for the default branch, and
+	// git's refname:short renders it as bare "origin" — so a suffix check for
+	// "/HEAD" does not catch it, and it turns up in the list as a branch called
+	// "origin" that nobody created.
+	origin := newRepo(t)
+	gitCmd(t, origin, "commit", "--allow-empty", "-m", "one")
+	gitCmd(t, origin, "branch", "-M", "main")
+
+	clone := t.TempDir()
+	gitCmd(t, filepath.Dir(clone), "clone", "--quiet", origin, filepath.Base(clone))
+
+	got, err := gitsnap.New(clone, "s").Branches(context.Background(), "")
+	if err != nil {
+		t.Fatalf("Branches: %v", err)
+	}
+	for _, b := range got {
+		if b.Name == "origin" || strings.HasSuffix(b.Name, "/HEAD") {
+			t.Errorf("%+v is a symbolic alias, not a branch", b)
+		}
+	}
+	if len(got) == 0 {
+		t.Error("the real branch should still be listed")
+	}
+}

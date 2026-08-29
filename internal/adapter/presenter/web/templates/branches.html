@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Branches — mondspace-reviewer</title>
+  <link rel="stylesheet" href="/assets/app.css">
+  <script type="module" src="/assets/chrome.js" defer></script>
+  <script type="module" src="/assets/live.js" defer></script>
+</head>
+<body class="page">
+  <canvas class="backdrop" id="backdrop" aria-hidden="true"></canvas>
+
+  <nav class="storynav">
+    <a class="storynav__brand" href="/">msr</a>
+    <a class="storynav__link" href="/">cockpit</a>
+    <a class="storynav__link" href="/branches" aria-current="page">branches</a>
+    <a class="storynav__link" href="/activity">activity</a>
+    <a class="storynav__link" href="/status">status</a>
+    <a class="storynav__link" href="/tutorial">tour</a>
+    <span class="storynav__spacer"></span>
+    {{ range .Work }}{{ if .Running }}
+    <span class="storynav__busy" title="{{ .Detail }}"><span class="ask__spinner" aria-hidden="true"></span>{{ .Kind }}</span>
+    {{ end }}{{ end }}
+    <button class="storynav__zen" type="button" data-theme-toggle title="Theme">auto</button>
+    <button class="storynav__zen" type="button" data-zen-toggle
+            aria-pressed="false" title="Zen mode (⌘Z) · palette (⌘K)">zen</button>
+  </nav>
+
+  <header class="masthead">
+    <h1 class="masthead__title">Branches</h1>
+    <p class="masthead__meta">
+      <span class="masthead__count">{{ len .Branches }} on the remote</span>
+      <span class="masthead__hint">
+        what everyone is working on, and how far each has drifted from
+        {{ with .Base }}<code>{{ . }}</code>{{ else }}the mainline{{ end }} —
+        {{ if .Watching }}refreshed every {{ .Every }}{{ else }}as of your last
+        <code>git fetch</code>. <a href="/status">Turn on watching</a> to have msr
+        keep it current.{{ end }}
+      </span>
+    </p>
+  </header>
+
+  <main class="board branches">
+    {{ if .Branches }}
+    <ul class="branchlist">
+      {{ range .Branches }}
+      <li class="branch {{ if .Merged }}branch--merged{{ end }} {{ if .Mine }}branch--mine{{ end }}">
+
+        <div class="branch__head">
+          <span class="branch__name">{{ .Short }}</span>
+          {{ if .Mine }}<span class="branch__tag branch__tag--mine">yours</span>{{ end }}
+          {{ if .Merged }}<span class="branch__tag">nothing to review</span>{{ end }}
+          <span class="branch__drift">
+            {{ if .Ahead }}<span class="branch__ahead">{{ .Ahead }} ahead</span>{{ end }}
+            {{ if .Behind }}<span class="branch__behind">{{ .Behind }} behind</span>{{ end }}
+          </span>
+        </div>
+
+        <p class="branch__subject">{{ .Subject }}</p>
+        <p class="branch__meta">{{ .Author }} · {{ .Ago }}</p>
+
+        <!-- Reviewing a colleague's branch is the range base..branch, which is
+             an ordinary comparison — so this opens a real review rather than
+             another kind of thing (ADR 0026). -->
+        {{ if and .Ahead $.Base }}
+        <a class="branch__open"
+           href="/compare?repo={{ $.Repo }}&from={{ $.Base }}&to={{ .Name }}">
+          review the {{ .Ahead }} commit(s) on it
+        </a>
+        {{ end }}
+
+      </li>
+      {{ end }}
+    </ul>
+    {{ else }}
+    <p class="queue__empty">
+      No remote branches. Either this repository has no remote, or nothing has
+      been fetched yet.
+    </p>
+    {{ end }}
+  </main>
+</body>
+</html>

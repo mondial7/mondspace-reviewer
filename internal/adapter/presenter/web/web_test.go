@@ -2446,3 +2446,113 @@ func TestNoLogCardWithoutAWayToBuildIt(t *testing.T) {
 		t.Error("no log source should mean no log card")
 	}
 }
+
+func TestTheBranchesPageShowsWhatTheTeamIsWorkingOn(t *testing.T) {
+	now := time.Now()
+	h := web.NewServer(testSession(), nil).WithBranches(func() web.BranchView {
+		return web.BranchView{
+			Base: "origin/main",
+			Branches: []domain.Branch{
+				{Name: "origin/feature-x", Short: "feature-x", Subject: "Alice: finish the cache",
+					Author: "Alice", TS: now.Add(-30 * time.Minute), Ahead: 2, Behind: 1, Base: "origin/main"},
+				{Name: "origin/already-done", Short: "already-done", Subject: "old work",
+					Author: "Bob", TS: now.Add(-72 * time.Hour), Merged: true, Base: "origin/main"},
+			},
+		}
+	})
+
+	rec := get(t, h, "/branches")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /branches = %d, want 200", rec.Code)
+	}
+	body := rec.Body.String()
+
+	if !strings.Contains(body, "feature-x") || !strings.Contains(body, "Alice: finish the cache") {
+		t.Errorf("the page should list the branches:\n%s", body)
+	}
+	// Reviewing a colleague's branch is the range base..branch, which is an
+	// ordinary comparison — so the row opens a real review.
+	// The range is base..branch. A slash is legal unencoded in a query value,
+	// so this checks the link, not one particular escaping of it.
+	link := regexp.MustCompile(`(?i)href="/compare\?[^"]*from=origin(/|%2f)main[^"]*to=origin(/|%2f)feature-x`)
+	if !link.MatchString(body) {
+		t.Errorf("a branch row should open a review of what is on it:\n%s", body)
+	}
+	// Merged branches are there but not competing for attention.
+	if !strings.Contains(body, "branch--merged") {
+		t.Error("a merged branch should be marked as having nothing left to review")
+	}
+	if !strings.Contains(body, "2 ahead") {
+		t.Error("the page should say how much there would be to review")
+	}
+}
+
+func TestNoBranchesPageWithoutARemote(t *testing.T) {
+	h := web.NewServer(testSession(), nil)
+	if rec := get(t, h, "/branches"); rec.Code != http.StatusNotFound {
+		t.Errorf("GET /branches = %d with no source, want 404", rec.Code)
+	}
+}
+
+func TestWatchingTheRemoteIsToggledFromTheStatusPage(t *testing.T) {
+	// A setting you can only change by restarting is not a setting on a status
+	// page (ADR 0026).
+	var got struct {
+		on    bool
+		every time.Duration
+	}
+	h := web.NewServer(testSession(), nil).
+		WithRemoteWatch(
+			func() (bool, time.Duration) { return false, 2 * time.Minute },
+			func(on bool, every time.Duration) error {
+				got.on, got.every = on, every
+				return nil
+			})
+
+	if !strings.Contains(get(t, h, "/status").Body.String(), `action="/remote"`) {
+		t.Fatal("the status page should offer the remote watch")
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/remote",
+		strings.NewReader("watch=on&every=45s"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("POST /remote = %d, want 303", rec.Code)
+	}
+	if !got.on || got.every != 45*time.Second {
+		t.Errorf("set %+v, want it on every 45s", got)
+	}
+}
+
+func TestTurningTheRemoteWatchOff(t *testing.T) {
+	// An unchecked checkbox sends nothing at all, so "absent" has to mean off
+	// rather than "leave it as it was" — otherwise it can never be turned off.
+	on := true
+	h := web.NewServer(testSession(), nil).
+		WithRemoteWatch(
+			func() (bool, time.Duration) { return true, time.Minute },
+			func(want bool, _ time.Duration) error { on = want; return nil })
+
+	req := httptest.NewRequest(http.MethodPost, "/remote", strings.NewReader("every=1m"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	h.ServeHTTP(httptest.NewRecorder(), req)
+
+	if on {
+		t.Error("submitting the form with the box unchecked should turn it off")
+	}
+}
+
+func TestTheStatusPageSaysWhetherItIsFetching(t *testing.T) {
+	// Fetching writes to the repository and talks to the network. Whether it is
+	// happening must be visible, not buried in how the process was started.
+	h := web.NewServer(testSession(), nil).
+		WithRemoteWatch(func() (bool, time.Duration) { return true, 90 * time.Second }, nil)
+
+	body := get(t, h, "/status").Body.String()
+	if !strings.Contains(body, "every 1m 30s") && !strings.Contains(body, "1m30s") {
+		t.Errorf("the page should say how often it fetches:\n%s", body)
+	}
+}

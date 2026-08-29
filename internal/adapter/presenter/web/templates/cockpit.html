@@ -16,6 +16,7 @@
   <nav class="storynav">
     <a class="storynav__brand" href="/">msr</a>
     <a class="storynav__link" href="/" aria-current="page">cockpit</a>
+    <a class="storynav__link" href="/branches">branches</a>
     <a class="storynav__link" href="/activity">activity</a>
     <a class="storynav__link" href="/status">status</a>
     <a class="storynav__link" href="/tutorial">tour</a>
@@ -117,7 +118,8 @@
         <header class="log__head">
           <span class="log__title">history</span>
           {{ with .Log.Remote.Upstream }}
-          <span class="log__branch" title="{{ $.Log.Remote.Branch }} tracks {{ . }}">{{ . }}</span>
+          <a class="log__branch" href="/branches"
+             title="{{ $.Log.Remote.Branch }} tracks {{ . }} — see every branch">{{ . }}</a>
           {{ end }}
         </header>
 

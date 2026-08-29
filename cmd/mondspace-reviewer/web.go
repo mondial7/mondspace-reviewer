@@ -164,6 +164,7 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 		WithSignoff(saveSignoff(), loadSignoff()).
 		WithAnalyses(runAnalysis(pool, agent.For(domain.Narration).Model), analysisOf()).
 		WithLog(buildLog(repo)).
+		WithBranches(branchesOf(repo)).
 		WithConfigure(configureAgent(pool, *configPath, &agent)).
 		WithExchanges(exchangeStore(store), sess.Exchanges).
 		WithAsk(webAskFunc(sess, view.Units, view.Diffs, snap, pool.For(domain.Ask))).
@@ -211,8 +212,16 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 	go watchRepo(ctx, handler, snap, storeRelativeTo(repo, storeRoot), repos, *out)
 
 	// And what the rest of the team is doing, which is a different question
-	// from what this working tree is doing (issue #18).
-	go watchRemote(ctx, handler, repo, *fetch, *fetchEvery)
+	// from what this working tree is doing (issue #18). The switch is a value
+	// rather than a flag so it can be flipped from the status page without a
+	// restart (ADR 0026).
+	watch := newRemoteWatch(*fetch, *fetchEvery)
+	handler = handler.WithRemoteWatch(watch.Get, func(on bool, every time.Duration) error {
+		watch.Set(on, every)
+		return nil
+	})
+	setHandler(handler)
+	go watchRemote(ctx, handler, repo, watch)
 
 	ln, err := net.Listen("tcp", *addr)
 	if err != nil {

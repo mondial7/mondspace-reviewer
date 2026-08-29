@@ -13,6 +13,7 @@
   <nav class="storynav">
     <a class="storynav__brand" href="/">msr</a>
     <a class="storynav__link" href="/">cockpit</a>
+    <a class="storynav__link" href="/branches">branches</a>
     <a class="storynav__link" href="/activity">activity</a>
     <a class="storynav__link" href="/status">status</a>
     <a class="storynav__link" href="/tutorial" aria-current="page">tour</a>
@@ -151,7 +152,13 @@
         <em>incoming</em>. msr only fetches if you start it with
         <code>--fetch</code> — otherwise it reads whatever your own last fetch
         brought in, because fetching talks to the network and writes refs, and
-        msr does neither without being asked.
+        msr does neither without being asked — you can turn that on from
+        <a href="/status">the status page</a> without restarting.
+      </p>
+      <p class="tour__body tour__body--dim">
+        <a href="/branches">Branches</a> is the wider view: every branch on the
+        remote, how far each has drifted, and how much there would be to review.
+        Each row opens a review of exactly that branch's work.
       </p>
     </section>
 

@@ -72,3 +72,28 @@ type RemoteState struct {
 	// opt-in, because it is a network call that writes refs (ADR 0025).
 	Fetched time.Time
 }
+
+// Branch is a remote branch as the branches view shows it: what is on it, who
+// last touched it, and how far it has drifted from the mainline (ADR 0026).
+type Branch struct {
+	// Name is the remote-tracking name, e.g. origin/feature-x. Short drops the
+	// remote, which is what a person calls it.
+	Name    string
+	Short   string
+	Hash    string
+	Subject string
+	Author  string
+	TS      time.Time
+	// Ahead is what is on this branch and not on the base; Behind is the
+	// reverse. Ahead is what there would be to review.
+	Ahead  int
+	Behind int
+	// Merged: the base already has everything on it, so there is nothing left
+	// to review and it is probably waiting to be deleted.
+	Merged bool
+	// Base is the branch the two counts are measured against.
+	Base string
+	// Mine marks the branch checked out here, which is the one row that is not
+	// somebody else's work.
+	Mine bool
+}

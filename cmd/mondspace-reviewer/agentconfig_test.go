@@ -2,6 +2,7 @@ package main
 
 import (
 	"testing"
+	"time"
 
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
 )
@@ -132,5 +133,41 @@ func TestAStoredOverrideSurvivesWhenNoFlagIsPassed(t *testing.T) {
 
 	if ref := got.For(domain.Ask); ref.Model != "the-one-i-chose" {
 		t.Errorf("ask = %+v, want the stored override", ref)
+	}
+}
+
+func TestTheRemoteWatchCanBeTurnedOnAndOffWhileRunning(t *testing.T) {
+	// The watcher captured the flag at start-up, so changing it meant a
+	// restart. A setting you can only change by restarting is not a setting on
+	// a status page (ADR 0026).
+	w := newRemoteWatch(false, 2*time.Minute)
+
+	if on, _ := w.Get(); on {
+		t.Error("it starts off when it was not asked for")
+	}
+
+	w.Set(true, 30*time.Second)
+	on, every := w.Get()
+	if !on || every != 30*time.Second {
+		t.Errorf("Get = %v, %s; want on every 30s", on, every)
+	}
+
+	w.Set(false, 30*time.Second)
+	if on, _ := w.Get(); on {
+		t.Error("turning it off should turn it off")
+	}
+}
+
+func TestAnAbsurdFetchIntervalIsBroughtBackToSomethingSane(t *testing.T) {
+	// This is a network call against someone else's server. A typo in a form
+	// field must not turn msr into a hammer.
+	w := newRemoteWatch(true, time.Second)
+	if _, every := w.Get(); every < minFetchEvery {
+		t.Errorf("every = %s, want at least %s", every, minFetchEvery)
+	}
+
+	w.Set(true, 0)
+	if _, every := w.Get(); every < minFetchEvery {
+		t.Errorf("every = %s, want a floor rather than a busy loop", every)
 	}
 }

@@ -741,3 +741,103 @@ func (s *Snapshotter) Fetch(ctx context.Context) error {
 	_, err := s.run(ctx, os.Environ(), "fetch", "--quiet", "--prune", "--no-write-fetch-head", "--no-tags")
 	return err
 }
+
+// branchLimit bounds how many branches are inspected. Divergence costs one
+// command each, and a list longer than this is not a view anybody reads.
+const branchLimit = 40
+
+// Branches lists remote branches with how far each has drifted from base.
+//
+// base is usually the default branch. Everything is read from refs already in
+// the repository: whatever the last fetch brought is what this sees (ADR 0025).
+func (s *Snapshotter) Branches(ctx context.Context, base string) ([]domain.Branch, error) {
+	if base == "" {
+		base = s.defaultBranch(ctx)
+	}
+
+	const sep = "\x1f"
+	out, err := s.run(ctx, os.Environ(), "for-each-ref",
+		fmt.Sprintf("--count=%d", branchLimit), "--sort=-committerdate",
+		"--format=%(refname:short)"+sep+"%(objectname)"+sep+"%(authorname)"+sep+
+			"%(committerdate:iso-strict)"+sep+"%(subject)"+sep+"%(symref)",
+		"refs/remotes")
+	if err != nil {
+		return nil, nil // no remotes: an empty list, not a failure
+	}
+
+	current := ""
+	if b, err := s.run(ctx, os.Environ(), "rev-parse", "--abbrev-ref", "HEAD"); err == nil {
+		current = strings.TrimSpace(b)
+	}
+
+	var branches []domain.Branch
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Split(strings.TrimSpace(line), sep)
+		if len(fields) != 6 || fields[0] == "" {
+			continue
+		}
+		// origin/HEAD is a symbolic alias for the default branch, not a branch
+		// anyone pushed. Asking whether the ref is symbolic is exact; matching
+		// the name is not, because git renders refs/remotes/origin/HEAD as the
+		// bare remote name "origin".
+		if strings.TrimSpace(fields[5]) != "" || strings.HasSuffix(fields[0], "/HEAD") {
+			continue
+		}
+		ts, err := time.Parse(time.RFC3339, fields[3])
+		if err != nil {
+			continue
+		}
+
+		b := domain.Branch{
+			Name: fields[0], Short: shortBranch(fields[0]), Hash: fields[1],
+			Author: fields[2], TS: ts, Subject: fields[4], Base: base,
+		}
+		if base != "" && b.Name != base {
+			b.Behind, b.Ahead = s.divergence(ctx, base, b.Name)
+			b.Merged = b.Ahead == 0
+		}
+		b.Mine = current != "" && shortBranch(b.Name) == current
+		branches = append(branches, b)
+	}
+	return branches, nil
+}
+
+// divergence counts how far two refs have drifted, in one command.
+func (s *Snapshotter) divergence(ctx context.Context, base, ref string) (behind, ahead int) {
+	out, err := s.run(ctx, os.Environ(), "rev-list", "--left-right", "--count", base+"..."+ref)
+	if err != nil {
+		return 0, 0
+	}
+	fields := strings.Fields(out)
+	if len(fields) != 2 {
+		return 0, 0
+	}
+	behind, _ = strconv.Atoi(fields[0])
+	ahead, _ = strconv.Atoi(fields[1])
+	return behind, ahead
+}
+
+// defaultBranch is what the remote calls its mainline, falling back to the
+// usual names when the remote has not said.
+func (s *Snapshotter) defaultBranch(ctx context.Context) string {
+	if out, err := s.run(ctx, os.Environ(), "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"); err == nil {
+		if name := strings.TrimSpace(out); name != "" {
+			return name
+		}
+	}
+	for _, guess := range []string{"origin/main", "origin/master"} {
+		if _, err := s.run(ctx, os.Environ(), "rev-parse", "--verify", "--quiet", guess); err == nil {
+			return guess
+		}
+	}
+	return ""
+}
+
+// shortBranch drops the remote from a remote-tracking name: origin/feature-x
+// is called feature-x by the person who pushed it.
+func shortBranch(name string) string {
+	if _, rest, found := strings.Cut(name, "/"); found {
+		return rest
+	}
+	return name
+}

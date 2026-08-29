@@ -14,6 +14,7 @@ produce four groups, several flags and a story worth reading.
 | `tutorial.png` | the built-in tour at `/tutorial` |
 | `cockpit-analyses.png` | the three analysis cards, with real findings |
 | `cockpit-log.png` | the history card, with a colleague's commit incoming |
+| `branches.png` | every branch on the remote, with what there is to review |
 
 To recapture: run `msr web`, narrate a target, then screenshot at 1600×1000.
 Headless Chrome works:
