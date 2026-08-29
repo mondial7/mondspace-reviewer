@@ -36,6 +36,265 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Opening a review in `msr web` now records which one is open, in the store, so
   the separate MCP process can follow it.
 
+## [6.0.0] — 2026-08-29
+
+Five releases of v5 built the git-first review model. v6 is the one where the
+review itself became a real artefact rather than a display.
+
+### Breaking
+
+- **`--addr` no longer binds beyond loopback without `--allow-remote`.** msr
+  serves your source, your diffs and your review notes with no authentication,
+  so putting it on a network is now a decision rather than a typo.
+- Notes anchored to a target reviewed under a different range do not carry over,
+  as [ADR 0017](ADR/0017-git-first-review.md) has always said. Everything stored
+  by v5 is read by v6 unchanged.
+
+### Added
+
+- **`.msrignore`** — generated files kept out of a review, with **no defaults**:
+  a review tool that hides files by default is one you cannot trust, and hiding
+  a lockfile would mask the one dependency change worth seeing. What is hidden
+  is always named, with the rule that hid it
+  ([ADR 0027](ADR/0027-ignoring-generated-files.md)).
+- **Notes on individual lines**, anchored to the line's *text* rather than its
+  number, plus an occurrence index so identical lines — closing braces, `return
+  nil` — are told apart. A diff grows above the line you commented on
+  constantly, and a number would drift onto something else without ever looking
+  wrong ([ADR 0028](ADR/0028-notes-on-lines.md)).
+- **Export from the app.** Markdown, JSON and Slack links on the review card, of
+  whatever review is being read, arriving as a downloadable file. "The review log
+  is the product" was stated in three places and the only way to get it out was a
+  CLI invocation against a session id.
+- **Workspace search** (`/search`) — every note, question, answer and finding in
+  every review. Every word must match, not any: two words is how someone narrows
+  a search, and treating it as "either" makes adding a word return *more*. It
+  reads the stores each time rather than keeping an index
+  ([ADR 0030](ADR/0030-searching-judging-and-who-can-reach-it.md)).
+- **A note now records the file it was about.** A unit is derived from git rather
+  than stored, so for a commit or a tag nothing on disk could say which file a
+  note concerned.
+- **Dismissing a finding.** An audit run twice produces the same findings from
+  the same diff, so a finding you had already ruled out came back identically
+  every time. Dismissals carry across reruns, matched on the file *and* the
+  claim, and the finding stays on the card rather than being deleted — deleting
+  it would invite the next run to raise it as though it were new.
+- **Structural tests for the pages**, pinning invariants that only screenshots
+  had caught, and **tests for the prompts against a real model**, which found and
+  fixed two real weaknesses: a verdict saying "nothing found" alongside findings,
+  and the breaking-changes pass reporting newly-added functions as breaking.
+
+### Changed
+
+- **A 600-file review loads in half a second instead of twenty-eight.** Not by
+  bounding anything: the plan proposed capping units, paginating the column and
+  truncating diffs, and measuring showed all three were wrong. The review was
+  rebuilt from git on every request — the cache was discarded each time because
+  the "show ignored files" answer was applied unconditionally, and each file was
+  diffed in its own git process ([ADR 0029](ADR/0029-large-reviews.md)).
+
+### Fixed
+
+- **Annotations on anything other than a recorded session were write-only.**
+  Stored correctly under the target's own id and never read back, because the
+  loader only reconstructed a session when the target *was* one — and
+  `handleAnnotate` appended every note to whichever review msr started with. A
+  note on a commit vanished on the redirect and turned up on something unrelated.
+- **Each review now has its own conversation.** Questions asked about one review
+  were shown under another and handed to the model as history for it.
+- **The history card and branches page follow the repository being reviewed.**
+  Both captured the repository msr was started in, so opening a target elsewhere
+  showed the first repository's commits under the second's name — worse than
+  showing nothing, because it looks right.
+
+## [5.8.0] — 2026-08-29
+
+### Added
+
+- **`/branches` — every branch on the remote**: how far each has drifted from the
+  mainline, who last pushed to it and when. *Ahead* is the number that matters,
+  because it is how much there would be to review, and the row opens exactly
+  that. A colleague's branch is the range `main..their-branch`, an ordinary
+  comparison, so what opens is a normal review — narrated, annotated, signed off,
+  audited like anything else ([ADR 0026](ADR/0026-the-wider-view.md)).
+- Merged branches stay listed but dimmed. Removing them would lie about what
+  exists; letting them compete would bury the ones that matter.
+
+### Changed
+
+- **The fetch switch moved out of the command line.** `/status` says whether msr
+  is fetching and how often, and turns it on or off while it runs — no restart.
+  That fact was previously knowable only from how the process was started, which
+  is the wrong place for something a program is doing to your repository and your
+  network.
+
+## [5.7.0] — 2026-08-29
+
+### Added
+
+- **A history card** showing where you stand against everything that has landed:
+  the commit you are reviewing, the ones you have signed off, the ones that have
+  not left your machine, and the ones a colleague has pushed that are not here
+  yet. Every row opens that commit
+  ([ADR 0025](ADR/0025-watching-the-remote.md)).
+- **A toast that names who pushed** — "3 new commits on origin/main · Alice" —
+  because "you are 3 behind" and "Alice moved main" are different facts and both
+  fit on one line.
+- **Watching the remote is opt-in** (`--fetch`), because fetching talks to the
+  network and writes remote-tracking refs, and msr otherwise does neither.
+  Without it the card still works from whatever your own last fetch brought in.
+  With it, HEAD, your index and your working tree are still never touched —
+  there is a test for exactly that.
+- **Severity on findings.** Three levels, a schema enum so the model cannot
+  invent a fourth, sorted worst-first, and still labelled inferred — including
+  how bad.
+
+### Fixed
+
+- "just now ago".
+
+## [5.6.0] — 2026-08-28
+
+### Added
+
+- **Three readings of a change, not one.** The story is now one analysis card
+  among three; beside it sit a **security pass** and a **breaking-change check**,
+  each run when you ask and never before
+  ([ADR 0024](ADR/0024-analyses-as-independent-cards.md)).
+- They share nothing: no card is shown what another found, and running one never
+  triggers another. A model given three questions at once answers the first well
+  and the rest as an afterthought, and one shown a previous finding anchors on
+  it.
+- They are short by construction. The caps live in the schema rather than in a
+  politely-worded prompt: at most five findings, each a file and one sentence.
+- **A card is never ambiguous about which it means.** "Nobody has run this", "it
+  could not run" and "it ran and found nothing" all look different. On a security
+  card that is the difference between information and a false sense of safety.
+
+### Fixed
+
+- **An action naming an unresolvable target fell back to whatever review was
+  open**, so an audit could land under something nobody was looking at. Rendering
+  still falls back — a stale link should not be a dead end — but acting refuses.
+
+## [5.5.0] — 2026-08-28
+
+### Added
+
+- **An actual install guide**: two things to install, the second optional, and
+  what you lose without it.
+- **The project page rebuilt** in the application's own palette, with real
+  screenshots captured from a real msr against a real repository and a real local
+  model.
+- **A tour inside the app** at `/tutorial` — reachable from every page, from the
+  command palette and from the `?` sheet
+  ([ADR 0023](ADR/0023-teaching-the-page.md)).
+
+### Fixed
+
+Taking the screenshots found five bugs no test had, because all five were about
+what the page *looked* like:
+
+- The review card could report "8/4 described": group and per-file descriptions
+  share one map, and the count counted the map.
+- The mid-review banner rendered at the bottom of the page, having auto-placed
+  into an implicit grid row.
+- Unchanged files were listed twice, once as a phantom deletion — diffing a
+  snapshot needs the working tree compared as a tree rather than by scanning
+  untracked files.
+- The fifteen-second refresher was still rebuilding a pinned review against the
+  working tree, so the page held still and then jumped.
+- A commit hash broke across three lines to make room for an author name nobody
+  reads in a tile that size, and files at the repository root grouped under ".".
+
+## [5.4.0] — 2026-08-28
+
+### Added
+
+- **The live review holds still while you read it.** It is pinned to a snapshot
+  taken when you opened it, and work the agent does afterwards queues in a banner
+  that names the files — flagging any you have already annotated, because a note
+  written against a version that no longer exists is the thing worth interrupting
+  for. Then you choose: **keep reading**, **include them**, or **review just the
+  new work** as a range of its own
+  ([ADR 0020](ADR/0020-pin-the-review-queue-the-rest.md)).
+- **Finishing a review.** Mark a target reviewed, leave a closing comment on the
+  change as a whole, and reopening it tomorrow says so. Signed-off targets are
+  ticked in the picker. If the code moved after you signed off, it says that
+  rather than reading as current
+  ([ADR 0021](ADR/0021-finishing-a-review.md)).
+- **Keyboard navigation**: `j`/`k` between files, `o` to open, `[` and `]`
+  between reviews, `{` and `}` between repositories, `/` for the picker, `a` to
+  ask, `r` to sign off, `?` for the list
+  ([ADR 0022](ADR/0022-keyboard-navigation.md)).
+
+### Changed
+
+- **msr talks to llama.cpp's `llama-server` by default**, with a model per
+  workload if you want one ([ADR 0019](ADR/0019-llama-server-and-a-model-per-workload.md)).
+- **Answers are no longer read out of the reasoning channel.** An empty `content`
+  is a fault now, and says which server flag causes it.
+
+## [5.3.0] — 2026-08-25
+
+### Added
+
+- **A live target** — the working tree against HEAD, updating as the agent works.
+  Unlike the old worktree target it is always offered, and it keeps its identity
+  when a commit lands, so notes and the story survive the commit
+  ([ADR 0018](ADR/0018-live-target-and-pulses.md)).
+- **A toast when the repository moves** — a commit, a tag, files changing —
+  wherever you are. Clicking it opens that target, which msr has already
+  discovered.
+- **The model is configurable from `/status`** and from a config file, taking
+  effect at once rather than on the next launch. Settings are refused, and not
+  saved, if the endpoint does not answer. `switchable.Summarizer` forwards the
+  optional capabilities deliberately: a wrapper that dropped `SchemaAnswerer`
+  would silently turn schema-enforced narration back into parsing JSON out of
+  prose, and one that answered nil to `Ping` would light the status page green
+  for something that answers nothing.
+- **One searchable input for every point in history.** Choosing what to review
+  and choosing the two ends of a comparison are the same question, and they were
+  three widgets. They are one now: a native `datalist`, searchable as you type,
+  working with no JavaScript at all. A target carries a `Ref` — a tag name, a
+  short hash, `#42` — so `/?target=v5.2.0` opens a release rather than a hex id
+  nobody can recognise.
+- **The status page reports what share of the model's output was reasoning**, and
+  says plainly when `enable_thinking: false` is being ignored. "Only some chat
+  templates honour this" was accurate and useless; this is measurable, because
+  reasoning tokens were already counted.
+
+### Changed
+
+- **The stats box answers what the target can answer.** It showed the same six
+  numbers whatever was being reviewed, so a single commit reported "1 commit" and
+  "0 PRs".
+- **`new-dep` fires on dependency manifests, not on every import.** It fired on
+  any added `import` line, so every source file that gained an internal import
+  carried it. It asks a supply-chain question, so only files that can answer one
+  trip it — a manifest with a line naming a dependency, or any addition to a lock
+  file. Bumping `go 1.25` no longer claims to be taking on a dependency.
+
+### Fixed
+
+- **Every action now acts on the review being read.** Every form posts with its
+  target, every handler resolves the review from it, and the redirect returns to
+  the review that was being read. Describing a group answered "no such group in
+  this review"; annotating and re-analysing a switched target failed the same way
+  silently; and a question asked while reading one target was answered from
+  another.
+- **Two spinners that lied.** The review card said "reading this review…" until
+  the page was reloaded by hand, never having been in the live-update list; the
+  assistant's "thinking…" showed with nothing running, because a class that sets
+  `display` outranks the browser's own `[hidden]` rule.
+- The panel sizes itself: it declared four grid rows and had six boxes in it, so
+  adding one silently changed which box was allowed to grow.
+- Targets opened by ref were rebuilt on every request; the target index was an
+  unguarded global written by a request handler; the working-tree target sorted
+  below every commit ever made; the watcher counted msr's own store as the
+  reviewer's work; and a schema cap equal to the display width cut model
+  descriptions off mid-word.
+
 ## [5.2.0] — 2026-08-25
 
 ### Added
@@ -411,6 +670,14 @@ First public release. Watching one agent, one session, one repo.
 - Session identifiers are validated to prevent path traversal outside the store
   root.
 
+[6.1.0]: https://github.com/mondial7/mondspace-reviewer/releases/tag/v6.1.0
+[6.0.0]: https://github.com/mondial7/mondspace-reviewer/releases/tag/v6.0.0
+[5.8.0]: https://github.com/mondial7/mondspace-reviewer/releases/tag/v5.8.0
+[5.7.0]: https://github.com/mondial7/mondspace-reviewer/releases/tag/v5.7.0
+[5.6.0]: https://github.com/mondial7/mondspace-reviewer/releases/tag/v5.6.0
+[5.5.0]: https://github.com/mondial7/mondspace-reviewer/releases/tag/v5.5.0
+[5.4.0]: https://github.com/mondial7/mondspace-reviewer/releases/tag/v5.4.0
+[5.3.0]: https://github.com/mondial7/mondspace-reviewer/releases/tag/v5.3.0
 [5.2.0]: https://github.com/mondial7/mondspace-reviewer/releases/tag/v5.2.0
 [5.1.1]: https://github.com/mondial7/mondspace-reviewer/releases/tag/v5.1.1
 [5.1.0]: https://github.com/mondial7/mondspace-reviewer/releases/tag/v5.1.0
