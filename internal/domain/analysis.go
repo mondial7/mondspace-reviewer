@@ -11,15 +11,60 @@ import "time"
 // an afterthought, and the reviewer cannot tell which is which.
 type AnalysisKind string
 
-// Finding is one thing worth a second look: where, and one line about why.
+// Severity is how much a finding should interrupt the reviewer.
 //
-// There is no severity. A small local model assigning "critical" or "medium" is
-// false precision dressed as a verdict, and this project is careful about the
-// difference between what was stated and what was guessed (ADR 0003). The card
-// says plainly that these are inferred; the reviewer decides what they weigh.
+// Three levels, not five, and defined by what the reviewer should *do* rather
+// than by a score nobody computed. A finer scale would invite a small local
+// model to express confidence it does not have, and the whole set is still
+// labelled inferred: it is the model's suggestion of weight, not a rating
+// (ADR 0003, ADR 0024).
+type Severity string
+
+const (
+	// SeverityHigh: I would not merge this without dealing with it.
+	SeverityHigh Severity = "high"
+	// SeverityMedium: worth checking before merging.
+	SeverityMedium Severity = "medium"
+	// SeverityLow: worth knowing about, not worth blocking on.
+	SeverityLow Severity = "low"
+)
+
+// Severities is the three levels, worst first — the order they are read in.
+var Severities = []Severity{SeverityHigh, SeverityMedium, SeverityLow}
+
+// Rank orders severities, worst lowest, for sorting. An unrecognised level
+// ranks with medium, which is where it is normalised to anyway.
+func (s Severity) Rank() int {
+	switch s {
+	case SeverityHigh:
+		return 0
+	case SeverityLow:
+		return 2
+	default:
+		return 1
+	}
+}
+
+// Normalise maps whatever came back to one of the three.
+//
+// An endpoint that ignored the schema can return anything. Dropping the finding
+// would hide it and calling it high would cry wolf, so an unusable level
+// becomes "worth checking" — the honest answer when the model did not say.
+func (s Severity) Normalise() Severity {
+	for _, known := range Severities {
+		if s == known {
+			return known
+		}
+	}
+	return SeverityMedium
+}
+
+// Finding is one thing worth a second look: where, one line about why, and how
+// much it should interrupt.
 type Finding struct {
-	File string `json:"file,omitempty"`
-	Note string `json:"note"`
+	File     string   `json:"file,omitempty"`
+	Note     string   `json:"note"`
+	Severity Severity `json:"severity,omitempty"`
 }
 
 // Analysis is the result of running one audit over one target.
@@ -44,3 +89,26 @@ func (a Analysis) Done() bool { return !a.At.IsZero() }
 
 // Clean reports that it ran and found nothing.
 func (a Analysis) Clean() bool { return a.Done() && len(a.Findings) == 0 }
+
+// Worst is the highest severity among the findings, or empty when there are
+// none. The card is coloured from it, so a row of cards can be read at a glance
+// without opening any of them.
+func (a Analysis) Worst() Severity {
+	worst := Severity("")
+	for _, f := range a.Findings {
+		if worst == "" || f.Severity.Rank() < worst.Rank() {
+			worst = f.Severity.Normalise()
+		}
+	}
+	return worst
+}
+
+// Tally counts findings by severity. "1 high · 2 medium" says more in the same
+// space than "3 to look at".
+func (a Analysis) Tally() map[Severity]int {
+	out := map[Severity]int{}
+	for _, f := range a.Findings {
+		out[f.Severity.Normalise()]++
+	}
+	return out
+}

@@ -2298,7 +2298,13 @@ type analysisCard struct {
 	// The card is coloured and worded from this, so "never run", "could not
 	// run" and "found nothing" can never look the same — which is the
 	// distinction that matters most on a security card.
-	State    string
+	State string
+	// Worst is the highest severity found, so the card can be coloured from it
+	// and a row of cards read without opening any.
+	Worst string
+	// Tally reads "1 high · 2 medium", which says more in the same space than
+	// "3 to look at".
+	Tally    string
 	When     string
 	Verdict  string
 	Err      string
@@ -2340,7 +2346,9 @@ func analysisCards(of AnalysisOf, running map[string]bool, failed map[string]str
 		}
 
 		card.Verdict, card.Findings = got.Verdict, got.Findings
-		card.When = usecase.Since(now.Sub(got.At)) + " ago"
+		card.When = usecase.Ago(now.Sub(got.At))
+		card.Worst = string(got.Worst())
+		card.Tally = tallyOf(got)
 		switch {
 		case got.Print != "" && print != "" && got.Print != print:
 			// A reading of a version that no longer exists must not present
@@ -2354,6 +2362,19 @@ func analysisCards(of AnalysisOf, running map[string]bool, failed map[string]str
 		out = append(out, card)
 	}
 	return out
+}
+
+// tallyOf writes the findings as counts by severity, worst first, skipping
+// levels with nothing in them.
+func tallyOf(a domain.Analysis) string {
+	counts := a.Tally()
+	parts := make([]string, 0, len(domain.Severities))
+	for _, sev := range domain.Severities {
+		if n := counts[sev]; n > 0 {
+			parts = append(parts, fmt.Sprintf("%d %s", n, sev))
+		}
+	}
+	return strings.Join(parts, " · ")
 }
 
 // workloadForm is a row per workload for the settings form, pre-filled with

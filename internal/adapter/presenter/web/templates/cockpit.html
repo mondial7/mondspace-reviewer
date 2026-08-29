@@ -268,13 +268,13 @@
       </article>
 
       {{ range .Analyses }}
-      <article class="acard acard--{{ .State }}">
+      <article class="acard acard--{{ .State }}{{ with .Worst }} acard--worst-{{ . }}{{ end }}">
         <header class="acard__head">
           <h2 class="acard__title">{{ .Title }}</h2>
           <span class="acard__state">
             {{ if eq .State "running" }}<span class="ask__spinner" aria-hidden="true"></span>running…
             {{ else if eq .State "clean" }}clean · {{ .When }}
-            {{ else if eq .State "found" }}{{ len .Findings }} to look at · {{ .When }}
+            {{ else if eq .State "found" }}{{ .Tally }} · {{ .When }}
             {{ else if eq .State "stale" }}changed since · {{ .When }}
             {{ else if eq .State "failed" }}could not run
             {{ else }}not run yet{{ end }}
@@ -288,16 +288,22 @@
         {{ if .Findings }}
         <ul class="acard__findings">
           {{ range .Findings }}
-          <li class="acard__finding">
-            {{ with .File }}<code class="acard__file">{{ . }}</code>{{ end }}
+          <li class="acard__finding acard__finding--{{ .Severity }}">
+            <span class="acard__where">
+              <span class="sev sev--{{ .Severity }}">{{ .Severity }}</span>
+              {{ with .File }}<code class="acard__file">{{ . }}</code>{{ end }}
+            </span>
             <span class="acard__note">{{ .Note }}</span>
           </li>
           {{ end }}
         </ul>
         <!-- The same discipline as everywhere else: a model reading a diff is
              suggesting where to look, never ruling (ADR 0003). -->
+        <!-- The severity is the model's suggestion of weight, not a rating.
+             Saying so here is what keeps three tidy labels from reading as a
+             judgement nobody made (ADR 0024). -->
         <p class="acard__caveat"><span class="why why--inferred">inferred</span>
-          worth a look, not a verdict</p>
+          including how bad — worth a look, not a verdict</p>
         {{ end }}
 
         {{ if $.CanRunAnalysis }}

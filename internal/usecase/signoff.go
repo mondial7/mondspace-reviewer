@@ -29,7 +29,7 @@ func SignoffState(s domain.Signoff, print string, files int, now time.Time) Sign
 	}
 
 	view := SignoffView{Done: true, Comment: s.Comment}
-	view.Sentence = "reviewed " + since(now.Sub(s.At)) + " ago"
+	view.Sentence = "reviewed " + Ago(now.Sub(s.At))
 
 	// An empty stored print means a sign-off from before the review could be
 	// fingerprinted; claiming it moved would be a guess.
@@ -48,9 +48,22 @@ func SignoffState(s domain.Signoff, print string, files int, now time.Time) Sign
 	return view
 }
 
-// Since renders an age the way a reviewer would say it out loud. Exported
-// because the audit cards say the same thing about their own age, and two
-// spellings of "an hour ago" on one page would look like two different facts.
+// Ago renders an age as a phrase that can stand on its own.
+//
+// "just now" is already complete; appending "ago" to it — which is right for
+// "2h" — produces "just now ago". Every caller wanted the phrase rather than
+// the bare duration, so this is what they get.
+func Ago(d time.Duration) string {
+	age := since(d)
+	if age == "just now" {
+		return age
+	}
+	return age + " ago"
+}
+
+// Since renders an age the way a reviewer would say it out loud, without the
+// trailing "ago". Prefer Ago unless you are building a longer sentence around
+// it.
 func Since(d time.Duration) string { return since(d) }
 
 // since renders an age the way a reviewer would say it out loud.

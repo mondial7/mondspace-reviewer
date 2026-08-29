@@ -107,3 +107,23 @@ func TestAFreshSignOffReadsAsJustNow(t *testing.T) {
 		t.Errorf("sentence = %q", got.Sentence)
 	}
 }
+
+func TestAFreshTimestampDoesNotReadAsJustNowAgo(t *testing.T) {
+	// "just now" is already a complete phrase. Appending "ago" to it, which is
+	// right for "2h", produces "just now ago".
+	if got := usecase.Ago(5 * time.Second); got != "just now" {
+		t.Errorf("Ago(5s) = %q, want %q", got, "just now")
+	}
+	if got := usecase.Ago(2 * time.Hour); got != "2h ago" {
+		t.Errorf("Ago(2h) = %q, want %q", got, "2h ago")
+	}
+
+	now := time.Date(2026, 8, 29, 12, 0, 0, 0, time.UTC)
+	sentence := usecase.SignoffState(domain.Signoff{At: now.Add(-5 * time.Second)}, "", 0, now).Sentence
+	if strings.Contains(sentence, "just now ago") {
+		t.Errorf("sentence = %q", sentence)
+	}
+	if sentence != "reviewed just now" {
+		t.Errorf("sentence = %q, want %q", sentence, "reviewed just now")
+	}
+}

@@ -2362,3 +2362,37 @@ func TestSigningOffAnUnknownTargetAlsoRefuses(t *testing.T) {
 	case <-time.After(300 * time.Millisecond):
 	}
 }
+
+func TestACardIsColouredByItsWorstFinding(t *testing.T) {
+	// A row of cards should be readable at a glance: which one has the thing
+	// that would stop a merge, without opening any of them.
+	h := web.NewServer(testSession(), nil).
+		WithAnalyses(nil, func(_ string, k domain.AnalysisKind) domain.Analysis {
+			if k != usecase.AuditSecurity {
+				return domain.Analysis{}
+			}
+			return domain.Analysis{
+				TargetID: "s", Kind: k, At: time.Now(), Verdict: "Two things.",
+				Findings: []domain.Finding{
+					{File: "a.go", Note: "worth knowing", Severity: domain.SeverityLow},
+					{File: "b.go", Note: "secret committed", Severity: domain.SeverityHigh},
+				},
+				Print: usecase.Fingerprint(testSession().Units),
+			}
+		})
+
+	body := get(t, h, "/").Body.String()
+
+	if !strings.Contains(body, "acard--worst-high") {
+		t.Error("the card should take the colour of its worst finding")
+	}
+	// The counts say more than a bare total in the same space.
+	if !strings.Contains(body, "1 high · 1 low") {
+		t.Errorf("the card should tally by severity:\n%s", body)
+	}
+	// And the severity is labelled as inferred like everything else the model
+	// says, or three tidy labels read as a judgement nobody made.
+	if !strings.Contains(body, "including how bad") {
+		t.Error("the severity should be marked as inferred too")
+	}
+}

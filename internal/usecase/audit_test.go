@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
 	"github.com/mondial7/mondspace-reviewer/internal/usecase"
@@ -225,4 +226,106 @@ func mustAudit(t *testing.T, kind domain.AnalysisKind) usecase.Audit {
 		t.Fatalf("no audit %q", kind)
 	}
 	return a
+}
+
+func TestFindingsCarryASeverityTheModelChoseFromAFixedSet(t *testing.T) {
+	// Three levels, not five, and named for what the reviewer should do rather
+	// than for a score nobody computed (ADR 0024).
+	d := &describer{reply: `{"verdict":"Two things.","findings":[
+		{"file":"a.go","note":"secret committed","severity":"high"},
+		{"file":"b.go","note":"worth checking","severity":"low"}]}`}
+	units, diffs := auditReview()
+
+	got, err := usecase.RunAudit(context.Background(), d, mustAudit(t, usecase.AuditSecurity),
+		"t1", units, diffs)
+	if err != nil {
+		t.Fatalf("RunAudit: %v", err)
+	}
+
+	if len(got.Findings) != 2 {
+		t.Fatalf("got %+v", got.Findings)
+	}
+	if got.Findings[0].Severity != domain.SeverityHigh {
+		t.Errorf("first = %+v, want high", got.Findings[0])
+	}
+
+	// The model cannot invent a level: the schema names the three.
+	props := d.schema[0].Schema["properties"].(map[string]any)
+	items := props["findings"].(map[string]any)["items"].(map[string]any)
+	sev := items["properties"].(map[string]any)["severity"].(map[string]any)
+	enum, ok := sev["enum"].([]string)
+	if !ok || len(enum) != 3 {
+		t.Errorf("severity should be an enum of three, got %v", sev["enum"])
+	}
+}
+
+func TestTheWorstFindingIsListedFirst(t *testing.T) {
+	// A reviewer reads the top of a card and stops. What they read first has to
+	// be the thing most worth their attention.
+	d := &describer{reply: `{"verdict":"Several.","findings":[
+		{"file":"a.go","note":"minor","severity":"low"},
+		{"file":"b.go","note":"serious","severity":"high"},
+		{"file":"c.go","note":"middling","severity":"medium"}]}`}
+	units, diffs := auditReview()
+
+	got, _ := usecase.RunAudit(context.Background(), d, mustAudit(t, usecase.AuditSecurity),
+		"t1", units, diffs)
+
+	want := []domain.Severity{domain.SeverityHigh, domain.SeverityMedium, domain.SeverityLow}
+	for i, w := range want {
+		if got.Findings[i].Severity != w {
+			t.Errorf("finding %d = %s, want %s", i, got.Findings[i].Severity, w)
+		}
+	}
+}
+
+func TestAMissingOrInventedSeverityBecomesTheMiddleOne(t *testing.T) {
+	// An endpoint that ignored the schema can return anything. Dropping the
+	// finding would hide it; calling it high would cry wolf. "Worth checking"
+	// is the honest answer when the model did not say.
+	d := &describer{reply: `{"verdict":"x","findings":[
+		{"file":"a.go","note":"no severity given"},
+		{"file":"b.go","note":"nonsense level","severity":"CATASTROPHIC"}]}`}
+	units, diffs := auditReview()
+
+	got, _ := usecase.RunAudit(context.Background(), d, mustAudit(t, usecase.AuditSecurity),
+		"t1", units, diffs)
+
+	for _, f := range got.Findings {
+		if f.Severity != domain.SeverityMedium {
+			t.Errorf("%+v: an unusable level should become medium", f)
+		}
+	}
+}
+
+func TestAnAnalysisKnowsItsWorstFinding(t *testing.T) {
+	// The card is coloured from this, so a page of cards can be read at a
+	// glance without opening any of them.
+	a := domain.Analysis{At: time.Now(), Findings: []domain.Finding{
+		{Note: "a", Severity: domain.SeverityLow},
+		{Note: "b", Severity: domain.SeverityHigh},
+		{Note: "c", Severity: domain.SeverityMedium},
+	}}
+	if got := a.Worst(); got != domain.SeverityHigh {
+		t.Errorf("Worst = %s, want high", got)
+	}
+
+	clean := domain.Analysis{At: time.Now()}
+	if got := clean.Worst(); got != "" {
+		t.Errorf("a clean audit has no worst finding, got %q", got)
+	}
+}
+
+func TestAnAnalysisCountsBySeverity(t *testing.T) {
+	// "1 high · 2 medium" says more in the same space than "3 to look at".
+	a := domain.Analysis{At: time.Now(), Findings: []domain.Finding{
+		{Severity: domain.SeverityHigh}, {Severity: domain.SeverityMedium},
+		{Severity: domain.SeverityMedium}, {Severity: domain.SeverityLow},
+	}}
+
+	got := a.Tally()
+
+	if got[domain.SeverityHigh] != 1 || got[domain.SeverityMedium] != 2 || got[domain.SeverityLow] != 1 {
+		t.Errorf("Tally = %v", got)
+	}
 }

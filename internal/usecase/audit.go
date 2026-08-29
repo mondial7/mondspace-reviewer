@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -91,8 +92,9 @@ func RunAudit(ctx context.Context, n Narrator, a Audit, targetID string,
 	var out struct {
 		Verdict  string `json:"verdict"`
 		Findings []struct {
-			File string `json:"file"`
-			Note string `json:"note"`
+			File     string `json:"file"`
+			Note     string `json:"note"`
+			Severity string `json:"severity"`
 		} `json:"findings"`
 	}
 	if err := json.Unmarshal([]byte(extractJSON(reply)), &out); err != nil {
@@ -114,11 +116,22 @@ func RunAudit(ctx context.Context, n Narrator, a Audit, targetID string,
 		result.Findings = append(result.Findings, domain.Finding{
 			File: strings.TrimSpace(f.File),
 			Note: note,
+			// Normalised here rather than trusted: an endpoint that ignored the
+			// schema can return any string, and a level nobody recognises must
+			// not reach the page.
+			Severity: domain.Severity(strings.ToLower(strings.TrimSpace(f.Severity))).Normalise(),
 		})
 		if len(result.Findings) == maxFindings {
 			break
 		}
 	}
+
+	// Worst first. A reviewer reads the top of a card and stops, so what they
+	// read first has to be the thing most worth their attention — and the cap
+	// above must drop the least important, not whatever came last.
+	sort.SliceStable(result.Findings, func(i, j int) bool {
+		return result.Findings[i].Severity.Rank() < result.Findings[j].Severity.Rank()
+	})
 	if result.Verdict == "" {
 		result.Verdict = defaultVerdict(len(result.Findings))
 	}
@@ -148,10 +161,22 @@ func auditSchema() port.JSONSchema {
 				"items": object(map[string]any{
 					"file": map[string]any{"type": "string", "maxLength": 120},
 					"note": map[string]any{"type": "string", "maxLength": findingChars + 60},
-				}, "file", "note"),
+					// An enum, so the model cannot invent a fourth level or
+					// reach for "critical" when it means "have a look".
+					"severity": map[string]any{"type": "string", "enum": severityNames()},
+				}, "file", "note", "severity"),
 			},
 		}, "verdict", "findings"),
 	}
+}
+
+// severityNames is the enum the schema constrains severity to.
+func severityNames() []string {
+	out := make([]string, 0, len(domain.Severities))
+	for _, s := range domain.Severities {
+		out = append(out, string(s))
+	}
+	return out
 }
 
 // changeDigest is the change itself, bounded. Every audit is shown exactly this
@@ -205,9 +230,13 @@ If there is nothing, say so — that is a good answer and the usual one.
 
 Reply as JSON:
   verdict  — one sentence, at most ` + fmt.Sprint(verdictChars) + ` characters.
-  findings — at most ` + fmt.Sprint(maxFindings) + `. Each is the file, and one
-             sentence naming the concrete thing you saw. Empty when there is
-             nothing.
+  findings — at most ` + fmt.Sprint(maxFindings) + `. Each is the file, one
+             sentence naming the concrete thing you saw, and a severity:
+               high   — exploitable as written; do not merge without fixing it
+               medium — probably wrong, or wrong in some contexts; check it
+               low    — worth knowing, not worth blocking on
+             Empty when there is nothing. Reserve "high" for what you can
+             actually see going wrong, not for what sounds serious.
 
 The change:
 ` + changeDigest(units, diffs)
@@ -232,9 +261,12 @@ one.
 
 Reply as JSON:
   verdict  — one sentence, at most ` + fmt.Sprint(verdictChars) + ` characters.
-  findings — at most ` + fmt.Sprint(maxFindings) + `. Each is the file, and one
-             sentence naming what changed and who it breaks. Empty when nothing
-             breaks.
+  findings — at most ` + fmt.Sprint(maxFindings) + `. Each is the file, one
+             sentence naming what changed and who it breaks, and a severity:
+               high   — existing callers will fail to compile or run
+               medium — behaviour changed in a way a caller could notice
+               low    — a caller might care, but nothing breaks
+             Empty when nothing breaks.
 
 The change:
 ` + changeDigest(units, diffs)

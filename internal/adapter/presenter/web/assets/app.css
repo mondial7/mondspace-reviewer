@@ -1717,3 +1717,52 @@ a.toast:hover { border-color: var(--kind, var(--accent)); }
   line-height: 1.45;
   overflow-wrap: anywhere;
 }
+
+/* ── Severity ───────────────────────────────────────────────────────────────
+   Three levels, coloured only as far as they earn it: the model is suggesting
+   weight, not rating a vulnerability (ADR 0024). */
+
+.sev {
+  flex: none;
+  padding: 0.02rem 0.34rem;
+  border-radius: 999px;
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.sev--high {
+  background: color-mix(in srgb, var(--del) 22%, transparent);
+  color: var(--del);
+}
+
+.sev--medium {
+  background: color-mix(in srgb, var(--inferred) 22%, transparent);
+  color: var(--inferred);
+}
+
+.sev--low {
+  background: color-mix(in srgb, var(--fg-dim) 20%, transparent);
+  color: var(--fg-dim);
+}
+
+.acard__where {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+/* The finding's own left rule takes its severity's colour, so the list is
+   scannable before any of it is read. */
+.acard__finding--high { border-left-color: color-mix(in srgb, var(--del) 60%, transparent); }
+.acard__finding--medium { border-left-color: color-mix(in srgb, var(--inferred) 55%, transparent); }
+.acard__finding--low { border-left-color: color-mix(in srgb, var(--fg-dim) 45%, transparent); }
+
+/* ...and so does the card's top edge, from the worst thing in it. */
+.acard--worst-high { border-top-color: var(--del); }
+.acard--worst-high .acard__state { color: var(--del); }
+.acard--worst-medium { border-top-color: var(--inferred); }
+.acard--worst-low { border-top-color: var(--fg-dim); }
+.acard--worst-low .acard__state { color: var(--fg-dim); }
