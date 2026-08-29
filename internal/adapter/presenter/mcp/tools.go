@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
+	"github.com/mondial7/mondspace-reviewer/internal/usecase"
 )
 
 // Review is one review as the tools serve it: what it is, what a human wrote on
@@ -20,9 +21,10 @@ type Review struct {
 	Ref   string
 	Repo  string
 
-	Notes    []domain.Note
-	Analyses []domain.Analysis
-	Signoff  domain.Signoff
+	Notes     []domain.Note
+	Exchanges []domain.Exchange
+	Analyses  []domain.Analysis
+	Signoff   domain.Signoff
 
 	// Files resolves a note's unit id to the file it concerns, for notes
 	// written before the file was recorded on the note itself.
@@ -46,6 +48,8 @@ func Tools(w Workspace) []Tool {
 		feedbackTool(w),
 		fileTool(w),
 		findingsTool(w),
+		workspaceFeedbackTool(w),
+		searchTool(w),
 	}
 }
 
@@ -306,6 +310,143 @@ func firstNonEmpty(vals ...string) string {
 		}
 	}
 	return ""
+}
+
+// The two tools below read the whole workspace rather than the open review, and
+// say so in their descriptions. On a workspace of any size that is every stored
+// review opened and parsed, so an agent should reach for them when the open
+// review has not answered the question — not before (ADR 0031).
+
+// workspaceFeedbackTool is everything a human is still asking for, anywhere.
+func workspaceFeedbackTool(w Workspace) Tool {
+	return Tool{
+		Name: "workspace_feedback",
+		Description: "EXPENSIVE — reads every review in the workspace. What the " +
+			"human reviewer is still asking for across all of them, grouped by " +
+			"review. Prefer review_feedback, which covers the review they have " +
+			"open. Excludes anything a model inferred.",
+		Schema: object(nil),
+		Call: func(_ context.Context, args map[string]any) (string, error) {
+			reviews, err := w.All()
+			if err != nil {
+				return "", err
+			}
+			return workspaceFeedback(reviews), nil
+		},
+	}
+}
+
+// workspaceFeedback renders the outstanding asks, review by review. A review
+// with nothing outstanding is omitted entirely rather than listed as empty:
+// most of them will be, and a page of "nothing here" is a page of noise.
+func workspaceFeedback(reviews []Review) string {
+	var b strings.Builder
+	shown := 0
+	for _, r := range reviews {
+		var asks []domain.Note
+		for _, n := range r.Notes {
+			if n.Actionable() {
+				asks = append(asks, n)
+			}
+		}
+		if len(asks) == 0 {
+			continue
+		}
+		shown++
+		fmt.Fprintf(&b, "\n%s\n", describe(r))
+		for _, n := range asks {
+			fmt.Fprintf(&b, "  [%s] %s\n      %s\n",
+				n.Kind, where(fileOf(r, n), n.Anchor), n.Text)
+		}
+	}
+	if shown == 0 {
+		return "Nothing is outstanding anywhere in this workspace.\n"
+	}
+	return fmt.Sprintf("%s across %s.\n%s",
+		"Outstanding reviewer feedback", count(shown, "review"), b.String())
+}
+
+// searchTool finds what was written, anywhere in the workspace.
+func searchTool(w Workspace) Tool {
+	return Tool{
+		Name: "workspace_search",
+		Description: "EXPENSIVE — reads every review in the workspace. Finds notes, " +
+			"questions, answers and model findings matching every word of a query. " +
+			"Results say which are the reviewer's words and which a model inferred.",
+		Schema: object(map[string]any{
+			"query": str("words to look for; every word must match"),
+		}, "query"),
+		Call: func(_ context.Context, args map[string]any) (string, error) {
+			query := text(args, "query")
+			if query == "" {
+				return "", fmt.Errorf("what should I look for? pass query")
+			}
+			reviews, err := w.All()
+			if err != nil {
+				return "", err
+			}
+			return searchResults(query, reviews), nil
+		},
+	}
+}
+
+// searchResults renders the hits, each labelled human or inferred.
+func searchResults(query string, reviews []Review) string {
+	var corpus []usecase.Searchable
+	for _, r := range reviews {
+		files := r.Files
+		corpus = append(corpus, usecase.SearchableReview(
+			r.ID, r.Ref, firstNonEmpty(r.Title, r.ID),
+			r.Notes, r.Exchanges, r.Analyses,
+			func(unitID string) string { return files[unitID] })...)
+	}
+
+	hits := usecase.Search(query, corpus)
+	if len(hits) == 0 {
+		return fmt.Sprintf("Nothing in this workspace matches %q.\n", query)
+	}
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s for %q.\n", count(len(hits), "hit"), query)
+	for i, h := range hits {
+		fmt.Fprintf(&b, "\n%d. %s — %s\n", i+1, firstNonEmpty(h.TargetTitle, h.TargetID), source(h.Kind))
+		if h.Where != "" {
+			fmt.Fprintf(&b, "   %s\n", h.Where)
+		}
+		fmt.Fprintf(&b, "   %s\n", h.Text)
+	}
+	return b.String()
+}
+
+// humanKinds are the kinds of thing a person wrote. Everything else in the
+// search corpus came out of an audit.
+var humanKinds = map[string]bool{
+	string(domain.NoteOK): true, string(domain.NoteQuestion): true,
+	string(domain.NoteObjection): true, string(domain.NoteDebt): true,
+	string(domain.NoteNote): true, "answer": true,
+}
+
+// source says who a hit came from.
+//
+// A mixed list is where the stated/inferred distinction is easiest to lose: the
+// two read identically once they are rows in the same table, so the label goes
+// on every row rather than in a legend at the top (ADR 0003).
+func source(kind string) string {
+	if humanKinds[kind] {
+		if kind == "answer" {
+			return "answer from the model to the reviewer's question"
+		}
+		return "the reviewer wrote this (" + kind + ")"
+	}
+	return "INFERRED by a model in the " + kind + " audit — verify it"
+}
+
+// count renders "1 review" and "2 reviews" without a lookup table.
+func count(n int, thing string) string {
+	if n == 1 {
+		return fmt.Sprintf("1 %s", thing)
+	}
+	return fmt.Sprintf("%d %ss", n, thing)
 }
 
 // where says what a note is about: a file, and the line when there is one.

@@ -243,3 +243,70 @@ func TestModelFindingsNarrowToAFileWhenAsked(t *testing.T) {
 		t.Errorf("want only http.go:\n%s", got)
 	}
 }
+
+func TestWorkspaceFeedbackGathersWhatIsOutstandingEverywhere(t *testing.T) {
+	// The expensive call: every review in the workspace, not just the open one.
+	// Grouped by review, because "somewhere, someone objected" is not usable.
+	w := space{all: []mcp.Review{
+		{ID: "abc123", Title: "add retries", Notes: []domain.Note{
+			note(domain.NoteObjection, "http.go", "this retries forever"),
+			note(domain.NoteOK, "http.go", "reads fine"),
+		}},
+		{ID: "def456", Title: "drop the cache", Notes: []domain.Note{
+			note(domain.NoteDebt, "cache.go", "the eviction is still O(n)"),
+		}},
+		{ID: "ghi789", Title: "nothing written here", Notes: []domain.Note{
+			note(domain.NoteOK, "readme.md", "fine"),
+		}},
+	}}
+
+	got := tool(t, w, "workspace_feedback", nil)
+
+	for _, want := range []string{
+		"add retries", "this retries forever",
+		"drop the cache", "the eviction is still O(n)",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q from:\n%s", want, got)
+		}
+	}
+	for _, unwanted := range []string{"reads fine", "nothing written here"} {
+		if strings.Contains(got, unwanted) {
+			t.Errorf("should not carry %q — nothing is outstanding there:\n%s", unwanted, got)
+		}
+	}
+}
+
+func TestSearchReachesEveryReviewAndSaysWhichClaimsAreAMachines(t *testing.T) {
+	w := space{all: []mcp.Review{
+		{ID: "abc123", Title: "add retries", Ref: "abc123", Notes: []domain.Note{
+			note(domain.NoteObjection, "http.go", "this retries forever"),
+		}},
+		{ID: "def456", Title: "drop the cache", Ref: "def456",
+			Analyses: []domain.Analysis{findings("security", "qwen3.5-9b",
+				domain.Finding{File: "cache.go", Note: "retries can leak the key"},
+			)},
+		},
+	}}
+
+	got := tool(t, w, "workspace_search", map[string]any{"query": "retries"})
+
+	if !strings.Contains(got, "this retries forever") {
+		t.Errorf("missing the human note:\n%s", got)
+	}
+	machine := strings.Index(got, "retries can leak the key")
+	if machine < 0 {
+		t.Fatalf("missing the model finding:\n%s", got)
+	}
+	if !strings.Contains(strings.ToLower(got[max(0, machine-200):machine]), "inferred") {
+		t.Errorf("a model's claim in a mixed list must be marked as one:\n%s", got)
+	}
+}
+
+func TestSearchWithoutAQuerySaysWhatItNeeds(t *testing.T) {
+	got := tool(t, space{}, "workspace_search", nil)
+
+	if !strings.Contains(got, "query") {
+		t.Errorf("want the missing argument named, got:\n%s", got)
+	}
+}
