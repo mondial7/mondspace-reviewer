@@ -171,3 +171,32 @@ func TestAnAbsurdFetchIntervalIsBroughtBackToSomethingSane(t *testing.T) {
 		t.Errorf("every = %s, want a floor rather than a busy loop", every)
 	}
 }
+
+func TestShowingEverythingOnlyRebuildsWhenItActuallyChanges(t *testing.T) {
+	// The cockpit tells the loader on *every* request whether the reviewer
+	// wants the hidden files. Acting on that unconditionally threw away the
+	// review cache each time, so a 600-file review was rebuilt from git on
+	// every page load and every live refresh — 31 seconds a piece.
+	rebuilds := 0
+	rebuild := func() { rebuilds++ }
+
+	setShowAllWith(false, rebuild) // same as the default
+	if rebuilds != 0 {
+		t.Errorf("rebuilt %d times for no change", rebuilds)
+	}
+
+	setShowAllWith(true, rebuild)
+	if rebuilds != 1 {
+		t.Errorf("rebuilt %d times, want once when it changed", rebuilds)
+	}
+
+	setShowAllWith(true, rebuild)
+	if rebuilds != 1 {
+		t.Errorf("rebuilt %d times, want no rebuild for the same value again", rebuilds)
+	}
+
+	setShowAllWith(false, rebuild)
+	if rebuilds != 2 {
+		t.Errorf("rebuilt %d times, want a rebuild when it changed back", rebuilds)
+	}
+}

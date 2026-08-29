@@ -410,13 +410,29 @@ var (
 )
 
 func setShowAll(on bool) {
+	setShowAllWith(on, func() {
+		if h := handlerRef(); h != nil {
+			h.Forget()
+		}
+	})
+}
+
+// setShowAllWith is setShowAll with the rebuild injected, so the thing that
+// matters about it can be tested: that it does nothing when nothing changed.
+//
+// The cockpit reports this on every request, so acting unconditionally threw
+// away the review cache each time — a 600-file review was rebuilt from git on
+// every page load and every live refresh, 31 seconds a piece.
+func setShowAllWith(on bool, rebuild func()) {
 	showAllMu.Lock()
+	changed := showAllOn != on
 	showAllOn = on
 	showAllMu.Unlock()
-	// The review has to be rebuilt to take effect, and a loaded one is cached.
-	if h := handlerRef(); h != nil {
-		h.Forget()
+
+	if !changed {
+		return
 	}
+	rebuild()
 }
 
 func showingAll() bool {

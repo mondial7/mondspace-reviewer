@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -900,4 +901,56 @@ func (s *Snapshotter) Ignored(ctx context.Context, ignoreFile string, paths []st
 		hidden[path] = pattern
 	}
 	return hidden, nil
+}
+
+// DiffAll diffs a whole range in one invocation, returning each file's own
+// diff (ADR 0029).
+//
+// BuildFileUnits used to call Diff once per changed file. That is one git
+// process per file, and at six hundred files it was twenty-eight seconds per
+// page load — every load, because it happens before anything can be cached.
+//
+// The output is split on git's own `diff --git` boundaries, so each file gets
+// exactly the text Diff would have produced for it alone.
+func (s *Snapshotter) DiffAll(ctx context.Context, from, to domain.SnapshotRef) (map[string]domain.Diff, error) {
+	args := []string{"diff", from.Commit}
+	if to.Commit != "" {
+		args = append(args, to.Commit)
+	}
+	text, err := s.run(ctx, os.Environ(), args...)
+	if err != nil {
+		return nil, err
+	}
+	return splitByFile(text), nil
+}
+
+// diffHeader matches the line git puts above every file's hunks. The b-side
+// path is the file's name, except for a deletion, where only the a-side exists.
+var diffHeader = regexp.MustCompile(`(?m)^diff --git a/(.+?) b/(.+)$`)
+
+// splitByFile cuts a multi-file diff into one diff per file.
+func splitByFile(text string) map[string]domain.Diff {
+	out := map[string]domain.Diff{}
+	if strings.TrimSpace(text) == "" {
+		return out
+	}
+
+	heads := diffHeader.FindAllStringSubmatchIndex(text, -1)
+	for i, h := range heads {
+		end := len(text)
+		if i+1 < len(heads) {
+			end = heads[i+1][0]
+		}
+		body := text[h[0]:end]
+
+		// The b-side name, which is what the file is called after the change.
+		// A deletion has /dev/null on the b-side of the ---/+++ lines but still
+		// names the real path here, so this is right for all three cases.
+		path := text[h[4]:h[5]]
+		out[path] = domain.Diff{
+			Text:  strings.TrimSuffix(body, "\n"),
+			Files: []string{path},
+		}
+	}
+	return out
 }

@@ -510,6 +510,18 @@ If the endpoint is unreachable, `msr` silently falls back to mechanical headline
 waits on the model.** The model can improve a headline's *what*, but it can never
 assert a `stated` rationale: that discipline lives in a [pure function](internal/usecase/summarize.go).
 
+### On large reviews
+
+A 600-file range renders in about half a second, and the first load — before
+anything is cached — in about one. Getting there was two bug fixes rather than
+any limit: the review cache was being discarded on every request, and each
+changed file was diffed in its own `git` process. Neither was visible from
+reading the code; both took one profile ([ADR 0029](ADR/0029-large-reviews.md)).
+
+```sh
+go test ./internal/adapter/presenter/web/ -run=NONE -bench=Cockpit
+```
+
 ## Testing
 
 ```sh

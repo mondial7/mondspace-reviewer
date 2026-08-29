@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -1083,4 +1084,94 @@ func TestNoIgnoreFileHidesNothing(t *testing.T) {
 	if len(got) != 0 {
 		t.Errorf("got %v, want nothing hidden", got)
 	}
+}
+
+func TestDiffAllReturnsEveryFileFromOneInvocation(t *testing.T) {
+	// One git process for the whole range instead of one per file. At six
+	// hundred files the difference is twenty-eight seconds a page load
+	// (ADR 0029).
+	dir := newRepo(t)
+	os.MkdirAll(filepath.Join(dir, "pkg"), 0o755)
+	for _, f := range []string{"a.go", "pkg/b.go", "pkg/c.go"} {
+		os.WriteFile(filepath.Join(dir, f), []byte("package x\n\nfunc F() {}\n"), 0o644)
+	}
+	gitCmd(t, dir, "add", "-A")
+	gitCmd(t, dir, "commit", "-m", "before")
+	base := strings.TrimSpace(gitCmd(t, dir, "rev-parse", "HEAD"))
+
+	os.WriteFile(filepath.Join(dir, "a.go"), []byte("package x\n\nfunc F(i int) {}\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, "pkg/b.go"), []byte("package x\n\nfunc F() {}\nfunc G() {}\n"), 0o644)
+	os.Remove(filepath.Join(dir, "pkg/c.go"))
+	os.WriteFile(filepath.Join(dir, "pkg/d.go"), []byte("package x\n\nfunc H() {}\n"), 0o644)
+	gitCmd(t, dir, "add", "-A")
+	gitCmd(t, dir, "commit", "-m", "after")
+	head := strings.TrimSpace(gitCmd(t, dir, "rev-parse", "HEAD"))
+
+	got, err := gitsnap.New(dir, "s").DiffAll(context.Background(),
+		domain.SnapshotRef{Commit: base}, domain.SnapshotRef{Commit: head})
+	if err != nil {
+		t.Fatalf("DiffAll: %v", err)
+	}
+
+	// Modified, added and deleted alike: a review shows all three.
+	for _, want := range []string{"a.go", "pkg/b.go", "pkg/c.go", "pkg/d.go"} {
+		d, ok := got[want]
+		if !ok {
+			t.Errorf("%s missing from %v", want, keysOf(got))
+			continue
+		}
+		if strings.TrimSpace(d.Text) == "" {
+			t.Errorf("%s has an empty diff", want)
+		}
+	}
+	if len(got) != 4 {
+		t.Errorf("got %d files %v, want 4", len(got), keysOf(got))
+	}
+
+	// Each file's diff is its own, not the whole range repeated.
+	if strings.Contains(got["a.go"].Text, "pkg/b.go") {
+		t.Errorf("a.go carries another file's hunks:\n%s", got["a.go"].Text)
+	}
+	if !strings.Contains(got["a.go"].Text, "func F(i int)") {
+		t.Errorf("a.go is missing its own change:\n%s", got["a.go"].Text)
+	}
+}
+
+func TestDiffAllAgreesWithDiffingOneFile(t *testing.T) {
+	// The batched path replaces the per-file one, so what it produces has to be
+	// what the per-file one produced.
+	dir := newRepo(t)
+	os.WriteFile(filepath.Join(dir, "a.go"), []byte("package x\n\nfunc F() {}\n"), 0o644)
+	gitCmd(t, dir, "add", "-A")
+	gitCmd(t, dir, "commit", "-m", "before")
+	base := strings.TrimSpace(gitCmd(t, dir, "rev-parse", "HEAD"))
+	os.WriteFile(filepath.Join(dir, "a.go"), []byte("package x\n\nfunc F(i int) {}\n"), 0o644)
+	gitCmd(t, dir, "add", "-A")
+	gitCmd(t, dir, "commit", "-m", "after")
+	head := strings.TrimSpace(gitCmd(t, dir, "rev-parse", "HEAD"))
+
+	snap := gitsnap.New(dir, "s")
+	from, to := domain.SnapshotRef{Commit: base}, domain.SnapshotRef{Commit: head}
+
+	all, err := snap.DiffAll(context.Background(), from, to)
+	if err != nil {
+		t.Fatalf("DiffAll: %v", err)
+	}
+	one, err := snap.Diff(context.Background(), from, to, []string{"a.go"})
+	if err != nil {
+		t.Fatalf("Diff: %v", err)
+	}
+	if all["a.go"].Text != one.Text {
+		t.Errorf("batched and per-file disagree:\n--- batched\n%s\n--- per-file\n%s",
+			all["a.go"].Text, one.Text)
+	}
+}
+
+func keysOf(m map[string]domain.Diff) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
