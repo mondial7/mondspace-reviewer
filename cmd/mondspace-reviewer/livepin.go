@@ -257,12 +257,19 @@ const logLimit = 30
 // buildLog assembles the git log card for whichever review is open: recent
 // history, which commits the upstream can already reach, and which have been
 // signed off (issue #18).
-func buildLog(repo string) web.LogOf {
+func buildLog(fallback string) web.LogOf {
 	signedOff := loadSignoff()
 
-	return func(reviewingRef string) web.LogView {
+	return func(targetID, reviewingRef string) web.LogView {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
+
+		// The repository the review belongs to, not the one msr was started
+		// in: a workspace spans several and the picker moves between them.
+		repo := fallback
+		if entry, known := lookupTarget(targetID); known {
+			repo = entry.repo
+		}
 
 		snap := gitsnap.New(repo, "log")
 		state, _ := snap.Remote(ctx)
@@ -311,10 +318,15 @@ func targetIDForCommit(hash string) (string, bool) {
 
 // branchesOf lists every remote branch with how far it has drifted, for the
 // wider view (ADR 0026).
-func branchesOf(repo string) web.BranchesOf {
-	return func() web.BranchView {
+func branchesOf(fallback string) web.BranchesOf {
+	return func(targetID string) web.BranchView {
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
+
+		repo := fallback
+		if entry, known := lookupTarget(targetID); known {
+			repo = entry.repo
+		}
 
 		snap := gitsnap.New(repo, "branches")
 		branches, err := snap.Branches(ctx, "")

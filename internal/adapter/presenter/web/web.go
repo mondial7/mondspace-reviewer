@@ -1242,8 +1242,9 @@ type branchRow struct {
 	Ago string
 }
 
-// BranchesOf lists the branches. Nil when there is no remote to ask about.
-type BranchesOf func() BranchView
+// BranchesOf lists the branches of the repository a review belongs to. Nil when
+// there is no remote to ask about.
+type BranchesOf func(targetID string) BranchView
 
 // WithBranches wires the branches page.
 func (s *Server) WithBranches(of BranchesOf) *Server {
@@ -1280,7 +1281,7 @@ func (s *Server) handleBranches(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	view := of()
+	view := of(s.openSession(r).ID)
 
 	// Ages are formatted here rather than carried on the domain type: how long
 	// ago something was is a presentation question, and the answer differs by
@@ -1347,9 +1348,13 @@ type LogView struct {
 	Remote  domain.RemoteState
 }
 
-// LogOf builds the log for whichever review is open. It takes the open target's
-// ref so the card can mark where the reviewer is.
-type LogOf func(reviewingRef string) LogView
+// LogOf builds the log for whichever review is open.
+//
+// It takes the target's id as well as its ref because a workspace spans
+// repositories: the id says which one to read history from, and a card that
+// kept showing the repository msr started in would be showing somebody else's
+// commits under this one's name.
+type LogOf func(targetID, reviewingRef string) LogView
 
 // WithLog wires the git log card.
 func (s *Server) WithLog(of LogOf) *Server {
@@ -2212,7 +2217,7 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 	// The log is built against the review being read, so it can mark it.
 	var gitlog LogView
 	if logOf != nil {
-		gitlog = logOf(sess.Target.Ref)
+		gitlog = logOf(sess.ID, sess.Target.Ref)
 	}
 
 	// An audit fingerprints the units it read, so the same function decides

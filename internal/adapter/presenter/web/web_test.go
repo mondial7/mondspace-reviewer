@@ -2400,7 +2400,7 @@ func TestACardIsColouredByItsWorstFinding(t *testing.T) {
 func TestTheLogCardShowsHistoryAndWhereYouAre(t *testing.T) {
 	// "Where am I against everything that has landed" (issue #18).
 	now := time.Now()
-	h := web.NewServer(testSession(), nil).WithLog(func(string) web.LogView {
+	h := web.NewServer(testSession(), nil).WithLog(func(_, _ string) web.LogView {
 		return web.LogView{
 			Entries: []usecase.LogEntry{
 				{Commit: domain.Commit{Hash: "ccccccccccccc", Subject: "Alice: add the cache", Author: "Alice", TS: now},
@@ -2449,7 +2449,7 @@ func TestNoLogCardWithoutAWayToBuildIt(t *testing.T) {
 
 func TestTheBranchesPageShowsWhatTheTeamIsWorkingOn(t *testing.T) {
 	now := time.Now()
-	h := web.NewServer(testSession(), nil).WithBranches(func() web.BranchView {
+	h := web.NewServer(testSession(), nil).WithBranches(func(string) web.BranchView {
 		return web.BranchView{
 			Base: "origin/main",
 			Branches: []domain.Branch{
@@ -2554,5 +2554,35 @@ func TestTheStatusPageSaysWhetherItIsFetching(t *testing.T) {
 	body := get(t, h, "/status").Body.String()
 	if !strings.Contains(body, "every 1m 30s") && !strings.Contains(body, "1m30s") {
 		t.Errorf("the page should say how often it fetches:\n%s", body)
+	}
+}
+
+func TestTheLogFollowsTheRepositoryBeingReviewed(t *testing.T) {
+	// A workspace spans repositories, and the picker moves between them. A
+	// history card that keeps showing the repository msr started in would be
+	// showing somebody else's commits under this one's name.
+	asked := make(chan string, 4)
+	other := web.Session{ID: "other", Repo: "api",
+		Units: []domain.Unit{{ID: "other-f001", Files: []string{"api/x.go"}}}}
+
+	h := web.NewServer(testSession(), nil).
+		WithLoader(func(context.Context, string) (web.Session, error) { return other, nil }).
+		WithTargets([]web.TargetSummary{
+			{ID: "other", Ref: "otherref", Kind: domain.TargetCommit, Title: "in the api repo"},
+		}).
+		WithLog(func(targetID, ref string) web.LogView {
+			asked <- targetID
+			return web.LogView{}
+		})
+
+	get(t, h, "/?target=otherref")
+
+	select {
+	case got := <-asked:
+		if got != "other" {
+			t.Errorf("the log was built for %q, want the review being read", got)
+		}
+	default:
+		t.Fatal("the log was never built")
 	}
 }
