@@ -2586,3 +2586,99 @@ func TestTheLogFollowsTheRepositoryBeingReviewed(t *testing.T) {
 		t.Fatal("the log was never built")
 	}
 }
+
+func TestAConversationBelongsToTheReviewItWasAbout(t *testing.T) {
+	// The invariant written above AskFunc: asking a question while looking at
+	// one target and being answered about another is worse than not answering.
+	// The thread was one flat list, so questions about one review appeared
+	// under another — and were handed to the model as history for it.
+	var gotHistory []web.Exchange
+	other := web.Session{ID: "other", Prompt: "the other review"}
+
+	h := web.NewServer(testSession(), nil).
+		WithLoader(func(context.Context, string) (web.Session, error) { return other, nil }).
+		WithExchanges(nil, []domain.Exchange{
+			{ID: "e1", SessionID: "s", Question: "why is this retried?", Answer: "because 503s"},
+			{ID: "e2", SessionID: "other", Question: "what is this for?", Answer: "the api"},
+		}).
+		WithAsk(func(_ context.Context, _, _ string, history []web.Exchange) (string, error) {
+			gotHistory = history
+			return "an answer", nil
+		})
+
+	// The review it was asked about shows its own conversation, and not the
+	// other one's.
+	body := get(t, h, "/").Body.String()
+	if !strings.Contains(body, "why is this retried?") {
+		t.Error("a review should show the questions asked about it")
+	}
+	if strings.Contains(body, "what is this for?") {
+		t.Error("a review must not show another review's conversation")
+	}
+
+	// ...and neither does the model.
+	req := httptest.NewRequest(http.MethodPost, "/ask", strings.NewReader("question=and+now"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	h.ServeHTTP(httptest.NewRecorder(), req)
+
+	for _, e := range gotHistory {
+		if e.SessionID != "s" {
+			t.Errorf("the model was given %q from another review as history", e.Question)
+		}
+	}
+	if len(gotHistory) != 1 {
+		t.Errorf("history = %d exchanges, want only this review's", len(gotHistory))
+	}
+}
+
+func TestAnAnswerIsFiledUnderTheReviewItWasAsked(t *testing.T) {
+	h := web.NewServer(testSession(), nil).
+		WithExchanges(nil, nil).
+		WithAsk(func(context.Context, string, string, []web.Exchange) (string, error) {
+			return "an answer", nil
+		})
+
+	req := httptest.NewRequest(http.MethodPost, "/ask", strings.NewReader("question=why"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	h.ServeHTTP(httptest.NewRecorder(), req)
+
+	if !strings.Contains(get(t, h, "/").Body.String(), "why") {
+		t.Error("the review it was asked about should show it")
+	}
+}
+
+func TestAConversationComesBackWhenYouReturnToItsReview(t *testing.T) {
+	// Exchanges were persisted and then only ever shown for whichever review
+	// was open at start-up. Coming back to a review you asked questions about
+	// showed an empty box, which reads as though nothing was ever asked.
+	loaded := 0
+	h := web.NewServer(testSession(), nil).
+		WithLoader(func(context.Context, string) (web.Session, error) {
+			return web.Session{ID: "older", Prompt: "a review from yesterday"}, nil
+		}).
+		WithTargets([]web.TargetSummary{
+			{ID: "older", Ref: "olderref", Kind: domain.TargetCommit, Title: "yesterday"},
+		}).
+		WithConversations(func(targetID string) []domain.Exchange {
+			loaded++
+			if targetID != "older" {
+				return nil
+			}
+			return []domain.Exchange{
+				{ID: "e9", SessionID: "older", Question: "why the retry loop?", Answer: "503s"},
+			}
+		})
+
+	body := get(t, h, "/?target=olderref").Body.String()
+
+	if !strings.Contains(body, "why the retry loop?") {
+		t.Errorf("returning to a review should bring its conversation back:\n%s", body)
+	}
+
+	// ...and it is not re-read from the store on every page load.
+	before := loaded
+	get(t, h, "/?target=olderref")
+	if loaded != before {
+		t.Errorf("the conversation was loaded again; it should be remembered")
+	}
+}

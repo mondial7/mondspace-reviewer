@@ -380,3 +380,22 @@ func watchRemote(ctx context.Context, handler *web.Server, repo string, watch *r
 		prev = state
 	}
 }
+
+// conversationsOf reads back what was asked about a review in an earlier run.
+//
+// A conversation is part of the review, not of the process that hosted it: it
+// is written to the store the target belongs to, and comes back when you return
+// to that review (issue #19).
+func conversationsOf() web.ConversationsOf {
+	return func(targetID string) []domain.Exchange {
+		entry, known := lookupTarget(targetID)
+		if !known {
+			return nil
+		}
+		sess, err := jsonl.New(entry.out).Load(targetID)
+		if err != nil {
+			return nil
+		}
+		return sess.Exchanges
+	}
+}

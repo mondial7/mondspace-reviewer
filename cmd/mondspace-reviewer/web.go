@@ -167,6 +167,7 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 		WithBranches(branchesOf(repo)).
 		WithConfigure(configureAgent(pool, *configPath, &agent)).
 		WithExchanges(exchangeStore(store), sess.Exchanges).
+		WithConversations(conversationsOf()).
 		WithAsk(webAskFunc(sess, view.Units, view.Diffs, snap, pool.For(domain.Ask))).
 		WithReanalyse(webReanalyseFunc(snap, pool.For(domain.Describe), agent.For(domain.Describe).Model)).
 		WithAudit(workspaceAudit{writeTo: filepath.Join(storeRoot, initial, "audit.jsonl")})

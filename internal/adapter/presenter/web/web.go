@@ -229,14 +229,19 @@ type Server struct {
 	candidates []RepoStatus
 	addRepo    AddRepoFunc
 	repoErr    string
-	thread     []Exchange
-	models     map[string]string // unit ID -> model that produced its headline
-	ask        AskFunc
-	reanalyse  ReanalyseFunc
-	audit      AuditLog
-	narrate    NarrateFunc
-	narrating  bool
-	agent      AgentStatus
+	// thread is every conversation, keyed by the review it was about. It was a
+	// flat list, which meant questions asked about one review were shown under
+	// another and handed to the model as history for it — the exact thing the
+	// comment above AskFunc says is worse than not answering.
+	thread          map[string][]Exchange
+	conversationsOf ConversationsOf
+	models          map[string]string // unit ID -> model that produced its headline
+	ask             AskFunc
+	reanalyse       ReanalyseFunc
+	audit           AuditLog
+	narrate         NarrateFunc
+	narrating       bool
+	agent           AgentStatus
 
 	// pending is work that arrived after this review was opened, waiting for
 	// the reviewer to decide what to do with it (ADR 0020).
@@ -273,6 +278,7 @@ func NewServer(sess Session, notes Annotator) *Server {
 		notes:  notes,
 		models: map[string]string{},
 		loaded: map[string]Session{},
+		thread: map[string][]Exchange{},
 		subs:   map[chan sseEvent]struct{}{},
 		newID:  func() string { return ulid.Make().String() },
 		now:    func() time.Time { return time.Now().UTC() },
@@ -462,9 +468,53 @@ func (s *Server) handleAddRepo(w http.ResponseWriter, r *http.Request) {
 func (s *Server) WithExchanges(store ExchangeStore, earlier []domain.Exchange) *Server {
 	s.exchanges = store
 	for _, e := range earlier {
-		s.thread = append(s.thread, e)
+		// An exchange with no review recorded predates the scoping and belongs
+		// to whichever review was open when it was written, which is the one
+		// this server started with.
+		id := e.SessionID
+		if id == "" {
+			id = s.sess.ID
+		}
+		s.thread[id] = append(s.thread[id], e)
 	}
 	return s
+}
+
+// ConversationsOf reads back what was asked about a review in an earlier run.
+type ConversationsOf func(targetID string) []domain.Exchange
+
+// WithConversations wires reading a review's stored conversation, so returning
+// to one you asked questions about brings them back rather than showing an
+// empty box.
+func (s *Server) WithConversations(of ConversationsOf) *Server {
+	s.conversationsOf = of
+	return s
+}
+
+// Conversation is what was asked about one review, oldest first.
+//
+// Loaded from the store the first time it is wanted and remembered after, so
+// paging around the workspace does not re-read a file per request.
+func (s *Server) Conversation(targetID string) []Exchange {
+	s.mu.RLock()
+	thread, known := s.thread[targetID]
+	of := s.conversationsOf
+	s.mu.RUnlock()
+	if known || of == nil {
+		return append([]Exchange(nil), thread...)
+	}
+
+	earlier := of(targetID)
+
+	s.mu.Lock()
+	// Nil rather than absent, so a review with no conversation is not re-read
+	// on every page load.
+	if _, raced := s.thread[targetID]; !raced {
+		s.thread[targetID] = earlier
+	}
+	out := append([]Exchange(nil), s.thread[targetID]...)
+	s.mu.Unlock()
+	return out
 }
 
 // WithDescribe wires on-demand description of a group of changes.
@@ -1773,13 +1823,14 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	target := s.openSession(r).ID
+
 	answer, failed := "(no assistant configured)", true
 	if s.ask != nil {
-		s.mu.RLock()
-		history := append([]Exchange(nil), s.thread...)
-		s.mu.RUnlock()
+		// Only what was asked about *this* review. Another review's questions
+		// are not context, they are a different conversation.
+		history := s.Conversation(target)
 
-		target := s.openSession(r).ID
 		finish := s.BeginWork("ask", target, question)
 		got, err := s.ask(context.WithoutCancel(r.Context()), target, question, history)
 		finish(err)
@@ -1792,11 +1843,11 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 
 	s.mu.Lock()
 	exchange := Exchange{
-		ID: s.newID(), SessionID: s.sess.ID, Question: question,
+		ID: s.newID(), SessionID: target, Question: question,
 		Answer: answer, Failed: failed, TS: s.now(),
 	}
-	s.thread = append(s.thread, exchange)
-	sessionID := s.sess.ID
+	s.thread[target] = append(s.thread[target], exchange)
+	sessionID := target
 	keep := s.exchanges
 	s.mu.Unlock()
 
@@ -2174,7 +2225,7 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 	targets := s.targets
 	repos := s.repos
 	canCompare := s.compare != nil
-	thread := append([]Exchange(nil), s.thread...)
+	thread := []Exchange(nil) // filled after the lock; loading it may write
 	hasAsk := s.ask != nil
 	hasReanal := s.reanalyse != nil
 	// Any target can be narrated now, not only the one this server started with.
@@ -2214,6 +2265,10 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 			delete(failedAudit, w.Kind)
 		}
 	}
+	// Outside the lock: the first read of a review's conversation loads it from
+	// the store and remembers it, which is a write.
+	thread = s.Conversation(sess.ID)
+
 	// The log is built against the review being read, so it can mark it.
 	var gitlog LogView
 	if logOf != nil {
@@ -2294,6 +2349,7 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 		Work            []Work
 		Thread          []Exchange
 		HasAsk          bool
+		HasThread       bool
 		HasReanal       bool
 		CanRetry        bool
 		Narrating       bool
@@ -2313,6 +2369,7 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 		Signoff: signoff, HasSignoff: signoffOf != nil, CanSignoff: canSignoff,
 		Analyses: analyses, CanAnalyse: canAnalyse, CanRunAnalysis: canRunAnalysis,
 		Log: gitlog, HasLog: logOf != nil && len(gitlog.Entries) > 0,
+		HasThread: len(thread) > 0,
 		Review:    describeReview(narrative, groupIDs(groups), narrating, s.narrate != nil, s.now()),
 		Stats:     statsFor(sess.Target.Kind, stats, sess.Target.Subtitle),
 		Narrative: narrative, Chapters: chapters, Groups: groups,

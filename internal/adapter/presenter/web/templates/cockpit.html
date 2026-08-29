@@ -378,7 +378,10 @@
       <p class="queue__empty">Nothing to tell yet — this session changed no files.</p>
       {{ end }}
 
-      {{ if .HasAsk }}
+      <!-- A past conversation is part of the review record, so it is readable
+           whether or not a model is available to continue it. Only the form
+           needs an assistant. -->
+      {{ if or .HasAsk .HasThread }}
       <section class="ask" id="ask">
         <h2 class="ask__title">reviewer assistant</h2>
         {{ range .Thread }}
@@ -392,6 +395,7 @@
         </div>
         {{ end }}
 
+        {{ if .HasAsk }}
         <!-- The form takes over the column while a question is being written,
              and says plainly that it is working while the model thinks. -->
         <form class="ask__form" method="post" action="/ask?target={{ .Session.ID }}" id="ask-form">
@@ -407,6 +411,7 @@
             <span id="ask-working-text">thinking…</span>
           </p>
         </form>
+        {{ end }}
       </section>
       {{ end }}
     </section>
