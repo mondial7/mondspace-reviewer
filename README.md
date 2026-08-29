@@ -518,6 +518,20 @@ go test -race ./...
 go vet ./...
 ```
 
+The prompts are load-bearing code, so they have their own tests against a real
+model. They seed a repository with a known SQL injection, a hardcoded secret, an
+auth bypass and a changed exported signature, and assert the audits catch each —
+and, just as importantly, stay quiet on a change with nothing wrong in it:
+
+```sh
+MSR_SUMMARIZER_URL=http://127.0.0.1:8081/v1 MSR_MODEL=qwen3-4b-instruct-2507 \
+  go test -tags=model -timeout=20m ./internal/integration/...
+```
+
+They build real repositories and diff them with git rather than using
+hand-written diffs — a prompt has to be tested against exactly what production
+feeds it.
+
 One contract test talks to a real model server and is gated behind a tag:
 
 ```sh

@@ -223,10 +223,17 @@ Worth reporting: secrets or credentials added, authentication or authorization
 that can be bypassed, unvalidated input reaching a query, command or path,
 crypto used incorrectly, permissions widened, an error that hides a failure.
 
-Not worth reporting: style, naming, missing tests, or anything you would have to
-guess about code you cannot see.
+Not worth reporting: style, naming, missing tests, code that might mishandle an
+edge case but has no security consequence, or anything you would have to guess
+about code you cannot see. "Could be more robust" is not a security finding.
 
-If there is nothing, say so — that is a good answer and the usual one.
+If there is nothing, say so and return an empty list — that is a good answer and
+the usual one. Do not pad the list to look thorough: a verdict of "nothing
+found" alongside a finding is a contradiction, and the empty list is what makes
+the clean answer trustworthy.
+
+If there is something, list *every* distinct problem you can see, not only the
+most serious. Two obvious ones do not excuse skipping a third.
 
 Reply as JSON:
   verdict  — one sentence, at most ` + fmt.Sprint(verdictChars) + ` characters.
@@ -254,10 +261,16 @@ route, flag, environment variable or config key changed or dropped; a stored or
 serialised format that older data no longer fits; a default that changed.
 
 Not worth reporting: anything unexported or internal that callers cannot reach,
-new additions that break nobody, or refactors that keep the same surface.
+or refactors that keep the same surface.
 
-If nothing here breaks a caller, say so — that is a good answer and the usual
-one.
+A newly added function, type or field breaks nobody: it did not exist before, so
+nothing was calling it. Never report an addition. Only something that was there
+and is now different or gone can break a caller.
+
+If nothing here breaks a caller, say so and return an empty list — that is a
+good answer and the usual one. Do not pad the list to look thorough: a verdict
+of "nothing breaks" alongside a finding is a contradiction, and the empty list
+is what makes the clean answer trustworthy.
 
 Reply as JSON:
   verdict  — one sentence, at most ` + fmt.Sprint(verdictChars) + ` characters.
