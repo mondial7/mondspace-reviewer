@@ -4,6 +4,38 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.1.0] — 2026-08-29
+
+### Added
+
+- **`msr mcp` — your coding agent can read the review back.** An MCP server on
+  stdin/stdout that a coding agent's client can be pointed at, so the review
+  reaches the thing it is about without anyone retyping it. It never speaks
+  first: no hook, no injected message, no file it watches. The agent asks when
+  it wants to know ([ADR 0031](ADR/0031-an-agent-pulls-the-review.md)).
+- **What a human wrote and what a model inferred come through separate calls.**
+  `review_status`, `review_feedback` and `review_file` serve only what a person
+  typed; `model_findings` serves the audits. The judge msr runs is a small local
+  model — right often enough to be worth reading, wrong often enough that acting
+  on it unverified is a mistake — so the warning travels in every payload rather
+  than only in the tool description, and each finding names the model that
+  produced it. A finding you dismissed is still shown, marked settled, so an
+  agent does not raise it again.
+- **A second, expensive tier.** `workspace_feedback` and `workspace_search` read
+  every stored review, and say `EXPENSIVE` in their descriptions so the choice
+  to spend it is made knowingly.
+- A step in the in-app tour, and a section on the project page, about handing the
+  review back.
+
+### Notes
+
+- The MCP server reads the store and nothing else — no git, no model, no network
+  — so it is safe to leave configured in an agent's client. It cannot write to
+  the review either: a review log the agent can edit is not a review of the
+  agent.
+- Opening a review in `msr web` now records which one is open, in the store, so
+  the separate MCP process can follow it.
+
 ## [5.2.0] — 2026-08-25
 
 ### Added
