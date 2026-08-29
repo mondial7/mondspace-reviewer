@@ -44,3 +44,24 @@ type Note struct {
 	// first one.
 	AnchorNth int `json:"anchor_nth,omitempty"`
 }
+
+// Actionable reports whether a note is something still to be dealt with.
+//
+// `ok` and `note` are the reviewer thinking aloud; `question`, `objection` and
+// `debt` are things they want answered, changed or remembered. A superseded
+// note has already been dealt with.
+//
+// The distinction exists for the agent-facing surface (ADR 0031): handing an
+// agent every note a human ever wrote is a waste of its context, and handing it
+// approvals as though they were work is worse.
+func (n Note) Actionable() bool {
+	if n.SupersededBy != "" {
+		return false
+	}
+	switch n.Kind {
+	case NoteQuestion, NoteObjection, NoteDebt:
+		return true
+	default:
+		return false
+	}
+}
