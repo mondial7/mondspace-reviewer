@@ -322,6 +322,7 @@ footer p { margin: 0.3rem 0; }
   <a href="#install">install</a>
   <a href="#first">first run</a>
   <a href="#what">what you get</a>
+  <a href="#mcp">your agent</a>
   <span class="rail__spacer"></span>
   <a href="https://github.com/mondial7/mondspace-reviewer">github</a>
 </nav>
@@ -584,6 +585,10 @@ footer p { margin: 0.3rem 0; }
       <p>Story, security, breaking changes — each on demand, each independent. No analysis sees another's findings, because a model shown a previous answer anchors on it. A finding you decide is not a problem can be dismissed, and stays dismissed the next time you run it.</p>
     </div>
     <div class="card">
+      <h3>Your agent can ask</h3>
+      <p>msr serves the review over MCP, so the agent that wrote the code can read what you said about it — when it wants to, never interrupted. What you wrote and what a model inferred come through separate calls.</p>
+    </div>
+    <div class="card">
       <h3>It never writes to your repo</h3>
       <p>No commits, no branches, no changes to HEAD, the index or your working tree. Snapshots go to their own refs. Read-only, by construction.</p>
     </div>
@@ -622,6 +627,53 @@ footer p { margin: 0.3rem 0; }
     <img src="img/cockpit-status.png" alt="The msr status page: the reviewer model, whether it is online, what it has spent, and the repositories being watched." loading="lazy" width="1600" height="1000">
     <figcaption>If the model is unreachable, msr degrades to mechanical headlines and carries on — <b>the review never waits on it.</b></figcaption>
   </figure>
+</section>
+
+<div class="rule"></div>
+
+<section id="mcp">
+  <h2>Handing it back to your agent</h2>
+  <p class="sub">
+    The point of a review is that the thing being reviewed changes. Until now that meant
+    reading the cockpit and retyping the relevant parts into your agent's prompt.
+  </p>
+  <div class="term">
+    <div class="term__bar">
+      <span class="term__dot"></span><span class="term__dot"></span><span class="term__dot"></span>
+      <span class="term__name">.mcp.json</span>
+    </div>
+<pre>{"mcpServers": {"msr": {"command": "msr", "args": ["mcp"]}}}</pre>
+  </div>
+  <p style="color:var(--fg-dim);font-size:.94rem">
+    Then ask your agent to <em>“check what the reviewer said”</em> and it pulls. There is no
+    hook, no injected message, no file it watches: msr never speaks first, so a working
+    agent is never interrupted with something nobody asked for at a moment nobody chose.
+  </p>
+
+  <div class="scroller">
+    <table class="tbl">
+      <thead><tr><th>tool</th><th></th></tr></thead>
+      <tbody>
+        <tr><td><code>review_status</code></td><td>which change is open, whether a human signed it off and what they said, how much is outstanding. Cheap — ask this first</td></tr>
+        <tr><td><code>review_feedback</code></td><td>what the reviewer is <em>still</em> asking for: questions, objections, debt, in their own words</td></tr>
+        <tr><td><code>review_file</code></td><td>the whole human record of one file, approvals included</td></tr>
+        <tr><td><code>model_findings</code></td><td>what msr's audits <em>inferred</em> — behind a name that says so</td></tr>
+        <tr><td><code>workspace_feedback</code></td><td>outstanding feedback across every review. Expensive</td></tr>
+        <tr><td><code>workspace_search</code></td><td>find anything written anywhere in the workspace. Expensive</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h3>Human words, and machine guesses, never in one voice</h3>
+      <p>The judge msr runs is a small local model: right often enough to be worth reading, wrong often enough that acting on it unverified is a mistake. So its findings have their own call, every reply opens by disowning human authorship, and each finding names the model and asks to be checked.</p>
+    </div>
+    <div class="card">
+      <h3>Read-only, and it reads the store</h3>
+      <p>No git, no model, no network. Leave it configured — the worst it can do is report what you wrote. Your agent cannot write to the review either: a review log the agent can edit is not a review of the agent.</p>
+    </div>
+  </div>
 </section>
 
 <div class="rule"></div>
