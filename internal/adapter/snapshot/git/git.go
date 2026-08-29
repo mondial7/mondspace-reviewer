@@ -366,6 +366,29 @@ func (s *Snapshotter) worktreeTree(ctx context.Context) (string, error) {
 	return s.run(ctx, env, "write-tree")
 }
 
+// parseCommitLog reads the pretty-format above into commits.
+func parseCommitLog(out string) []domain.Commit {
+	var commits []domain.Commit
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Split(line, commitFieldSep)
+		if len(fields) != 5 {
+			continue
+		}
+		ts, err := time.Parse(time.RFC3339, fields[2])
+		if err != nil {
+			continue
+		}
+		c := domain.Commit{Hash: fields[0], Author: fields[1], TS: ts, Subject: fields[3]}
+		// %P lists every parent; the first is the one a merge came from, which is
+		// the range a reviewer means by "what did this commit do".
+		if parents := strings.Fields(fields[4]); len(parents) > 0 {
+			c.Parent = parents[0]
+		}
+		commits = append(commits, c)
+	}
+	return commits
+}
+
 // parseNumstat reads one `added\tremoved\tpath` record. A binary file reports
 // "-" for both counts and is recorded as changed with no line count.
 func parseNumstat(line string) (domain.FileStat, bool) {
@@ -496,24 +519,7 @@ func (s *Snapshotter) RecentCommits(ctx context.Context, limit int) ([]domain.Co
 		return nil, nil // no HEAD yet: an empty history, not a failure
 	}
 
-	var commits []domain.Commit
-	for _, line := range strings.Split(out, "\n") {
-		fields := strings.Split(line, commitFieldSep)
-		if len(fields) != 5 {
-			continue
-		}
-		ts, err := time.Parse(time.RFC3339, fields[2])
-		if err != nil {
-			continue
-		}
-		c := domain.Commit{Hash: fields[0], Author: fields[1], TS: ts, Subject: fields[3]}
-		// %P lists every parent; the first is the one a merge came from, which is
-		// the range a reviewer means by "what did this commit do".
-		if parents := strings.Fields(fields[4]); len(parents) > 0 {
-			c.Parent = parents[0]
-		}
-		commits = append(commits, c)
-	}
+	commits := parseCommitLog(out)
 	return commits, nil
 }
 
@@ -600,4 +606,138 @@ func (s *Snapshotter) CommitsBetween(ctx context.Context, from, to domain.Snapsh
 		})
 	}
 	return commits, nil
+}
+
+// CommitsAcross is recent history over more than one ref, newest first.
+//
+// The log card walks HEAD *and* the upstream, so a colleague's commit appears
+// above your own work rather than only as a number saying you are behind
+// (issue #18). A ref that does not resolve is skipped rather than fatal: a
+// branch with no upstream is ordinary.
+func (s *Snapshotter) CommitsAcross(ctx context.Context, limit int, refs ...string) ([]domain.Commit, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	args := []string{"log", fmt.Sprintf("-%d", limit), "--date-order",
+		"--pretty=format:%H" + commitFieldSep + "%an" + commitFieldSep + "%cI" +
+			commitFieldSep + "%s" + commitFieldSep + "%P"}
+	for _, ref := range refs {
+		if ref == "" {
+			continue
+		}
+		if _, err := s.run(ctx, os.Environ(), "rev-parse", "--verify", "--quiet", ref); err != nil {
+			continue
+		}
+		args = append(args, ref)
+	}
+	out, err := s.run(ctx, os.Environ(), args...)
+	if err != nil {
+		return nil, nil // no history yet: empty, not a failure
+	}
+	return parseCommitLog(out), nil
+}
+
+// Remote reads where the current branch sits against its upstream, and what
+// remote-tracking branches exist (issue #18).
+//
+// It reads only what is already in the repository. Whatever the last `git
+// fetch` brought is what this sees — msr does not fetch unless asked to
+// (ADR 0025).
+func (s *Snapshotter) Remote(ctx context.Context) (domain.RemoteState, error) {
+	var state domain.RemoteState
+
+	branch, err := s.run(ctx, os.Environ(), "rev-parse", "--abbrev-ref", "HEAD")
+	if err != nil {
+		return state, nil // no HEAD yet: not a failure, just nothing to say
+	}
+	state.Branch = strings.TrimSpace(branch)
+
+	// A branch with no upstream is the normal state of a scratch repository,
+	// and not something to report as an error.
+	upstream, err := s.run(ctx, os.Environ(), "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}")
+	if err != nil {
+		state.Branches = s.remoteBranches(ctx)
+		return state, nil
+	}
+	state.Upstream = strings.TrimSpace(upstream)
+
+	if hash, err := s.run(ctx, os.Environ(), "rev-parse", state.Upstream); err == nil {
+		state.UpstreamHash = strings.TrimSpace(hash)
+	}
+
+	// One command for both counts: behind is what a colleague pushed, ahead is
+	// what has not left this machine.
+	if counts, err := s.run(ctx, os.Environ(), "rev-list", "--left-right", "--count",
+		state.Upstream+"..."+"HEAD"); err == nil {
+		if fields := strings.Fields(counts); len(fields) == 2 {
+			state.Behind, _ = strconv.Atoi(fields[0])
+			state.Ahead, _ = strconv.Atoi(fields[1])
+		}
+	}
+
+	if state.Behind > 0 {
+		if out, err := s.run(ctx, os.Environ(), "log", "-1",
+			"--pretty=format:%an"+commitFieldSep+"%s", state.Upstream); err == nil {
+			if fields := strings.SplitN(strings.TrimSpace(out), commitFieldSep, 2); len(fields) == 2 {
+				state.LastAuthor, state.LastSubject = fields[0], fields[1]
+			}
+		}
+	}
+
+	state.Branches = s.remoteBranches(ctx)
+	return state, nil
+}
+
+// remoteBranches lists remote-tracking branches, so a new one can be noticed.
+func (s *Snapshotter) remoteBranches(ctx context.Context) []string {
+	out, err := s.run(ctx, os.Environ(), "for-each-ref", "--format=%(refname:short)", "refs/remotes")
+	if err != nil {
+		return nil
+	}
+	var branches []string
+	for _, line := range strings.Split(out, "\n") {
+		name := strings.TrimSpace(line)
+		// origin/HEAD is a symbolic alias for the default branch, not a branch
+		// anyone pushed.
+		if name == "" || strings.HasSuffix(name, "/HEAD") {
+			continue
+		}
+		branches = append(branches, name)
+	}
+	sort.Strings(branches)
+	return branches
+}
+
+// ReachableFrom is the set of commits an upstream ref can reach, so the log can
+// say which of them a colleague can already see.
+func (s *Snapshotter) ReachableFrom(ctx context.Context, ref string, limit int) map[string]bool {
+	if ref == "" {
+		return nil
+	}
+	if limit <= 0 {
+		limit = 200
+	}
+	out, err := s.run(ctx, os.Environ(), "rev-list", fmt.Sprintf("-%d", limit), ref)
+	if err != nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	for _, line := range strings.Split(out, "\n") {
+		if h := strings.TrimSpace(line); h != "" {
+			seen[h] = true
+		}
+	}
+	return seen
+}
+
+// Fetch updates remote-tracking refs. It is the one thing msr does that talks
+// to the network and writes to the repository, so nothing calls it unless the
+// reviewer asked for it (ADR 0025).
+//
+// --no-write-fetch-head keeps it out of .git/FETCH_HEAD, and --prune keeps
+// deleted branches from lingering as news that never arrives. It never touches
+// HEAD, the index or the working tree.
+func (s *Snapshotter) Fetch(ctx context.Context) error {
+	_, err := s.run(ctx, os.Environ(), "fetch", "--quiet", "--prune", "--no-write-fetch-head", "--no-tags")
+	return err
 }

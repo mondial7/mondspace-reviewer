@@ -1766,3 +1766,144 @@ a.toast:hover { border-color: var(--kind, var(--accent)); }
 .acard--worst-medium { border-top-color: var(--inferred); }
 .acard--worst-low { border-top-color: var(--fg-dim); }
 .acard--worst-low .acard__state { color: var(--fg-dim); }
+
+/* ── The git log ────────────────────────────────────────────────────────────
+   Where you are against everything that has landed, and what the rest of the
+   team has pushed (issue #18). In the panel, because that column answers
+   "where am I"; scrolling on its own, because a long history must not push the
+   numbers off the bottom. */
+
+.log {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-height: 0;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--rule);
+  border-radius: 9px;
+  background: var(--panel);
+  box-shadow: var(--panel-glow);
+}
+
+.log__head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.log__title {
+  color: var(--fg-dim);
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+}
+
+.log__branch {
+  margin-left: auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--hunk);
+  font-family: var(--mono);
+  font-size: 0.68rem;
+}
+
+.log__track {
+  display: flex;
+  gap: 0.4rem;
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 0.66rem;
+}
+
+/* Behind is somebody else's work you have not seen; ahead is yours they have
+   not. The first is the one worth a colour. */
+.log__behind { color: var(--inferred); }
+.log__ahead { color: var(--fg-dim); }
+
+.log__rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 13rem;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.log__row { border-left: 2px solid transparent; }
+
+/* The one you are reading. It is the only thing in this list that is about you
+   rather than about history. */
+.log__row--here {
+  border-left-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+}
+
+.log__row--signed { border-left-color: color-mix(in srgb, var(--stated) 55%, transparent); }
+
+.log__link {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0 0.35rem;
+  padding: 0.22rem 0.4rem;
+  color: var(--fg);
+  text-decoration: none;
+}
+
+.log__link:hover { background: color-mix(in srgb, var(--fg-dim) 12%, transparent); }
+
+.log__marks {
+  grid-row: span 2;
+  display: flex;
+  align-items: baseline;
+  gap: 0.2rem;
+  font-size: 0.68rem;
+}
+
+.log__here { color: var(--accent); }
+.log__tick { color: var(--stated); }
+
+.log__local {
+  padding: 0 0.25rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--fg-dim) 22%, transparent);
+  color: var(--fg-dim);
+  font-family: var(--mono);
+  font-size: 0.58rem;
+  text-transform: uppercase;
+}
+
+.log__subject {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.76rem;
+}
+
+.log__meta {
+  grid-column: 2;
+  color: var(--fg-dim);
+  font-family: var(--mono);
+  font-size: 0.62rem;
+}
+
+/* The panel gives its spare room to the isometric field; with a log there too,
+   the field yields first. */
+.cockpit__panel > .log { flex: 0 1 auto; }
+
+/* Somebody else's work, on the remote and not here yet. The one row in the list
+   that is about the team rather than about you (issue #18). */
+.log__row--incoming { border-left-color: var(--hunk); }
+
+.log__incoming {
+  padding: 0 0.25rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--hunk) 22%, transparent);
+  color: var(--hunk);
+  font-family: var(--mono);
+  font-size: 0.58rem;
+  text-transform: uppercase;
+}

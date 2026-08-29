@@ -42,6 +42,15 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 	model := fs.String("model", defaultModel, "summarizer model")
 	configPath := fs.String("config", config.DefaultPath(), "where the model settings are kept")
 
+	// Fetching talks to the network and writes remote-tracking refs, which is
+	// the one thing msr otherwise never does — so it is asked for, never
+	// assumed (ADR 0025). Without it the log still reports whatever the
+	// reviewer's own last fetch brought in.
+	fetch := fs.Bool("fetch", false,
+		"periodically git fetch, to see what the rest of the team is pushing (writes remote-tracking refs)")
+	fetchEvery := fs.Duration("fetch-every", 2*time.Minute,
+		"how often to fetch when --fetch is set")
+
 	// Per-workload overrides. The jobs want different models, and this is how
 	// two llama-servers are named without editing a config file (ADR 0019).
 	workloadURL := map[domain.Workload]*string{}
@@ -154,6 +163,7 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 		WithLiveActions(liveActions()).
 		WithSignoff(saveSignoff(), loadSignoff()).
 		WithAnalyses(runAnalysis(pool, agent.For(domain.Narration).Model), analysisOf()).
+		WithLog(buildLog(repo)).
 		WithConfigure(configureAgent(pool, *configPath, &agent)).
 		WithExchanges(exchangeStore(store), sess.Exchanges).
 		WithAsk(webAskFunc(sess, view.Units, view.Diffs, snap, pool.For(domain.Ask))).
@@ -199,6 +209,10 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 	// itself, which is how a commit or a tag that belongs to some *other*
 	// target still reaches the reviewer looking at this one.
 	go watchRepo(ctx, handler, snap, storeRelativeTo(repo, storeRoot), repos, *out)
+
+	// And what the rest of the team is doing, which is a different question
+	// from what this working tree is doing (issue #18).
+	go watchRemote(ctx, handler, repo, *fetch, *fetchEvery)
 
 	ln, err := net.Listen("tcp", *addr)
 	if err != nil {

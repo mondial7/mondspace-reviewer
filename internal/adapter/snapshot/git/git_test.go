@@ -159,6 +159,23 @@ func gitCmd(t *testing.T, dir string, args ...string) string {
 	return strings.TrimSpace(string(out))
 }
 
+// gitAs runs git with a chosen author, which gitCmd cannot do: it pins the
+// identity through the environment, and the environment beats config.
+func gitAs(t *testing.T, dir, who string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(),
+		"GIT_AUTHOR_NAME="+who, "GIT_AUTHOR_EMAIL="+who+"@example.com",
+		"GIT_COMMITTER_NAME="+who, "GIT_COMMITTER_EMAIL="+who+"@example.com",
+	)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
+	}
+	return strings.TrimSpace(string(out))
+}
+
 // newRepo makes a temp git repo with one committed file and returns its path.
 func newRepo(t *testing.T) string {
 	t.Helper()
@@ -808,5 +825,103 @@ func TestNumstatSinceASnapshotIgnoresFilesThatHaveNotMoved(t *testing.T) {
 	}
 	if seen["later.go"].Added != 1 {
 		t.Errorf("later.go = %+v, want a new file", seen["later.go"])
+	}
+}
+
+func TestRemoteReportsWhereTheBranchSitsAgainstItsUpstream(t *testing.T) {
+	// The question the log card answers: am I behind, and who moved it
+	// (issue #18).
+	origin := newRepo(t)
+	gitCmd(t, origin, "commit", "--allow-empty", "-m", "shared history")
+
+	clone := t.TempDir()
+	gitCmd(t, filepath.Dir(clone), "clone", "--quiet", origin, filepath.Base(clone))
+	gitCmd(t, clone, "config", "user.email", "me@example.com")
+	gitCmd(t, clone, "config", "user.name", "Me")
+
+	snap := gitsnap.New(clone, "s")
+	state, err := snap.Remote(context.Background())
+	if err != nil {
+		t.Fatalf("Remote: %v", err)
+	}
+	if state.Upstream == "" {
+		t.Fatalf("a clone tracks its origin, got %+v", state)
+	}
+	if state.Ahead != 0 || state.Behind != 0 {
+		t.Errorf("a fresh clone is level, got ahead=%d behind=%d", state.Ahead, state.Behind)
+	}
+
+	// Somebody else pushes.
+	gitAs(t, origin, "Alice", "commit", "--allow-empty", "-m", "Alice: add the cache")
+
+	// Not visible until the refs are updated — which is the whole reason
+	// fetching is a thing msr can be asked to do.
+	state, _ = snap.Remote(context.Background())
+	if state.Behind != 0 {
+		t.Errorf("without fetching there is nothing new to see, got behind=%d", state.Behind)
+	}
+
+	if err := snap.Fetch(context.Background()); err != nil {
+		t.Fatalf("Fetch: %v", err)
+	}
+	state, _ = snap.Remote(context.Background())
+
+	if state.Behind != 1 {
+		t.Errorf("behind = %d, want 1 after a colleague pushed", state.Behind)
+	}
+	if state.LastAuthor != "Alice" {
+		t.Errorf("LastAuthor = %q, want the person who pushed", state.LastAuthor)
+	}
+	if state.LastSubject != "Alice: add the cache" {
+		t.Errorf("LastSubject = %q", state.LastSubject)
+	}
+}
+
+func TestFetchLeavesHeadIndexAndWorktreeAlone(t *testing.T) {
+	// Fetching is the one thing msr does that writes to the repository, so what
+	// it does not write matters (ADR 0025).
+	origin := newRepo(t)
+	gitCmd(t, origin, "commit", "--allow-empty", "-m", "one")
+
+	clone := t.TempDir()
+	gitCmd(t, filepath.Dir(clone), "clone", "--quiet", origin, filepath.Base(clone))
+	os.WriteFile(filepath.Join(clone, "wip.txt"), []byte("uncommitted work\n"), 0o644)
+
+	headBefore := gitCmd(t, clone, "rev-parse", "HEAD")
+	statusBefore := gitCmd(t, clone, "status", "--porcelain")
+
+	gitCmd(t, origin, "commit", "--allow-empty", "-m", "two")
+	if err := gitsnap.New(clone, "s").Fetch(context.Background()); err != nil {
+		t.Fatalf("Fetch: %v", err)
+	}
+
+	if got := gitCmd(t, clone, "rev-parse", "HEAD"); got != headBefore {
+		t.Error("fetching moved HEAD")
+	}
+	if got := gitCmd(t, clone, "status", "--porcelain"); got != statusBefore {
+		t.Errorf("fetching changed the working tree or index:\n%s", got)
+	}
+	if body, _ := os.ReadFile(filepath.Join(clone, "wip.txt")); string(body) != "uncommitted work\n" {
+		t.Error("fetching touched an uncommitted file")
+	}
+}
+
+func TestRemoteBranchesExcludeTheOriginHeadAlias(t *testing.T) {
+	// origin/HEAD is a symbolic alias for the default branch, not a branch
+	// anyone pushed — announcing it as new would be a lie on the first fetch.
+	origin := newRepo(t)
+	gitCmd(t, origin, "commit", "--allow-empty", "-m", "one")
+
+	clone := t.TempDir()
+	gitCmd(t, filepath.Dir(clone), "clone", "--quiet", origin, filepath.Base(clone))
+
+	state, _ := gitsnap.New(clone, "s").Remote(context.Background())
+	for _, b := range state.Branches {
+		if strings.HasSuffix(b, "/HEAD") {
+			t.Errorf("branches should not include %q", b)
+		}
+	}
+	if len(state.Branches) == 0 {
+		t.Error("a clone has at least one remote-tracking branch")
 	}
 }

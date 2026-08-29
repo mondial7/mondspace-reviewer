@@ -2396,3 +2396,53 @@ func TestACardIsColouredByItsWorstFinding(t *testing.T) {
 		t.Error("the severity should be marked as inferred too")
 	}
 }
+
+func TestTheLogCardShowsHistoryAndWhereYouAre(t *testing.T) {
+	// "Where am I against everything that has landed" (issue #18).
+	now := time.Now()
+	h := web.NewServer(testSession(), nil).WithLog(func(string) web.LogView {
+		return web.LogView{
+			Entries: []usecase.LogEntry{
+				{Commit: domain.Commit{Hash: "ccccccccccccc", Subject: "Alice: add the cache", Author: "Alice", TS: now},
+					Ref: "cccccccc", Ago: "2m ago", OnRemote: true},
+				{Commit: domain.Commit{Hash: "bbbbbbbbbbbbb", Subject: "Fix the parser", Author: "You", TS: now},
+					Ref: "bbbbbbbb", Ago: "1h ago", Reviewing: true},
+				{Commit: domain.Commit{Hash: "aaaaaaaaaaaaa", Subject: "Scaffold", Author: "You", TS: now},
+					Ref: "aaaaaaaa", Ago: "2h ago", SignedOff: true, OnRemote: true},
+			},
+			Remote: domain.RemoteState{Branch: "main", Upstream: "origin/main", Behind: 2, Ahead: 1},
+		}
+	})
+
+	body := get(t, h, "/").Body.String()
+
+	for _, want := range []string{"Alice: add the cache", "Fix the parser", "Scaffold"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the log should list %q", want)
+		}
+	}
+	// Every row opens that commit.
+	if !strings.Contains(body, "/?target=cccccccc") {
+		t.Error("a log row should link to its commit")
+	}
+	// The three markers that make it more than a list.
+	if !strings.Contains(body, "log__row--here") {
+		t.Error("the log should mark where the reviewer is")
+	}
+	if !strings.Contains(body, "log__row--signed") {
+		t.Error("the log should mark what has been reviewed")
+	}
+	if !strings.Contains(body, "log__local") {
+		t.Error("the log should mark what has not left this machine")
+	}
+	// And where the branch stands.
+	if !strings.Contains(body, "origin/main") || !strings.Contains(body, "2 behind") {
+		t.Errorf("the log should say where the branch sits:\n%s", body)
+	}
+}
+
+func TestNoLogCardWithoutAWayToBuildIt(t *testing.T) {
+	if strings.Contains(get(t, web.NewServer(testSession(), nil), "/").Body.String(), "log__row") {
+		t.Error("no log source should mean no log card")
+	}
+}

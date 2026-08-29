@@ -138,6 +138,24 @@
     </section>
 
     <section class="board__panel tour__panel">
+      <h2 class="board__title">where you are, and what the team is doing</h2>
+      <p class="tour__body">
+        The <strong>history</strong> card in the panel lists recent commits and
+        marks three things: the one you are reviewing, the ones you have already
+        signed off, and the ones that have not left your machine. Click any row
+        to review that commit.
+      </p>
+      <p class="tour__body tour__body--dim">
+        If the branch tracks a remote it also shows how far ahead or behind you
+        are, and a colleague's commit appears at the top marked
+        <em>incoming</em>. msr only fetches if you start it with
+        <code>--fetch</code> — otherwise it reads whatever your own last fetch
+        brought in, because fetching talks to the network and writes refs, and
+        msr does neither without being asked.
+      </p>
+    </section>
+
+    <section class="board__panel tour__panel">
       <h2 class="board__title">keys</h2>
       <p class="tour__body tour__body--dim">
         Reading is the common case, so it has the short keys. All of them are

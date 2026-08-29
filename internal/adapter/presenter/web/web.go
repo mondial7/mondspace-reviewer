@@ -248,6 +248,7 @@ type Server struct {
 	signErr     string
 	runAnalysis RunAnalysisFunc
 	analysisOf  AnalysisOf
+	logOf       LogOf
 
 	// subs are live subscribers (server-sent events). Each gets a buffered
 	// channel so a slow reader can never block a request handler.
@@ -1223,6 +1224,23 @@ func (s *Server) ClearPending() {
 	s.broadcast("pending")
 }
 
+// LogView is recent history as the card shows it, with where the branch sits
+// against its upstream (issue #18).
+type LogView struct {
+	Entries []usecase.LogEntry
+	Remote  domain.RemoteState
+}
+
+// LogOf builds the log for whichever review is open. It takes the open target's
+// ref so the card can mark where the reviewer is.
+type LogOf func(reviewingRef string) LogView
+
+// WithLog wires the git log card.
+func (s *Server) WithLog(of LogOf) *Server {
+	s.logOf = of
+	return s
+}
+
 // RunAnalysisFunc runs one audit over one target. AnalysisOf reads back
 // whatever the last run of one recorded.
 type RunAnalysisFunc func(ctx context.Context, targetID string, kind domain.AnalysisKind) error
@@ -2020,6 +2038,7 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 	pending := s.pending
 	signoffOf := s.signoffOf
 	canSignoff := s.signoff != nil
+	logOf := s.logOf
 	analysisOf := s.analysisOf
 	// Reading what an audit found and being able to run one are separate: a
 	// stored result is worth showing even where nothing can be run.
@@ -2074,6 +2093,12 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 			delete(failedAudit, w.Kind)
 		}
 	}
+	// The log is built against the review being read, so it can mark it.
+	var gitlog LogView
+	if logOf != nil {
+		gitlog = logOf(sess.Target.Ref)
+	}
+
 	// An audit fingerprints the units it read, so the same function decides
 	// whether what it read is still what is on screen.
 	analyses := analysisCards(analysisOf, running, failedAudit, sess.ID, usecase.Fingerprint(sess.Units), s.now())
@@ -2158,12 +2183,15 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 		Analyses        []analysisCard
 		CanAnalyse      bool
 		CanRunAnalysis  bool
+		Log             LogView
+		HasLog          bool
 	}{
 		Session: sess, Workspace: workspace, Targets: targets,
 		Repos: repos, CanCompare: canCompare,
 		Pending: pending,
 		Signoff: signoff, HasSignoff: signoffOf != nil, CanSignoff: canSignoff,
 		Analyses: analyses, CanAnalyse: canAnalyse, CanRunAnalysis: canRunAnalysis,
+		Log: gitlog, HasLog: logOf != nil && len(gitlog.Entries) > 0,
 		Review:    describeReview(narrative, groupIDs(groups), narrating, s.narrate != nil, s.now()),
 		Stats:     statsFor(sess.Target.Kind, stats, sess.Target.Subtitle),
 		Narrative: narrative, Chapters: chapters, Groups: groups,

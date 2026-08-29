@@ -249,3 +249,101 @@ func analysisOf() web.AnalysisOf {
 		return got
 	}
 }
+
+// logLimit is how much history the card shows. Enough to see where you are in
+// a morning's work, not a substitute for `git log`.
+const logLimit = 30
+
+// buildLog assembles the git log card for whichever review is open: recent
+// history, which commits the upstream can already reach, and which have been
+// signed off (issue #18).
+func buildLog(repo string) web.LogOf {
+	signedOff := loadSignoff()
+
+	return func(reviewingRef string) web.LogView {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		snap := gitsnap.New(repo, "log")
+		state, _ := snap.Remote(ctx)
+
+		// Both refs, so a colleague's commit appears above your own work rather
+		// than only as a number saying you are behind.
+		commits, err := snap.CommitsAcross(ctx, logLimit, "HEAD", state.Upstream)
+		if err != nil || len(commits) == 0 {
+			return web.LogView{}
+		}
+
+		onRemote := snap.ReachableFrom(ctx, state.Upstream, 400)
+		local := map[string]bool{}
+		if state.Upstream != "" {
+			local = snap.ReachableFrom(ctx, "HEAD", 400)
+		}
+
+		// A commit's review is signed off under the target id derived from its
+		// range, so the answer comes from the same index the picker uses.
+		reviewed := map[string]bool{}
+		for _, c := range commits {
+			if id, ok := targetIDForCommit(c.Hash); ok && signedOff(id).Done() {
+				reviewed[c.Hash] = true
+			}
+		}
+
+		return web.LogView{
+			Entries: usecase.BuildLogAcross(commits, reviewingRef, onRemote, reviewed, local, time.Now()),
+			Remote:  state,
+		}
+	}
+}
+
+// targetIDForCommit finds the review id for a commit, if that commit is one of
+// the targets on offer.
+func targetIDForCommit(hash string) (string, bool) {
+	targetsMu.RLock()
+	defer targetsMu.RUnlock()
+	for id, entry := range targetIndex {
+		if entry.target.Kind == domain.TargetCommit && entry.target.To.Commit == hash {
+			return id, true
+		}
+	}
+	return "", false
+}
+
+// watchRemote keeps an eye on what the rest of the team is pushing.
+//
+// Fetching is the one thing msr does that talks to the network and writes to
+// the repository, so it happens only when asked for. Without it this still
+// works: it reports whatever the reviewer's own last `git fetch` or `git pull`
+// brought in, which is honest, just as fresh as their last one (ADR 0025).
+func watchRemote(ctx context.Context, handler *web.Server, repo string, fetch bool, every time.Duration) {
+	snap := gitsnap.New(repo, "remote")
+	var prev domain.RemoteState
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(every):
+		}
+
+		if fetch {
+			// A failed fetch is not worth reporting: it is usually a laptop
+			// that went to sleep, or a network that is not there. The next one
+			// catches up.
+			if err := snap.Fetch(ctx); err == nil {
+				prev.Fetched = time.Now()
+			}
+		}
+
+		state, err := snap.Remote(ctx)
+		if err != nil {
+			continue
+		}
+		state.Fetched = prev.Fetched
+
+		// Silent on the first look, so opening a page never announces what was
+		// already there.
+		handler.Pulse(usecase.RemoteNews(prev, state))
+		prev = state
+	}
+}

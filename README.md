@@ -191,6 +191,26 @@ A card is never ambiguous about which of these it means: *nobody has run this*,
 *it could not run*, and *it ran and found nothing* look different, which on a
 security card is the difference between information and a false sense of safety.
 
+**Keep an eye on the rest of the team.** A history card in the panel shows where
+you are against everything that has landed — the commit you are reviewing, what
+you have already signed off, what has not left your machine, and what a
+colleague has pushed that is not here yet. Every row opens that commit.
+
+![The history card, showing an incoming commit from a colleague](docs/img/cockpit-log.png)
+
+By default it reads whatever your own last `git fetch` or `git pull` brought in.
+To have msr watch the remote itself:
+
+```sh
+msr web --fetch --fetch-every=2m
+```
+
+That is opt-in on purpose: fetching talks to the network and writes
+remote-tracking refs, and msr otherwise does neither. It never touches HEAD,
+your index or your working tree — there is a test for exactly that. When a
+colleague pushes you get a toast naming who: *"3 new commits on origin/main ·
+Alice"* ([ADR 0025](ADR/0025-watching-the-remote.md)).
+
 **Read.** Start with what happened in a folder, then ask what happened to one
 file in it — both are a click, and both are one sentence about what the change
 is *for*. Click a chapter and its files come up beside it. Click a filename to
@@ -474,7 +494,7 @@ MSR_SUMMARIZER_URL=http://127.0.0.1:8081/v1 MSR_MODEL=qwen3-4b-instruct-2507 \
 
 ## Status
 
-**v5.6.0** — the web app is the product.
+**v5.7.0** — the web app is the product.
 
 - **Cockpit** (`msr web`) — one page: the change as a story, the diffs,
   annotation, re-analysis, a live isometric field, and a workspace spanning any
@@ -496,6 +516,8 @@ MSR_SUMMARIZER_URL=http://127.0.0.1:8081/v1 MSR_MODEL=qwen3-4b-instruct-2507 \
 - **Analysis cards** — story, security pass and breaking-change check, each run
   on demand and independent of the others
   ([ADR 0024](ADR/0024-analyses-as-independent-cards.md)).
+- **A history card**, and an opt-in watch on the remote so you see what the rest
+  of the team pushes ([ADR 0025](ADR/0025-watching-the-remote.md)).
 - **Schema-enforced model output**, on-demand descriptions, persisted
   conversations, and full accounting of every call and token at `/activity` and
   `/status`.

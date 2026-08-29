@@ -109,6 +109,47 @@
         </p>
       </section>
 
+      <!-- Where you are against everything that has landed, and what the rest
+           of the team has pushed (issue #18). Scrolls on its own so a long
+           history cannot push the numbers off the panel. -->
+      {{ if .HasLog }}
+      <section class="log" id="log">
+        <header class="log__head">
+          <span class="log__title">history</span>
+          {{ with .Log.Remote.Upstream }}
+          <span class="log__branch" title="{{ $.Log.Remote.Branch }} tracks {{ . }}">{{ . }}</span>
+          {{ end }}
+        </header>
+
+        {{ if or .Log.Remote.Behind .Log.Remote.Ahead }}
+        <p class="log__track">
+          {{ with .Log.Remote.Behind }}<span class="log__behind">{{ . }} behind</span>{{ end }}
+          {{ with .Log.Remote.Ahead }}<span class="log__ahead">{{ . }} ahead</span>{{ end }}
+        </p>
+        {{ end }}
+
+        <ol class="log__rows">
+          {{ range .Log.Entries }}
+          <li class="log__row
+                     {{ if .Reviewing }}log__row--here{{ end }}
+                     {{ if .SignedOff }}log__row--signed{{ end }}
+                     {{ if .Incoming }}log__row--incoming{{ end }}">
+            <a class="log__link" href="/?target={{ .Ref }}" title="{{ .Subject }}">
+              <span class="log__marks">
+                {{ if .Reviewing }}<span class="log__here" title="what you are reviewing">▸</span>{{ end }}
+                {{ if .SignedOff }}<span class="log__tick" title="you signed this off">✓</span>{{ end }}
+                {{ if .Incoming }}<span class="log__incoming" title="on the remote, not here yet">incoming</span>
+                {{ else if not .OnRemote }}<span class="log__local" title="not pushed yet">local</span>{{ end }}
+              </span>
+              <span class="log__subject">{{ .Subject }}</span>
+              <span class="log__meta">{{ .Author }} · {{ .Ago }}</span>
+            </a>
+          </li>
+          {{ end }}
+        </ol>
+      </section>
+      {{ end }}
+
       <section class="cockpit__stats">
         {{ range .Stats.Tiles }}
         <div class="stat"{{ with .Hint }} title="{{ . }}"{{ end }}>

@@ -13,6 +13,7 @@ produce four groups, several flags and a story worth reading.
 | `cockpit-status.png` | the model, what it has cost, and the workspace |
 | `tutorial.png` | the built-in tour at `/tutorial` |
 | `cockpit-analyses.png` | the three analysis cards, with real findings |
+| `cockpit-log.png` | the history card, with a colleague's commit incoming |
 
 To recapture: run `msr web`, narrate a target, then screenshot at 1600×1000.
 Headless Chrome works:
