@@ -24,4 +24,16 @@ type Note struct {
 	Text         string    `json:"text"`
 	TS           time.Time `json:"ts"`
 	SupersededBy string    `json:"superseded_by,omitempty"`
+	// Anchor is the diff line this note is about, verbatim. Empty means the
+	// note is about the file as a whole, which is what every note was before
+	// line-level ones existed (ADR 0028).
+	//
+	// The line's *text* rather than its number: a diff grows above the line you
+	// commented on constantly, and a number would drift onto something else
+	// without ever looking wrong.
+	Anchor string `json:"anchor,omitempty"`
+	// AnchorNth tells identical lines apart — closing braces, blank lines and
+	// `return nil` are everywhere, and text alone would put every note on the
+	// first one.
+	AnchorNth int `json:"anchor_nth,omitempty"`
 }

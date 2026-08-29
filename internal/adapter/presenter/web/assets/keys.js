@@ -210,3 +210,56 @@ document.addEventListener('keydown', (e) => {
     default:
   }
 });
+
+// ── Annotating a line ───────────────────────────────────────────────────────
+//
+// Real review happens on lines (ADR 0028). Clicking one opens the file's own
+// note form with the line already anchored, rather than inventing a second
+// place to write notes: there is one form, and it learns what it is about.
+
+function noteForm(post) {
+  return post?.querySelector('form[action*="/notes"]');
+}
+
+document.addEventListener('click', (e) => {
+  const line = e.target.closest('.diff__line[data-anchor]');
+  if (!line) return;
+
+  const post = line.closest('.post');
+  const form = noteForm(post);
+  if (!form) return;
+
+  // Hidden fields rather than a separate endpoint: the same form, told which
+  // line it is about. Submitting without clicking a line leaves them empty,
+  // which is a note about the file — what every note was before this existed.
+  for (const [name, value] of [['anchor', line.dataset.anchor], ['nth', line.dataset.nth]]) {
+    let field = form.querySelector(`input[name="${name}"]`);
+    if (!field) {
+      field = document.createElement('input');
+      field.type = 'hidden';
+      field.name = name;
+      form.appendChild(field);
+    }
+    field.value = value ?? '';
+  }
+
+  for (const marked of post.querySelectorAll('.diff__line--anchoring')) {
+    marked.classList.remove('diff__line--anchoring');
+  }
+  line.classList.add('diff__line--anchoring');
+
+  const box = form.querySelector('textarea');
+  if (box) {
+    box.placeholder = 'note on this line…';
+    box.focus();
+  }
+});
+
+// Enter on a focused line does the same, so this is reachable without a mouse.
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter') return;
+  const line = e.target.closest?.('.diff__line[data-anchor]');
+  if (!line) return;
+  e.preventDefault();
+  line.click();
+});

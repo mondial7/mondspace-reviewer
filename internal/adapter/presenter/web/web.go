@@ -1776,6 +1776,12 @@ func (s *Server) handleAnnotate(w http.ResponseWriter, r *http.Request) {
 		Kind:      kind,
 		Text:      strings.TrimSpace(r.FormValue("text")),
 		TS:        s.now(),
+		// Empty when the note is about the file as a whole, which is still the
+		// common case (ADR 0028).
+		Anchor: r.FormValue("anchor"),
+	}
+	if nth, err := strconv.Atoi(r.FormValue("nth")); err == nil && nth > 0 {
+		note.AnchorNth = nth
 	}
 	if s.notes != nil {
 		if err := s.notes.AppendNote(note); err != nil {
@@ -1845,6 +1851,10 @@ type unitView struct {
 	Removed  int
 	Diff     []diffLine
 	Notes    []domain.Note
+	// Orphaned are notes whose line is no longer in this diff. Shown, and shown
+	// as such: a judgement about code that has gone must neither vanish nor
+	// read as current (ADR 0021, ADR 0028).
+	Orphaned []domain.Note
 	Model    string
 
 	// Edits is how the file reached this net change: a net-change review
@@ -1872,8 +1882,12 @@ type editView struct {
 }
 
 type diffLine struct {
-	Kind string // add | del | hunk | ctx
+	Kind string // add | del | hunk | ctx | meta
 	Text string
+	// Nth is which occurrence of this exact text the line is, so a note written
+	// on it can be found again among identical lines (ADR 0028).
+	Nth   int
+	Notes []domain.Note
 }
 
 func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
@@ -2393,7 +2407,9 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 			v.Highlights = narrative.Highlights[usecase.FileKey(u)]
 			compact, wasCompacted := usecase.CompactDiff(sess.Diffs[u.ID], cockpitDiffLines)
 			if wasCompacted {
-				v.Diff = splitDiff(compact.Text)
+				// Compacting drops lines, which can take an anchored note with
+				// them — so it is reported as orphaned rather than lost.
+				v.Diff, v.Orphaned = splitDiffWithNotes(compact.Text, notesFor(sess.Notes, u.ID))
 			}
 			gv.Files = append(gv.Files, feedItem{unitView: v, Compacted: wasCompacted})
 		}
@@ -2818,6 +2834,10 @@ func (s *Server) viewIn(sess Session, u domain.Unit) unitView {
 		}
 	}
 
+	// Line-level notes render on their line; the rest stay in the file's list.
+	lineNotes, orphaned := splitDiffWithNotes(d.Text, notes)
+	notes = fileLevel(notes)
+
 	why := u.Headline.Why
 	if why == "" && u.Headline.WhySrc != domain.WhyStated {
 		why = "(none stated)"
@@ -2847,7 +2867,8 @@ func (s *Server) viewIn(sess Session, u domain.Unit) unitView {
 		Flags:      flags,
 		Added:      added,
 		Removed:    removed,
-		Diff:       splitDiff(d.Text),
+		Diff:       lineNotes,
+		Orphaned:   orphaned,
 		Notes:      notes,
 		Model:      s.models[u.ID],
 	}
@@ -2863,6 +2884,64 @@ func baseNames(files []string) string {
 }
 
 // splitDiff classifies each diff line so the template can style it without logic.
+// fileLevel is the notes that are about the file rather than a line. A
+// line-level note renders on its line, so listing it again below the diff would
+// show the same judgement twice.
+func fileLevel(notes []domain.Note) []domain.Note {
+	var out []domain.Note
+	for _, n := range notes {
+		if n.Anchor == "" {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+// notesFor is one unit's notes.
+func notesFor(all []domain.Note, unitID string) []domain.Note {
+	var out []domain.Note
+	for _, n := range all {
+		if n.UnitID == unitID {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+// splitDiffWithNotes renders a diff with the line-level notes placed on the
+// lines they were written about, and returns the ones whose line has gone.
+func splitDiffWithNotes(text string, notes []domain.Note) ([]diffLine, []domain.Note) {
+	lines := splitDiff(text)
+	if len(notes) == 0 {
+		return lines, nil
+	}
+
+	// Anchoring is the pure part and lives in the usecase; this only maps the
+	// answer onto what the template renders.
+	anchored, orphaned := usecase.AnchorNotes(
+		domain.Diff{Text: strings.TrimRight(text, "\n")}, notes)
+
+	byText := map[string]map[int][]domain.Note{}
+	for _, a := range anchored {
+		if len(a.Notes) == 0 {
+			continue
+		}
+		if byText[a.Text] == nil {
+			byText[a.Text] = map[int][]domain.Note{}
+		}
+		byText[a.Text][a.Nth] = a.Notes
+	}
+
+	seen := map[string]int{}
+	for i := range lines {
+		nth := seen[lines[i].Text]
+		lines[i].Nth = nth
+		lines[i].Notes = byText[lines[i].Text][nth]
+		seen[lines[i].Text]++
+	}
+	return lines, orphaned
+}
+
 func splitDiff(text string) []diffLine {
 	if strings.TrimSpace(text) == "" {
 		return nil

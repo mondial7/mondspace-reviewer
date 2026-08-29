@@ -246,6 +246,12 @@ open its diff; long diffs are compacted with the hunk headers kept, and
 **tree** toggle swaps the diffs for an indented folder listing when you want the
 shape rather than the detail.
 
+**Annotate a line.** Click any added or removed line in a diff to write a note
+about that line — it renders there, and it is anchored to the line's *text*, so
+it survives the diff growing above it. If the line later disappears the note is
+kept and marked as no longer anchored rather than quietly dropped or quietly
+shown as current ([ADR 0028](ADR/0028-notes-on-lines.md)).
+
 **Annotate.** Every change takes a note and one of `ok` · `question` ·
 `objection` · `debt` · `note`. **The review log is the product** — the prose and
 the assistant exist only to help you produce it. Export it when you are done.

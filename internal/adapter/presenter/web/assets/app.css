@@ -2118,3 +2118,72 @@ a.log__branch:hover { text-decoration: underline; }
 }
 
 .exports a:hover { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* ── Notes on a line ────────────────────────────────────────────────────────
+   Real review happens on lines (ADR 0028). An annotatable line says so on
+   hover rather than all the time: a diff covered in affordances is harder to
+   read, which is the opposite of the point. */
+
+.diff__line[data-anchor] { cursor: pointer; }
+
+.diff__line[data-anchor]:hover {
+  outline: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  outline-offset: -1px;
+}
+
+.diff__line[data-anchor]:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+
+/* The line a note is being written about. */
+.diff__line--anchoring {
+  background: color-mix(in srgb, var(--accent) 18%, transparent) !important;
+}
+
+.diff__line--noted { box-shadow: inset 2px 0 0 var(--inferred); }
+
+.diff__note {
+  display: block;
+  margin: 0.15rem 0 0.3rem 1.2rem;
+  padding: 0.25rem 0.5rem;
+  border-left: 2px solid var(--inferred);
+  border-radius: 0 4px 4px 0;
+  background: color-mix(in srgb, var(--inferred) 8%, transparent);
+  color: var(--fg);
+  font-family: var(--sans, inherit);
+  font-size: 0.76rem;
+  white-space: normal;
+}
+
+.diff__notekind {
+  margin-right: 0.4rem;
+  padding: 0 0.28rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--inferred) 25%, transparent);
+  color: var(--inferred);
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  text-transform: uppercase;
+}
+
+/* A note whose line has gone. Kept, and marked: a judgement about code that no
+   longer exists must neither vanish nor read as current. */
+.note--orphaned {
+  margin: 0.4rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.note__orphan {
+  padding: 0.25rem 0.5rem;
+  border-left: 2px dashed var(--fg-dim);
+  color: var(--fg-dim);
+  font-size: 0.76rem;
+}
+
+.note__gone {
+  margin-left: 0.4rem;
+  font-style: italic;
+  opacity: 0.85;
+}

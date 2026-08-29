@@ -2830,3 +2830,63 @@ func (r *recordingNotes) AppendNote(n domain.Note) error {
 	r.notes = append(r.notes, n)
 	return nil
 }
+
+func TestALineCanBeAnnotatedAndTheNoteShowsUnderIt(t *testing.T) {
+	// Real review happens on lines. This was the widest gap between msr and
+	// what a reviewer expects (ADR 0028).
+	sess := testSession()
+	sess.Notes = []domain.Note{
+		{ID: "n1", UnitID: "s-f001", Kind: domain.NoteQuestion,
+			Anchor: "+new body", Text: "why replace the whole body?"},
+	}
+	h := web.NewServer(sess, nil)
+
+	body := get(t, h, "/").Body.String()
+
+	// The note renders against its line rather than in the file's note list.
+	if !strings.Contains(body, "diff__note") {
+		t.Errorf("a line note should render on its line:\n%s", body)
+	}
+	if !strings.Contains(body, "why replace the whole body?") {
+		t.Error("the note text should be shown")
+	}
+	// Every annotatable line carries what it takes to write one.
+	if !strings.Contains(body, "data-anchor") {
+		t.Error("diff lines should be annotatable")
+	}
+}
+
+func TestAnnotatingALineRecordsWhichLine(t *testing.T) {
+	kept := &recordingNotes{}
+	h := web.NewServer(testSession(), kept)
+
+	req := httptest.NewRequest(http.MethodPost, "/units/s-f001/notes",
+		strings.NewReader("kind=question&text=why+this&anchor=%2Bnew+body&nth=0"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	h.ServeHTTP(httptest.NewRecorder(), req)
+
+	if len(kept.notes) != 1 {
+		t.Fatalf("stored %+v", kept.notes)
+	}
+	if kept.notes[0].Anchor != "+new body" {
+		t.Errorf("Anchor = %q, want the line it was written on", kept.notes[0].Anchor)
+	}
+}
+
+func TestANoteWhoseLineWentIsShownAsSuch(t *testing.T) {
+	// It must not vanish, and must not be shown as though it still applies.
+	sess := testSession()
+	sess.Notes = []domain.Note{
+		{ID: "n1", UnitID: "s-f001", Kind: domain.NoteObjection,
+			Anchor: "+a line that is no longer in this diff", Text: "this was wrong"},
+	}
+	h := web.NewServer(sess, nil)
+
+	body := get(t, h, "/").Body.String()
+	if !strings.Contains(body, "this was wrong") {
+		t.Error("a note whose line went must still be shown")
+	}
+	if !strings.Contains(body, "note--orphaned") {
+		t.Errorf("it should be marked as no longer anchored:\n%s", body)
+	}
+}

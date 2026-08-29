@@ -556,8 +556,27 @@
           {{ end }}
 
           {{ if .Diff }}
-          <pre class="post__diff{{ if .Compacted }} post__diff--compact{{ end }}"><code>{{ range .Diff }}<span class="diff__line diff__line--{{ .Kind }}">{{ .Text }}</span>
-{{ end }}</code></pre>
+          <!-- Every added or removed line can be annotated: real review happens
+               on lines (ADR 0028). The anchor is the line's text, so the note
+               survives the diff growing above it. -->
+          <pre class="post__diff{{ if .Compacted }} post__diff--compact{{ end }}"><code>{{ range .Diff }}<span
+              class="diff__line diff__line--{{ .Kind }}{{ if .Notes }} diff__line--noted{{ end }}"
+              {{ if or (eq .Kind "add") (eq .Kind "del") }}data-anchor="{{ .Text }}" data-nth="{{ .Nth }}" tabindex="0" role="button" title="note this line"{{ end }}>{{ .Text }}</span>
+{{ range .Notes }}<span class="diff__note diff__note--{{ .Kind }}"><span class="diff__notekind">{{ .Kind }}</span>{{ .Text }}</span>
+{{ end }}{{ end }}</code></pre>
+
+          {{ with .Orphaned }}
+          <!-- The line these were written on is no longer in the diff. Neither
+               dropped nor shown as current (ADR 0021). -->
+          <ul class="note--orphaned">
+            {{ range . }}
+            <li class="note__orphan">
+              <span class="diff__notekind">{{ .Kind }}</span>{{ .Text }}
+              <span class="note__gone">the line this was on has changed</span>
+            </li>
+            {{ end }}
+          </ul>
+          {{ end }}
           {{ else }}
           <p class="diff diff--empty">No textual changes.</p>
           {{ end }}
