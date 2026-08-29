@@ -2682,3 +2682,48 @@ func TestAConversationComesBackWhenYouReturnToItsReview(t *testing.T) {
 		t.Errorf("the conversation was loaded again; it should be remembered")
 	}
 }
+
+func TestHiddenFilesAreAnnouncedNotJustGone(t *testing.T) {
+	// The whole safety argument for this feature: a review tool may leave files
+	// out only if it says so, says why, and can show them (ADR 0027).
+	sess := testSession()
+	sess.Hidden = []usecase.Hidden{
+		{Path: "go.sum", Pattern: "go.sum"},
+		{Path: "vendor/x/lib.go", Pattern: "vendor/"},
+	}
+	h := web.NewServer(sess, nil)
+
+	body := get(t, h, "/").Body.String()
+
+	if !strings.Contains(body, "2 files hidden") {
+		t.Errorf("the page should say how many were left out:\n%s", body)
+	}
+	for _, want := range []string{"go.sum", "vendor/", ".msrignore"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the page should name %q", want)
+		}
+	}
+	// ...and offer to show them.
+	if !strings.Contains(body, "all=1") {
+		t.Error("there should be a way to see them anyway")
+	}
+}
+
+func TestAskingForEverythingShowsTheHiddenFiles(t *testing.T) {
+	var wantedAll bool
+	sess := testSession()
+	h := web.NewServer(sess, nil).WithShowAll(func(all bool) { wantedAll = all })
+
+	get(t, h, "/?all=1")
+
+	if !wantedAll {
+		t.Error("?all=1 should ask for the hidden files back")
+	}
+}
+
+func TestNoBannerWhenNothingIsHidden(t *testing.T) {
+	// The common case. A banner that is always there is furniture.
+	if strings.Contains(get(t, web.NewServer(testSession(), nil), "/").Body.String(), "files hidden") {
+		t.Error("nothing hidden should mean no banner")
+	}
+}

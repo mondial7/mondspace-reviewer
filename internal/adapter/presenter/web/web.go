@@ -53,6 +53,10 @@ type Session struct {
 	// Target is what is being reviewed: a commit, a tag, a pull request, the
 	// working tree, or a recorded run (ADR 0017).
 	Target domain.Target
+	// Hidden is what .msrignore kept out of this review. It travels with the
+	// session so the page can always say what is missing and why: leaving files
+	// out silently is the one thing this feature must not do (ADR 0027).
+	Hidden []usecase.Hidden
 }
 
 // TargetSummary is one row of the workspace: something worth reviewing. Most
@@ -254,6 +258,7 @@ type Server struct {
 	runAnalysis    RunAnalysisFunc
 	analysisOf     AnalysisOf
 	logOf          LogOf
+	showAll        ShowAllFunc
 	branchesOf     BranchesOf
 	remoteWatch    RemoteWatchState
 	setRemoteWatch SetRemoteWatch
@@ -1391,6 +1396,47 @@ func onOff(on bool) string {
 	return "off"
 }
 
+// gitsnapIgnoreFile is what the rules file is called, named here so the page
+// can tell a reviewer where the rule they are looking at came from.
+const gitsnapIgnoreFile = ".msrignore"
+
+// ShowAllFunc is told when a reviewer wants the hidden files back, so the next
+// build of the review includes them.
+type ShowAllFunc func(all bool)
+
+// WithShowAll wires the "show them anyway" toggle.
+func (s *Server) WithShowAll(fn ShowAllFunc) *Server {
+	s.showAll = fn
+	return s
+}
+
+// Forget drops every cached review, so the next look rebuilds it.
+//
+// Needed when something changes what a review *contains* rather than what is
+// stored about it — turning the ignore rules off is the case that exists — and
+// a cache built under the old rules would otherwise answer for it.
+func (s *Server) Forget() {
+	s.mu.Lock()
+	s.loaded = map[string]Session{}
+	current, loader := s.sess.ID, s.loader
+	s.mu.Unlock()
+
+	if loader == nil || current == "" {
+		return
+	}
+	// The open review is not in that cache — it is the field itself — so it is
+	// rebuilt here or it would be the one thing still showing the old rules.
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if rebuilt, err := loader(ctx, current); err == nil && rebuilt.ID != "" {
+		s.mu.Lock()
+		rebuilt.Narrative = s.sess.Narrative
+		s.sess = rebuilt
+		s.mu.Unlock()
+	}
+	s.broadcast("units")
+}
+
 // LogView is recent history as the card shows it, with where the branch sits
 // against its upstream (issue #18).
 type LogView struct {
@@ -2203,6 +2249,10 @@ type groupView struct {
 func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 	// Which session is being read may differ from the one this server started
 	// with: a workspace spans repositories, and the switcher moves between them.
+	// Asked for before the session is resolved: it changes what gets built.
+	if s.showAll != nil {
+		s.showAll(r.URL.Query().Get("all") == "1")
+	}
 	sess := s.openSession(r)
 
 	s.mu.RLock()
@@ -2362,6 +2412,8 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 		CanRunAnalysis  bool
 		Log             LogView
 		HasLog          bool
+		Hidden          []usecase.Hidden
+		IgnoreFile      string
 	}{
 		Session: sess, Workspace: workspace, Targets: targets,
 		Repos: repos, CanCompare: canCompare,
@@ -2369,6 +2421,7 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 		Signoff: signoff, HasSignoff: signoffOf != nil, CanSignoff: canSignoff,
 		Analyses: analyses, CanAnalyse: canAnalyse, CanRunAnalysis: canRunAnalysis,
 		Log: gitlog, HasLog: logOf != nil && len(gitlog.Entries) > 0,
+		Hidden: sess.Hidden, IgnoreFile: gitsnapIgnoreFile,
 		HasThread: len(thread) > 0,
 		Review:    describeReview(narrative, groupIDs(groups), narrating, s.narrate != nil, s.now()),
 		Stats:     statsFor(sess.Target.Kind, stats, sess.Target.Subtitle),

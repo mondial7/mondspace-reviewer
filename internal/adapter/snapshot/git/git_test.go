@@ -1021,3 +1021,66 @@ func TestBranchesSkipTheSymbolicHeadRef(t *testing.T) {
 		t.Error("the real branch should still be listed")
 	}
 }
+
+func TestIgnoredAppliesACustomFileToTrackedPaths(t *testing.T) {
+	// msr's ignore rules are gitignore rules, applied by git rather than
+	// reimplemented: the syntax has enough corners that a second
+	// implementation would differ from the one people already know (ADR 0027).
+	dir := newRepo(t)
+	os.MkdirAll(filepath.Join(dir, "vendor", "x"), 0o755)
+	os.MkdirAll(filepath.Join(dir, "api"), 0o755)
+	for path, body := range map[string]string{
+		"vendor/x/lib.go":     "a\n",
+		"api/handler.go":      "b\n",
+		"go.sum":              "c\n",
+		"api/service.pb.go":   "d\n",
+		"api/mock_service.go": "e\n",
+	} {
+		os.WriteFile(filepath.Join(dir, path), []byte(body), 0o644)
+	}
+	gitCmd(t, dir, "add", "-A")
+	gitCmd(t, dir, "commit", "-m", "everything")
+
+	rules := filepath.Join(dir, ".msrignore")
+	os.WriteFile(rules, []byte("vendor/\ngo.sum\n*.pb.go\nmock_*.go\n"), 0o644)
+
+	paths := []string{"vendor/x/lib.go", "api/handler.go", "go.sum",
+		"api/service.pb.go", "api/mock_service.go"}
+
+	got, err := gitsnap.New(dir, "s").Ignored(context.Background(), rules, paths)
+	if err != nil {
+		t.Fatalf("Ignored: %v", err)
+	}
+
+	// Tracked files are never "ignored" to git in the ordinary sense, so this
+	// has to ask about the rules rather than about the index.
+	if _, hidden := got["api/handler.go"]; hidden {
+		t.Error("the reviewer's own file must not be hidden")
+	}
+	for _, want := range []string{"vendor/x/lib.go", "go.sum", "api/service.pb.go", "api/mock_service.go"} {
+		if _, hidden := got[want]; !hidden {
+			t.Errorf("%s should be hidden by the rules", want)
+		}
+	}
+	// The pattern comes back too, so the page can say *why* something is gone.
+	if got["go.sum"] != "go.sum" {
+		t.Errorf("go.sum matched %q, want the pattern that hid it", got["go.sum"])
+	}
+	if got["vendor/x/lib.go"] != "vendor/" {
+		t.Errorf("vendor file matched %q", got["vendor/x/lib.go"])
+	}
+}
+
+func TestNoIgnoreFileHidesNothing(t *testing.T) {
+	// Nothing is hidden unless the reviewer asked for it. A review tool that
+	// hides files by default is a review tool you cannot trust.
+	dir := newRepo(t)
+	got, err := gitsnap.New(dir, "s").Ignored(context.Background(),
+		filepath.Join(dir, ".msrignore"), []string{"a.go", "go.sum"})
+	if err != nil {
+		t.Fatalf("Ignored: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("got %v, want nothing hidden", got)
+	}
+}

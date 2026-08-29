@@ -399,3 +399,37 @@ func conversationsOf() web.ConversationsOf {
 		return sess.Exchanges
 	}
 }
+
+// showAll is whether the reviewer has asked to see the files .msrignore keeps
+// out. It is a session-wide switch rather than a per-request one because the
+// review is built by a loader that the request does not reach into, and msr is
+// one reviewer at one screen (ADR 0027).
+var (
+	showAllMu sync.RWMutex
+	showAllOn bool
+)
+
+func setShowAll(on bool) {
+	showAllMu.Lock()
+	showAllOn = on
+	showAllMu.Unlock()
+	// The review has to be rebuilt to take effect, and a loaded one is cached.
+	if h := handlerRef(); h != nil {
+		h.Forget()
+	}
+}
+
+func showingAll() bool {
+	showAllMu.RLock()
+	defer showAllMu.RUnlock()
+	return showAllOn
+}
+
+// pathsOf is every file a set of units covers.
+func pathsOf(units []domain.Unit) []string {
+	var out []string
+	for _, u := range units {
+		out = append(out, u.Files...)
+	}
+	return out
+}

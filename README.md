@@ -220,6 +220,24 @@ your index or your working tree — there is a test for exactly that. When a
 colleague pushes you get a toast naming who: *"3 new commits on origin/main ·
 Alice"* ([ADR 0025](ADR/0025-watching-the-remote.md)).
 
+**Hide what nobody reviews.** An agent's diff is full of `go.sum`, generated
+mocks, protobuf output and `vendor/`. Put a `.msrignore` at the repository root,
+in gitignore syntax:
+
+```gitignore
+vendor/
+node_modules/
+*.pb.go
+mock_*.go
+*.generated.go
+```
+
+There are **no defaults** — nothing is left out of a review unless you asked for
+it, and hiding lockfiles by default would mask the very dependency change
+`new-dep` exists to flag. When rules are active the page always says how many
+files were hidden, which ones, and the pattern that did it, with one click to
+show them anyway ([ADR 0027](ADR/0027-ignoring-generated-files.md)).
+
 **Read.** Start with what happened in a folder, then ask what happened to one
 file in it — both are a click, and both are one sentence about what the change
 is *for*. Click a chapter and its files come up beside it. Click a filename to

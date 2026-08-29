@@ -6,6 +6,7 @@ package git
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -840,4 +841,63 @@ func shortBranch(name string) string {
 		return rest
 	}
 	return name
+}
+
+// IgnoreFile is what msr's own ignore rules are called, at the repository root.
+const IgnoreFile = ".msrignore"
+
+// Ignored reports which of the given paths the rules in ignoreFile exclude, and
+// which pattern excluded each.
+//
+// The rules are gitignore rules and git applies them, rather than msr
+// reimplementing the syntax: it has enough corners — anchoring, directory-only
+// matches, negation, `**` — that a second implementation would quietly differ
+// from the one people already know (ADR 0027).
+//
+// --no-index is what makes this work at all. To git a *tracked* file is never
+// "ignored", so without it every path in a review would come back clean.
+//
+// A missing rules file hides nothing. Nothing is hidden from a review unless
+// the reviewer asked for it.
+func (s *Snapshotter) Ignored(ctx context.Context, ignoreFile string, paths []string) (map[string]string, error) {
+	if len(paths) == 0 {
+		return nil, nil
+	}
+	if _, err := os.Stat(ignoreFile); err != nil {
+		return nil, nil
+	}
+
+	cmd := exec.CommandContext(ctx, "git",
+		"-c", "core.excludesFile="+ignoreFile,
+		"check-ignore", "--no-index", "--stdin", "--verbose")
+	cmd.Dir = s.repoDir
+	cmd.Env = os.Environ()
+	cmd.Stdin = strings.NewReader(strings.Join(paths, "\n") + "\n")
+
+	out, err := cmd.Output()
+	if err != nil {
+		// Exit status 1 means "nothing matched", which is an answer rather than
+		// a failure. Anything else and the rules are not applied at all — which
+		// shows every file, the safe way to be wrong.
+		var exit *exec.ExitError
+		if errors.As(err, &exit) && exit.ExitCode() == 1 {
+			return nil, nil
+		}
+		return nil, nil
+	}
+
+	hidden := map[string]string{}
+	for _, line := range strings.Split(string(out), "\n") {
+		// source:linenum:pattern\tpath
+		rule, path, found := strings.Cut(strings.TrimSpace(line), "\t")
+		if !found || path == "" {
+			continue
+		}
+		pattern := rule
+		if i := strings.LastIndex(rule, ":"); i >= 0 {
+			pattern = rule[i+1:]
+		}
+		hidden[path] = pattern
+	}
+	return hidden, nil
 }

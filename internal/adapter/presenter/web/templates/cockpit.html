@@ -175,6 +175,28 @@
          section must contribute no height and no gap. -->
     <div class="cockpit__head">
 
+    <!-- What .msrignore kept out. A review tool may leave files out only if it
+         says so, says why, and can show them on request (ADR 0027). -->
+    {{ if .Hidden }}
+    <section class="hidden" id="hidden">
+      <details class="hidden__inner">
+        <summary class="hidden__head">
+          <span class="hidden__count">{{ len .Hidden }} files hidden</span>
+          <span class="hidden__why">by <code>{{ .IgnoreFile }}</code></span>
+          <a class="hidden__show" href="?target={{ .Session.ID }}&amp;all=1">show them</a>
+        </summary>
+        <ul class="hidden__list">
+          {{ range .Hidden }}
+          <li class="hidden__file">
+            <code class="hidden__path">{{ .Path }}</code>
+            <span class="hidden__rule">{{ .Pattern }}</span>
+          </li>
+          {{ end }}
+        </ul>
+      </details>
+    </section>
+    {{ end }}
+
     <!-- Work that arrived while the reviewer was reading (ADR 0020).
          Folding it in silently would change what they are judging underneath
          them; withholding it would let them finish a review of something that

@@ -13,7 +13,7 @@ const stream = new EventSource('/events');
 // would restart the animation every time a commit landed.
 const REGIONS = ['.cockpit__story', '.cockpit__changes', '.cockpit__stats',
   '.cockpit__status', '.reviewcard', '.brief', '.board', '.activity', '.queue',
-  '.storynav', '#refs', '#pending', '#analyses'];
+  '.storynav', '#refs', '#pending', '#analyses', '#hidden'];
 
 let pending = false;
 

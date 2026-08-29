@@ -168,6 +168,7 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 		WithConfigure(configureAgent(pool, *configPath, &agent)).
 		WithExchanges(exchangeStore(store), sess.Exchanges).
 		WithConversations(conversationsOf()).
+		WithShowAll(setShowAll).
 		WithAsk(webAskFunc(sess, view.Units, view.Diffs, snap, pool.For(domain.Ask))).
 		WithReanalyse(webReanalyseFunc(snap, pool.For(domain.Describe), agent.For(domain.Describe).Model)).
 		WithAudit(workspaceAudit{writeTo: filepath.Join(storeRoot, initial, "audit.jsonl")})
@@ -960,6 +961,15 @@ func targetLoader() web.Loader {
 			return web.Session{}, err
 		}
 
+		// What .msrignore keeps out — unless the reviewer has asked to see
+		// everything, in which case nothing is filtered and nothing is claimed
+		// to be hidden (ADR 0027).
+		var hidden []usecase.Hidden
+		if !showingAll() {
+			rules, _ := snap.Ignored(ctx, filepath.Join(entry.repo, gitsnap.IgnoreFile), pathsOf(units))
+			units, hidden = usecase.SplitIgnored(units, rules)
+		}
+
 		// What is *in* this range. A session is the exception: it is bounded by
 		// when the run happened, not by two refs.
 		var commits []domain.Commit
@@ -972,6 +982,7 @@ func targetLoader() web.Loader {
 		view := web.Session{
 			ID: targetID, Prompt: t.Title, Repo: filepath.Base(mustAbs(entry.repo)),
 			Units: units, Notes: usecase.MarkSuperseded(units, sess.Notes), Diffs: diffs,
+			Hidden:    hidden,
 			Stats:     usecase.ComputeStats(sess, units, diffs, commits, time.Now()),
 			Histories: usecase.FileHistories(sess.Events, units),
 			Target:    t,
@@ -1020,6 +1031,14 @@ func sessionLoader(workspace []web.SessionSummary, out string) web.Loader {
 			return web.Session{}, err
 		}
 
+		// The same rules apply to a recorded session as to any other review: an
+		// agent's run is exactly where generated files pile up (ADR 0027).
+		var hidden []usecase.Hidden
+		if !showingAll() {
+			rules, _ := snap.Ignored(ctx, filepath.Join(entry.repo, gitsnap.IgnoreFile), pathsOf(units))
+			units, hidden = usecase.SplitIgnored(units, rules)
+		}
+
 		commits, _ := snap.CommitsSince(ctx, firstEventTime(sess))
 
 		// A story already written for this session is reused; one that has never
@@ -1038,6 +1057,7 @@ func sessionLoader(workspace []web.SessionSummary, out string) web.Loader {
 		return web.Session{
 			ID: sessionID, Prompt: sess.Prompt, Repo: filepath.Base(mustAbs(entry.repo)),
 			Units: units, Notes: usecase.MarkSuperseded(units, sess.Notes), Diffs: diffs,
+			Hidden:    hidden,
 			Stats:     usecase.ComputeStats(sess, units, diffs, commits, time.Now()),
 			Histories: usecase.FileHistories(sess.Events, units),
 			Narrative: narrative,

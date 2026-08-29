@@ -2024,3 +2024,77 @@ a.toast:hover { border-color: var(--kind, var(--accent)); }
 
 /* The upstream in the history card is a link to this page. */
 a.log__branch:hover { text-decoration: underline; }
+
+/* ── Files kept out of a review ─────────────────────────────────────────────
+   A review tool may leave files out only if it says so, says why, and can show
+   them on request (ADR 0027). Quiet, because the common case is that this is
+   exactly what the reviewer wanted — but never absent. */
+
+.hidden { grid-column: 1 / -1; }
+
+.hidden__inner {
+  padding: 0.4rem 0.7rem;
+  border: 1px dashed var(--rule);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--fg-dim) 5%, transparent);
+}
+
+.hidden__head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  cursor: pointer;
+  color: var(--fg-dim);
+  font-size: 0.76rem;
+  list-style: none;
+}
+
+.hidden__head::-webkit-details-marker { display: none; }
+.hidden__head::before { content: "▸"; font-size: 0.7em; }
+.hidden__inner[open] .hidden__head::before { content: "▾"; }
+
+.hidden__count { color: var(--fg); font-weight: 600; }
+
+.hidden__show {
+  margin-left: auto;
+  color: var(--accent);
+  font-size: 0.74rem;
+}
+
+.hidden__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin: 0.5rem 0 0.2rem;
+  padding: 0;
+  max-height: 11rem;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.hidden__file {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: 0.72rem;
+}
+
+.hidden__path {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--fg-dim);
+  font-family: var(--mono);
+}
+
+/* The rule that hid it, so a surprising absence can be traced to a line in a
+   file rather than to the tool. */
+.hidden__rule {
+  margin-left: auto;
+  flex: none;
+  padding: 0 0.3rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--fg-dim) 18%, transparent);
+  color: var(--fg-dim);
+  font-family: var(--mono);
+  font-size: 0.64rem;
+}
