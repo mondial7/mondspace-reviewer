@@ -46,6 +46,8 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 	// the one thing msr otherwise never does — so it is asked for, never
 	// assumed (ADR 0025). Without it the log still reports whatever the
 	// reviewer's own last fetch brought in.
+	allowRemote := fs.Bool("allow-remote", false,
+		"serve to more than this machine (msr has no authentication; see --addr)")
 	fetch := fs.Bool("fetch", false,
 		"periodically git fetch, to see what the rest of the team is pushing (writes remote-tracking refs)")
 	fetchEvery := fs.Duration("fetch-every", 2*time.Minute,
@@ -163,6 +165,8 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 		WithLiveActions(liveActions()).
 		WithSignoff(saveSignoff(), loadSignoff()).
 		WithAnalyses(runAnalysis(pool, agent.For(domain.Narration).Model), analysisOf()).
+		WithJudge(judgeFinding()).
+		WithSearch(searchWorkspace()).
 		WithLog(buildLog(repo)).
 		WithBranches(branchesOf(repo)).
 		WithConfigure(configureAgent(pool, *configPath, &agent)).
@@ -224,6 +228,13 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 	})
 	setHandler(handler)
 	go watchRemote(ctx, handler, repo, watch)
+
+	// Before anything is served, and before the model is contacted: this is
+	// about who can read the review, and it should fail at the start rather
+	// than after a repository crawl (ADR 0030).
+	if err := checkBind(*addr, *allowRemote); err != nil {
+		return err
+	}
 
 	ln, err := net.Listen("tcp", *addr)
 	if err != nil {

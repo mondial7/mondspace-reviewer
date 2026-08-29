@@ -256,6 +256,8 @@ type Server struct {
 	signoffOf      SignoffOf
 	signErr        string
 	runAnalysis    RunAnalysisFunc
+	judge          JudgeFindingFunc
+	search         SearchFunc
 	analysisOf     AnalysisOf
 	logOf          LogOf
 	showAll        ShowAllFunc
@@ -1080,6 +1082,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /status", s.handleStatus)
 	s.mux.HandleFunc("GET /tutorial", s.handleTutorial)
 	s.mux.HandleFunc("GET /branches", s.handleBranches)
+	s.mux.HandleFunc("GET /search", s.handleSearch)
 	s.mux.HandleFunc("GET /export", s.handleExport)
 	s.mux.HandleFunc("POST /remote", s.handleRemoteWatch)
 	s.mux.HandleFunc("POST /repos", s.handleAddRepo)
@@ -1088,6 +1091,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /story/narrate", s.handleNarrate)
 	s.mux.HandleFunc("POST /review/signoff", s.handleSignoff)
 	s.mux.HandleFunc("POST /analysis/{kind}", s.handleAnalysis)
+	s.mux.HandleFunc("POST /analysis/{kind}/judge", s.handleJudge)
 	s.mux.HandleFunc("POST /live/include", s.handleInclude)
 	s.mux.HandleFunc("POST /live/split", s.handleSplit)
 	s.mux.HandleFunc("GET /events", s.handleEvents)
@@ -1459,6 +1463,106 @@ func (s *Server) WithLog(of LogOf) *Server {
 	return s
 }
 
+// SearchFunc searches everything written across the workspace.
+type SearchFunc func(query string) []usecase.Searchable
+
+// WithSearch wires searching the review log.
+func (s *Server) WithSearch(fn SearchFunc) *Server {
+	s.search = fn
+	return s
+}
+
+// handleSearch answers "where did I write that".
+func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
+	s.mu.RLock()
+	search := s.search
+	work := s.workLocked()
+	s.mu.RUnlock()
+	if search == nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	query := strings.TrimSpace(r.URL.Query().Get("q"))
+	hits := search(query)
+
+	// Grouped for reading: several hits in one review are one place to go back
+	// to, not several.
+	type group struct {
+		TargetID, TargetRef, Title string
+		Hits                       []usecase.Searchable
+	}
+	var groups []group
+	for _, h := range hits {
+		if n := len(groups); n > 0 && groups[n-1].TargetID == h.TargetID {
+			groups[n-1].Hits = append(groups[n-1].Hits, h)
+			continue
+		}
+		groups = append(groups, group{
+			TargetID: h.TargetID, TargetRef: h.TargetRef, Title: h.TargetTitle,
+			Hits: []usecase.Searchable{h},
+		})
+	}
+
+	s.render(w, "search.html", struct {
+		Query  string
+		Groups []group
+		Total  int
+		Work   []Work
+		Blank  bool
+	}{
+		Query: query, Groups: groups, Total: len(hits),
+		Work: work, Blank: query == "",
+	})
+}
+
+// JudgeFindingFunc records what a reviewer made of one finding (ADR 0030).
+type JudgeFindingFunc func(ctx context.Context, targetID string, kind domain.AnalysisKind,
+	file, note string, verdict domain.Verdict) error
+
+// WithJudge wires dismissing and confirming findings.
+func (s *Server) WithJudge(fn JudgeFindingFunc) *Server {
+	s.judge = fn
+	return s
+}
+
+// handleJudge records a reviewer's verdict on one finding.
+func (s *Server) handleJudge(w http.ResponseWriter, r *http.Request) {
+	kind := domain.AnalysisKind(r.PathValue("kind"))
+	if _, known := usecase.AuditFor(kind); !known {
+		http.NotFound(w, r)
+		return
+	}
+
+	s.mu.RLock()
+	judge := s.judge
+	s.mu.RUnlock()
+	if judge == nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	target, ok := s.actionTarget(r)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+
+	verdict := domain.Verdict(r.FormValue("verdict"))
+	if verdict != domain.VerdictDismissed && verdict != domain.VerdictConfirmed {
+		http.Error(w, "unknown verdict", http.StatusBadRequest)
+		return
+	}
+
+	if err := judge(r.Context(), target, kind,
+		r.FormValue("file"), r.FormValue("note"), verdict); err == nil {
+		s.Record(AuditEntry{SessionID: target, Action: string(kind) + "-" + string(verdict),
+			Detail: r.FormValue("file") + ": " + usecase.Brief(r.FormValue("note"), 60)})
+	}
+	s.broadcast("analysis")
+	http.Redirect(w, r, backTo(r, "#analyses"), http.StatusSeeOther)
+}
+
 // RunAnalysisFunc runs one audit over one target. AnalysisOf reads back
 // whatever the last run of one recorded.
 type RunAnalysisFunc func(ctx context.Context, targetID string, kind domain.AnalysisKind) error
@@ -1776,6 +1880,7 @@ func (s *Server) handleAnnotate(w http.ResponseWriter, r *http.Request) {
 		Kind:      kind,
 		Text:      strings.TrimSpace(r.FormValue("text")),
 		TS:        s.now(),
+		File:      strings.Join(unit.Files, ", "),
 		// Empty when the note is about the file as a whole, which is still the
 		// common case (ADR 0028).
 		Anchor: r.FormValue("anchor"),
@@ -2298,6 +2403,7 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 	// stored result is worth showing even where nothing can be run.
 	canAnalyse := s.runAnalysis != nil || s.analysisOf != nil
 	canRunAnalysis := s.runAnalysis != nil
+	canJudgeFindings := s.judge != nil
 	stats := sess.Stats
 	narrative := sess.Narrative
 	work := s.workLocked()
@@ -2359,7 +2465,7 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 
 	// An audit fingerprints the units it read, so the same function decides
 	// whether what it read is still what is on screen.
-	analyses := analysisCards(analysisOf, running, failedAudit, sess.ID, usecase.Fingerprint(sess.Units), s.now())
+	analyses := analysisCards(analysisOf, running, failedAudit, sess.ID, usecase.Fingerprint(sess.Units), s.now(), canJudgeFindings)
 
 	byID := map[string]unitView{}
 	for _, v := range views {
@@ -2620,6 +2726,7 @@ type analysisCard struct {
 	Verdict  string
 	Err      string
 	Findings []domain.Finding
+	CanJudge bool
 }
 
 // analysisCards builds one card per audit on offer, in a fixed order.
@@ -2627,7 +2734,7 @@ type analysisCard struct {
 // Each is read independently and none is told about the others: two readings of
 // the same change are worth more than one reading twice.
 func analysisCards(of AnalysisOf, running map[string]bool, failed map[string]string,
-	targetID, print string, now time.Time) []analysisCard {
+	targetID, print string, now time.Time, canJudge bool) []analysisCard {
 
 	out := make([]analysisCard, 0, len(usecase.Audits()))
 	for _, a := range usecase.Audits() {
@@ -2657,6 +2764,7 @@ func analysisCards(of AnalysisOf, running map[string]bool, failed map[string]str
 		}
 
 		card.Verdict, card.Findings = got.Verdict, got.Findings
+		card.CanJudge = canJudge
 		card.When = usecase.Ago(now.Sub(got.At))
 		card.Worst = string(got.Worst())
 		card.Tally = tallyOf(got)

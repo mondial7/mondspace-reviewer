@@ -296,3 +296,47 @@ func extractJSON(reply string) string {
 	}
 	return reply[start : end+1]
 }
+
+// Judge records what a reviewer made of one finding (ADR 0030).
+//
+// The finding stays. Removing it would invite the next run of the audit to
+// raise the same thing as though it were new, which is how a dismissal becomes
+// pointless.
+func Judge(a domain.Analysis, file, note string, verdict domain.Verdict) domain.Analysis {
+	out := a
+	out.Findings = append([]domain.Finding(nil), a.Findings...)
+	for i := range out.Findings {
+		if out.Findings[i].File == file && out.Findings[i].Note == note {
+			out.Findings[i].Verdict = verdict
+		}
+	}
+	return out
+}
+
+// CarryJudgements moves what the reviewer already decided onto a fresh run of
+// the same audit.
+//
+// A rerun produces the same findings from the same diff, so without this a
+// dismissal would last exactly until the next click. Matched on the file *and*
+// the claim: if the model now says something different about the same file that
+// is a new claim, and nobody has ruled on it.
+func CarryJudgements(fresh, earlier domain.Analysis) domain.Analysis {
+	if len(earlier.Findings) == 0 {
+		return fresh
+	}
+	judged := make(map[string]domain.Verdict, len(earlier.Findings))
+	for _, f := range earlier.Findings {
+		if f.Verdict != "" {
+			judged[f.File+"\x00"+f.Note] = f.Verdict
+		}
+	}
+
+	out := fresh
+	out.Findings = append([]domain.Finding(nil), fresh.Findings...)
+	for i := range out.Findings {
+		if v, ok := judged[out.Findings[i].File+"\x00"+out.Findings[i].Note]; ok {
+			out.Findings[i].Verdict = v
+		}
+	}
+	return out
+}

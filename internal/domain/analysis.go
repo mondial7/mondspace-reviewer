@@ -59,13 +59,34 @@ func (s Severity) Normalise() Severity {
 	return SeverityMedium
 }
 
-// Finding is one thing worth a second look: where, one line about why, and how
-// much it should interrupt.
+// Verdict is what the reviewer decided about a finding (ADR 0030).
+//
+// Only "dismissed" exists as a state that changes anything: a finding nobody
+// has ruled on and a finding somebody confirmed are both things still to deal
+// with, and inventing a third colour for the difference would be decoration.
+type Verdict string
+
+const (
+	// VerdictDismissed: looked at, not a problem. It stays on the card, greyed,
+	// because deleting it would invite the next audit to raise it again as
+	// though it were new.
+	VerdictDismissed Verdict = "dismissed"
+	// VerdictConfirmed: looked at, and it is real. Recorded because "I have
+	// read this" is worth distinguishing from "nobody has looked".
+	VerdictConfirmed Verdict = "confirmed"
+)
+
+// Finding is one thing worth a second look: where, one line about why, how much
+// it should interrupt, and what the reviewer made of it.
 type Finding struct {
 	File     string   `json:"file,omitempty"`
 	Note     string   `json:"note"`
 	Severity Severity `json:"severity,omitempty"`
+	Verdict  Verdict  `json:"verdict,omitempty"`
 }
+
+// Stands reports whether this finding is still something to deal with.
+func (f Finding) Stands() bool { return f.Verdict != VerdictDismissed }
 
 // Analysis is the result of running one audit over one target.
 type Analysis struct {
@@ -88,14 +109,27 @@ type Analysis struct {
 func (a Analysis) Done() bool { return !a.At.IsZero() }
 
 // Clean reports that it ran and found nothing.
-func (a Analysis) Clean() bool { return a.Done() && len(a.Findings) == 0 }
+func (a Analysis) Clean() bool { return a.Done() && len(a.Standing()) == 0 }
+
+// Standing is the findings the reviewer has not dismissed. Everything that
+// counts or colours anything is measured on these: a card still reporting
+// "2 high" after both were dismissed has not listened.
+func (a Analysis) Standing() []Finding {
+	var out []Finding
+	for _, f := range a.Findings {
+		if f.Stands() {
+			out = append(out, f)
+		}
+	}
+	return out
+}
 
 // Worst is the highest severity among the findings, or empty when there are
 // none. The card is coloured from it, so a row of cards can be read at a glance
 // without opening any of them.
 func (a Analysis) Worst() Severity {
 	worst := Severity("")
-	for _, f := range a.Findings {
+	for _, f := range a.Standing() {
 		if worst == "" || f.Severity.Rank() < worst.Rank() {
 			worst = f.Severity.Normalise()
 		}
@@ -107,7 +141,7 @@ func (a Analysis) Worst() Severity {
 // space than "3 to look at".
 func (a Analysis) Tally() map[Severity]int {
 	out := map[Severity]int{}
-	for _, f := range a.Findings {
+	for _, f := range a.Standing() {
 		out[f.Severity.Normalise()]++
 	}
 	return out

@@ -329,3 +329,113 @@ func TestAnAnalysisCountsBySeverity(t *testing.T) {
 		t.Errorf("Tally = %v", got)
 	}
 }
+
+func TestAFindingCanBeDismissedAndStaysDismissed(t *testing.T) {
+	// A finding you have judged not-real comes back identically on every rerun.
+	// Without somewhere to put that judgement, the only way to stop seeing it is
+	// to stop running the audit (ADR 0030).
+	before := domain.Analysis{
+		TargetID: "t1", Kind: usecase.AuditSecurity, At: time.Now(),
+		Findings: []domain.Finding{
+			{File: "a.go", Note: "hardcoded secret", Severity: domain.SeverityHigh},
+			{File: "b.go", Note: "unvalidated input", Severity: domain.SeverityMedium},
+		},
+	}
+
+	judged := usecase.Judge(before, "a.go", "hardcoded secret", domain.VerdictDismissed)
+
+	if len(judged.Findings) != 2 {
+		t.Fatalf("dismissing must not remove it: %+v", judged.Findings)
+	}
+	var dismissed, standing int
+	for _, f := range judged.Findings {
+		switch f.Verdict {
+		case domain.VerdictDismissed:
+			dismissed++
+		default:
+			standing++
+		}
+	}
+	if dismissed != 1 || standing != 1 {
+		t.Errorf("got %d dismissed and %d standing, want one each", dismissed, standing)
+	}
+}
+
+func TestADismissalSurvivesTheAuditBeingRunAgain(t *testing.T) {
+	// The point. A rerun produces the same findings from the same diff, and the
+	// judgement has to be carried onto them or it was pointless.
+	judged := domain.Analysis{
+		TargetID: "t1", Kind: usecase.AuditSecurity, At: time.Now(),
+		Findings: []domain.Finding{
+			{File: "a.go", Note: "hardcoded secret", Verdict: domain.VerdictDismissed},
+			{File: "b.go", Note: "unvalidated input"},
+		},
+	}
+	rerun := domain.Analysis{
+		TargetID: "t1", Kind: usecase.AuditSecurity, At: time.Now(),
+		Findings: []domain.Finding{
+			{File: "a.go", Note: "hardcoded secret", Severity: domain.SeverityHigh},
+			{File: "b.go", Note: "unvalidated input", Severity: domain.SeverityMedium},
+			{File: "c.go", Note: "something new", Severity: domain.SeverityLow},
+		},
+	}
+
+	got := usecase.CarryJudgements(rerun, judged)
+
+	by := map[string]domain.Verdict{}
+	for _, f := range got.Findings {
+		by[f.File] = f.Verdict
+	}
+	if by["a.go"] != domain.VerdictDismissed {
+		t.Errorf("a.go = %q, want the dismissal carried over", by["a.go"])
+	}
+	if by["b.go"] != "" || by["c.go"] != "" {
+		t.Errorf("nothing else should be judged: %+v", by)
+	}
+}
+
+func TestAFindingThatChangedIsNotSilentlyStillDismissed(t *testing.T) {
+	// A dismissal is about a specific claim. If the model now says something
+	// different about the same file, that is a new claim and has not been ruled
+	// on — carrying the dismissal across would hide it.
+	judged := domain.Analysis{Findings: []domain.Finding{
+		{File: "a.go", Note: "hardcoded secret", Verdict: domain.VerdictDismissed},
+	}}
+	rerun := domain.Analysis{Findings: []domain.Finding{
+		{File: "a.go", Note: "the key is read from the environment now, but logged"},
+	}}
+
+	got := usecase.CarryJudgements(rerun, judged)
+
+	if got.Findings[0].Verdict != "" {
+		t.Errorf("a different claim about the same file must not inherit a dismissal")
+	}
+}
+
+func TestStandingFindingsAreWhatTheCardCountsAndColours(t *testing.T) {
+	// A card that still says "2 high" after both were dismissed has not
+	// listened.
+	a := domain.Analysis{At: time.Now(), Findings: []domain.Finding{
+		{File: "a.go", Note: "x", Severity: domain.SeverityHigh, Verdict: domain.VerdictDismissed},
+		{File: "b.go", Note: "y", Severity: domain.SeverityLow},
+	}}
+
+	if got := a.Worst(); got != domain.SeverityLow {
+		t.Errorf("Worst = %q, want the worst *standing* finding", got)
+	}
+	if tally := a.Tally(); tally[domain.SeverityHigh] != 0 || tally[domain.SeverityLow] != 1 {
+		t.Errorf("Tally = %v, want only what still stands", tally)
+	}
+	if a.Clean() {
+		t.Error("something still stands, so it is not clean")
+	}
+}
+
+func TestDismissingEverythingLeavesACleanCard(t *testing.T) {
+	a := domain.Analysis{At: time.Now(), Findings: []domain.Finding{
+		{File: "a.go", Note: "x", Severity: domain.SeverityHigh, Verdict: domain.VerdictDismissed},
+	}}
+	if !a.Clean() {
+		t.Error("with everything dismissed, nothing stands")
+	}
+}

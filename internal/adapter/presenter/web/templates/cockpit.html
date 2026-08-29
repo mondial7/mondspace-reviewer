@@ -17,6 +17,7 @@
     <a class="storynav__brand" href="/">msr</a>
     <a class="storynav__link" href="/" aria-current="page">cockpit</a>
     <a class="storynav__link" href="/branches">branches</a>
+    <a class="storynav__link" href="/search">search</a>
     <a class="storynav__link" href="/activity">activity</a>
     <a class="storynav__link" href="/status">status</a>
     <a class="storynav__link" href="/tutorial">tour</a>
@@ -341,7 +342,7 @@
         {{ end }}
       </article>
 
-      {{ range .Analyses }}
+      {{ range $card := .Analyses }}
       <article class="acard acard--{{ .State }}{{ with .Worst }} acard--worst-{{ . }}{{ end }}">
         <header class="acard__head">
           <h2 class="acard__title">{{ .Title }}</h2>
@@ -362,12 +363,36 @@
         {{ if .Findings }}
         <ul class="acard__findings">
           {{ range .Findings }}
-          <li class="acard__finding acard__finding--{{ .Severity }}">
+          <li class="acard__finding acard__finding--{{ .Severity }}
+                     {{ if eq (printf "%s" .Verdict) "dismissed" }}acard__finding--dismissed{{ end }}">
             <span class="acard__where">
               <span class="sev sev--{{ .Severity }}">{{ .Severity }}</span>
               {{ with .File }}<code class="acard__file">{{ . }}</code>{{ end }}
+              {{ with .Verdict }}<span class="acard__verdicted">{{ . }}</span>{{ end }}
             </span>
             <span class="acard__note">{{ .Note }}</span>
+
+            <!-- A finding you have ruled on comes back identically on every
+                 rerun. This is where that judgement goes (ADR 0030). -->
+            {{ if $card.CanJudge }}
+            <span class="acard__judge">
+              {{ if ne (printf "%s" .Verdict) "dismissed" }}
+              <form method="post" action="/analysis/{{ $card.Kind }}/judge?target={{ $.Session.ID }}">
+                <input type="hidden" name="file" value="{{ .File }}">
+                <input type="hidden" name="note" value="{{ .Note }}">
+                <input type="hidden" name="verdict" value="dismissed">
+                <button class="acard__judgebtn" type="submit" title="looked at it; not a problem">not a problem</button>
+              </form>
+              {{ else }}
+              <form method="post" action="/analysis/{{ $card.Kind }}/judge?target={{ $.Session.ID }}">
+                <input type="hidden" name="file" value="{{ .File }}">
+                <input type="hidden" name="note" value="{{ .Note }}">
+                <input type="hidden" name="verdict" value="confirmed">
+                <button class="acard__judgebtn" type="submit" title="put it back">put it back</button>
+              </form>
+              {{ end }}
+            </span>
+            {{ end }}
           </li>
           {{ end }}
         </ul>

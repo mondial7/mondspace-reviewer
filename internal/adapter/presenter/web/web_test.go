@@ -2890,3 +2890,24 @@ func TestANoteWhoseLineWentIsShownAsSuch(t *testing.T) {
 		t.Errorf("it should be marked as no longer anchored:\n%s", body)
 	}
 }
+
+func TestANoteRecordsTheFileItWasAbout(t *testing.T) {
+	// A note carries a unit id, and a unit is derived from git rather than
+	// stored — so for a commit target nothing on disk could say which file a
+	// note was about. "I remember the file" is at least as common as
+	// remembering the wording (ADR 0030).
+	kept := &recordingNotes{}
+	h := web.NewServer(testSession(), kept)
+
+	req := httptest.NewRequest(http.MethodPost, "/units/s-f001/notes",
+		strings.NewReader("kind=objection&text=this+retries+forever"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	h.ServeHTTP(httptest.NewRecorder(), req)
+
+	if len(kept.notes) != 1 {
+		t.Fatalf("stored %+v", kept.notes)
+	}
+	if kept.notes[0].File != "auth/token.go" {
+		t.Errorf("File = %q, want the file the unit covers", kept.notes[0].File)
+	}
+}

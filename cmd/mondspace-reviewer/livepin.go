@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -217,6 +218,13 @@ func runAnalysis(pool *agentPool, model string) web.RunAnalysisFunc {
 		}
 
 		result.Model = model
+
+		// A rerun produces the same findings from the same diff, so whatever the
+		// reviewer already decided is carried onto them (ADR 0030).
+		if earlier, err := jsonl.New(entry.out).LoadAnalysis(targetID, kind); err == nil {
+			result = usecase.CarryJudgements(result, earlier)
+		}
+
 		handlerRef().Record(web.AuditEntry{
 			SessionID: targetID, Action: string(kind), Model: model,
 			Millis: time.Since(started).Milliseconds(),
@@ -448,4 +456,83 @@ func pathsOf(units []domain.Unit) []string {
 		out = append(out, u.Files...)
 	}
 	return out
+}
+
+// judgeFinding records what a reviewer made of one finding, and keeps it
+// (ADR 0030).
+func judgeFinding() web.JudgeFindingFunc {
+	return func(_ context.Context, targetID string, kind domain.AnalysisKind,
+		file, note string, verdict domain.Verdict) error {
+
+		entry, known := lookupTarget(targetID)
+		if !known {
+			return fmt.Errorf("no such review %q", targetID)
+		}
+		store := jsonl.New(entry.out)
+
+		got, err := store.LoadAnalysis(targetID, kind)
+		if err != nil || !got.Done() {
+			return fmt.Errorf("no %s analysis to judge", kind)
+		}
+		return store.SaveAnalysis(usecase.Judge(got, file, note, verdict))
+	}
+}
+
+// searchWorkspace looks through everything written across every review.
+//
+// Read from the stores on each search rather than kept in memory: a review log
+// is small, searches are rare, and an index would be one more thing that can be
+// wrong about what is on disk (ADR 0030).
+func searchWorkspace() web.SearchFunc {
+	return func(query string) []usecase.Searchable {
+		if strings.TrimSpace(query) == "" {
+			return nil
+		}
+
+		targetsMu.RLock()
+		entries := make(map[string]targetEntry, len(targetIndex))
+		for id, e := range targetIndex {
+			entries[id] = e
+		}
+		targetsMu.RUnlock()
+
+		var corpus []usecase.Searchable
+		for id, entry := range entries {
+			store := jsonl.New(entry.out)
+
+			review, err := store.Load(id)
+			if err != nil {
+				continue
+			}
+			var analyses []domain.Analysis
+			for _, a := range usecase.Audits() {
+				if got, err := store.LoadAnalysis(id, a.Kind); err == nil && got.Done() {
+					analyses = append(analyses, got)
+				}
+			}
+			if len(review.Notes) == 0 && len(review.Exchanges) == 0 && len(analyses) == 0 {
+				continue
+			}
+
+			title := entry.target.Title
+			if title == "" {
+				title = id
+			}
+			corpus = append(corpus, usecase.SearchableReview(
+				id, entry.target.Ref, title, review.Notes, review.Exchanges, analyses,
+				func(unitID string) string { return unitFileIn(review, unitID) })...)
+		}
+		return usecase.Search(query, corpus)
+	}
+}
+
+// unitFileIn is the file a note was written against, when the review still
+// knows. A note carries a unit id, and a file is what a person remembers.
+func unitFileIn(review domain.Session, unitID string) string {
+	for _, u := range review.Units {
+		if u.ID == unitID && len(u.Files) > 0 {
+			return u.Files[0]
+		}
+	}
+	return ""
 }

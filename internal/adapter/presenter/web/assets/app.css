@@ -2187,3 +2187,100 @@ a.log__branch:hover { text-decoration: underline; }
   font-style: italic;
   opacity: 0.85;
 }
+
+/* A finding the reviewer has ruled on. Dismissed ones stay: removing them would
+   invite the next audit to raise the same thing as though it were new
+   (ADR 0030). */
+.acard__finding--dismissed {
+  opacity: 0.5;
+  border-left-color: var(--rule) !important;
+}
+
+.acard__finding--dismissed .acard__note { text-decoration: line-through; }
+
+.acard__verdicted {
+  padding: 0 0.28rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--fg-dim) 20%, transparent);
+  color: var(--fg-dim);
+  font-family: var(--mono);
+  font-size: 0.58rem;
+  text-transform: uppercase;
+}
+
+.acard__judge { margin-top: 0.1rem; }
+
+.acard__judgebtn {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--fg-dim);
+  font: inherit;
+  font-size: 0.68rem;
+  text-decoration: underline dotted;
+  cursor: pointer;
+}
+
+.acard__judgebtn:hover { color: var(--accent); }
+
+/* ── Search ─────────────────────────────────────────────────────────────────
+   Everything written across the workspace. Grouped by review, because several
+   hits in one place are one place to go back to (ADR 0030). */
+
+.search { display: block; max-width: 54rem; margin: 0 auto; }
+
+.search__form { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
+.search__form input { flex: 1 1 auto; }
+
+.search__count {
+  margin: 0 0 0.8rem;
+  color: var(--fg-dim);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+}
+
+.search__groups { margin: 0; padding: 0; list-style: none; }
+
+.search__group {
+  margin-bottom: 0.9rem;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--rule);
+  border-radius: 9px;
+  background: var(--panel);
+}
+
+.search__target {
+  display: block;
+  margin-bottom: 0.4rem;
+  color: var(--fg);
+  font-weight: 600;
+  font-size: 0.86rem;
+  text-decoration: none;
+}
+
+.search__target:hover { color: var(--accent); }
+
+.search__hits { margin: 0; padding: 0; list-style: none; }
+
+.search__hit {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+  padding: 0.2rem 0;
+  font-size: 0.8rem;
+}
+
+.search__kind {
+  flex: none;
+  padding: 0 0.3rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--fg-dim) 20%, transparent);
+  color: var(--fg-dim);
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  text-transform: uppercase;
+}
+
+.search__where { color: var(--hunk); font-family: var(--mono); font-size: 0.7rem; }
+.search__text { min-width: 0; overflow-wrap: anywhere; }

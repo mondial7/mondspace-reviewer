@@ -24,6 +24,13 @@ type Note struct {
 	Text         string    `json:"text"`
 	TS           time.Time `json:"ts"`
 	SupersededBy string    `json:"superseded_by,omitempty"`
+	// File is what the note was about, recorded on the note itself.
+	//
+	// A unit is derived from git rather than stored, so for a commit or a tag
+	// nothing on disk could otherwise say which file a note concerned — and "I
+	// remember the file" is at least as common as remembering the wording
+	// (ADR 0030).
+	File string `json:"file,omitempty"`
 	// Anchor is the diff line this note is about, verbatim. Empty means the
 	// note is about the file as a whole, which is what every note was before
 	// line-level ones existed (ADR 0028).

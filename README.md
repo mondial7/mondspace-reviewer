@@ -50,6 +50,11 @@ msr web
 It opens `http://127.0.0.1:7777` on the newest thing worth reviewing. No
 configuration, no database, no account, and **no session to record first**.
 
+It binds to localhost, and refuses anything else unless you pass
+`--allow-remote`: msr serves your source, your diffs and your review notes with
+no authentication at all, so putting it on a network is a decision rather than a
+typo.
+
 Then press **`?`** in the app, or open
 [`/tutorial`](http://127.0.0.1:7777/tutorial), for the four things to do in
 order — it is also on the [project page](https://mondial7.github.io/mondspace-reviewer/).
@@ -287,6 +292,17 @@ tomorrow says so — and a signed-off target is ticked in the picker, so what is
 left to look at is readable from the list. If the code moved after you signed
 off, it says that too rather than reading as current
 ([ADR 0021](ADR/0021-finishing-a-review.md)).
+
+**Search it.** `/search` looks through every note, question, answer and finding
+across every review in the workspace — because the review log is the product,
+and "where did I write that about the retry loop" should have an answer. Every
+word has to match, and hits are grouped by the review they belong to.
+
+**Dismiss a finding.** An audit run twice repeats itself, so a finding you have
+already decided is not a problem can be dismissed. It stays on the card, greyed,
+and the dismissal is carried onto later runs — unless the model now says
+something *different* about that file, which is a new claim nobody has ruled on
+([ADR 0030](ADR/0030-searching-judging-and-who-can-reach-it.md)).
 
 **Keys.** Reading is the common case, so it has the short keys:
 

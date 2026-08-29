@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Search — mondspace-reviewer</title>
+  <link rel="stylesheet" href="/assets/app.css">
+  <script type="module" src="/assets/chrome.js" defer></script>
+</head>
+<body class="page">
+  <canvas class="backdrop" id="backdrop" aria-hidden="true"></canvas>
+
+  <nav class="storynav">
+    <a class="storynav__brand" href="/">msr</a>
+    <a class="storynav__link" href="/">cockpit</a>
+    <a class="storynav__link" href="/branches">branches</a>
+    <a class="storynav__link" href="/activity">activity</a>
+    <a class="storynav__link" href="/status">status</a>
+    <a class="storynav__link" href="/tutorial">tour</a>
+    <span class="storynav__spacer"></span>
+    <button class="storynav__zen" type="button" data-theme-toggle title="Theme">auto</button>
+    <button class="storynav__zen" type="button" data-zen-toggle
+            aria-pressed="false" title="Zen mode (⌘Z) · palette (⌘K)">zen</button>
+  </nav>
+
+  <header class="masthead">
+    <h1 class="masthead__title">Search</h1>
+    <p class="masthead__meta">
+      <span class="masthead__hint">
+        everything you wrote and everything you were told, across every review in
+        the workspace — notes, questions, answers and findings
+      </span>
+    </p>
+  </header>
+
+  <main class="board search">
+    <form class="search__form" method="get" action="/search">
+      <input class="addrepo__input" type="search" name="q" value="{{ .Query }}"
+             placeholder="a word you remember…" autocomplete="off" autofocus>
+      <button class="addrepo__btn" type="submit">search</button>
+    </form>
+
+    {{ if .Blank }}
+    <p class="queue__empty">Type something to look for.</p>
+    {{ else if not .Groups }}
+    <p class="queue__empty">Nothing written matches “{{ .Query }}”.</p>
+    {{ else }}
+    <p class="search__count">{{ .Total }} in {{ len .Groups }} review(s)</p>
+
+    <ul class="search__groups">
+      {{ range .Groups }}
+      <li class="search__group">
+        <a class="search__target" href="/?target={{ if .TargetRef }}{{ .TargetRef }}{{ else }}{{ .TargetID }}{{ end }}">
+          {{ .Title }}
+        </a>
+        <ul class="search__hits">
+          {{ range .Hits }}
+          <li class="search__hit">
+            <span class="search__kind">{{ .Kind }}</span>
+            {{ with .Where }}<code class="search__where">{{ . }}</code>{{ end }}
+            <span class="search__text">{{ .Text }}</span>
+          </li>
+          {{ end }}
+        </ul>
+      </li>
+      {{ end }}
+    </ul>
+    {{ end }}
+  </main>
+</body>
+</html>

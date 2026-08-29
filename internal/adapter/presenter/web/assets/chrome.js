@@ -96,6 +96,7 @@ const DESTINATIONS = [
   { label: 'Activity', hint: 'every model call, with what it cost', href: '/activity' },
   { label: 'Status', hint: 'is the reviewer model online', href: '/status' },
   { label: 'How to use this', hint: 'the four things, in order', href: '/tutorial' },
+  { label: 'Search the review log', hint: 'every note, question and finding', href: '/search' },
   { label: 'Sessions', hint: 'every review, across repositories', href: '/status' },
   { label: 'Toggle theme', hint: 'dark · light · follow the system', action: cycleTheme },
   { label: 'Toggle zen', hint: 'hide the shell and work', action: () => setZen(!zen) },
