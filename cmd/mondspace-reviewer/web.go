@@ -927,8 +927,13 @@ func targetLoader() web.Loader {
 		}
 		t := entry.target
 
-		// A session target carries its recorded log: the stated intent, the
-		// notes, and the conversation. Every other kind has only git.
+		// A session target carries its recorded log — the stated intent and the
+		// event history. Every other kind has only git for its *content*, but
+		// every kind accumulates a review: notes and a conversation, written
+		// under its own id.
+		//
+		// Reading those back only for sessions is what made an annotation on a
+		// commit write-only: stored correctly, and never shown again.
 		var sess domain.Session
 		if entry.session != "" {
 			loaded, err := jsonl.New(entry.out).Load(entry.session)
@@ -936,6 +941,8 @@ func targetLoader() web.Loader {
 				return web.Session{}, err
 			}
 			sess = loaded
+		} else if review, err := jsonl.New(entry.out).Load(targetID); err == nil {
+			sess.Notes, sess.Exchanges = review.Notes, review.Exchanges
 		}
 
 		snap := gitsnap.New(entry.repo, targetID)

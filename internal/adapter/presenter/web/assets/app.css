@@ -2098,3 +2098,23 @@ a.log__branch:hover { text-decoration: underline; }
   font-family: var(--mono);
   font-size: 0.64rem;
 }
+
+/* Leaving with the review log, from where it was made (issue #19). Quiet: it
+   is the last thing you do, not the first thing you look for. */
+.exports {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin: 0.4rem 0 0;
+  color: var(--fg-dim);
+  font-size: 0.72rem;
+}
+
+.exports a {
+  color: var(--fg-dim);
+  border-bottom: 1px dotted var(--rule);
+  text-decoration: none;
+}
+
+.exports a:hover { color: var(--accent); border-bottom-color: var(--accent); }

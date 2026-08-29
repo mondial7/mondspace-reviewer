@@ -281,6 +281,15 @@
            It is the first thing you need on reopening something you looked at
            yesterday (ADR 0021). Inside the card: it is part of the same answer
            to "where is this review up to". -->
+      <!-- The review log is the product, so there is a way to leave with it
+           from where it was made (issue #19). -->
+      <p class="exports">
+        take the log:
+        <a href="/export?target={{ .Session.ID }}&amp;format=md">markdown</a>
+        <a href="/export?target={{ .Session.ID }}&amp;format=json">json</a>
+        <a href="/export?target={{ .Session.ID }}&amp;format=slack">slack</a>
+      </p>
+
       {{ if or .HasSignoff .CanSignoff }}
       <div class="signoff {{ if .Signoff.Done }}signoff--done{{ end }} {{ if .Signoff.Moved }}signoff--moved{{ end }}">
         <p class="signoff__state">{{ .Signoff.Sentence }}</p>

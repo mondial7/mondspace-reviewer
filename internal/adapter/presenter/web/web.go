@@ -1080,6 +1080,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /status", s.handleStatus)
 	s.mux.HandleFunc("GET /tutorial", s.handleTutorial)
 	s.mux.HandleFunc("GET /branches", s.handleBranches)
+	s.mux.HandleFunc("GET /export", s.handleExport)
 	s.mux.HandleFunc("POST /remote", s.handleRemoteWatch)
 	s.mux.HandleFunc("POST /repos", s.handleAddRepo)
 	// The workspace list folded into the status page.
@@ -1782,14 +1783,31 @@ func (s *Server) handleAnnotate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	s.mu.Lock()
-	s.sess.Notes = append(s.sess.Notes, note)
-	s.mu.Unlock()
+	// Against the review it was made on, not against whichever one msr started
+	// with: a note appended to the wrong session vanishes on the redirect and
+	// turns up on something unrelated.
+	s.noteOn(unit.SessionID, note)
 	s.record(AuditEntry{SessionID: unit.SessionID, UnitID: unit.ID,
 		Action: "annotate", Detail: string(note.Kind) + ": " + note.Text})
 	s.broadcast("note")
 
 	http.Redirect(w, r, backTo(r, "#unit-"+unit.ID), http.StatusSeeOther)
+}
+
+// noteOn adds an annotation to the review it belongs to, wherever that review
+// is held — the open one is a field, any other is in the loaded cache.
+func (s *Server) noteOn(targetID string, note domain.Note) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if targetID == "" || targetID == s.sess.ID {
+		s.sess.Notes = append(s.sess.Notes, note)
+		return
+	}
+	if cached, ok := s.loaded[targetID]; ok {
+		cached.Notes = append(cached.Notes, note)
+		s.loaded[targetID] = cached
+	}
 }
 
 // backTo is the page an action should return to: the review it acted on, at the
@@ -2883,4 +2901,80 @@ func funcs() template.FuncMap {
 		"markdown": renderMarkdown,
 		"clock":    func(t time.Time) string { return t.Local().Format("15:04") },
 	}
+}
+
+// exportFormats is what the review log can be taken away as, and the headers
+// each arrives with.
+var exportFormats = map[string]struct {
+	contentType string
+	ext         string
+}{
+	"md":    {"text/markdown; charset=utf-8", "md"},
+	"json":  {"application/json; charset=utf-8", "json"},
+	"slack": {"text/plain; charset=utf-8", "txt"},
+}
+
+// handleExport hands over the review log.
+//
+// "The review log is the product" is stated throughout, and until now the only
+// way to get it out was a separate CLI invocation against a session id — which
+// is a strange thing to ask of someone already looking at the review (issue
+// #19).
+func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
+	format := strings.TrimSpace(r.URL.Query().Get("format"))
+	if format == "" {
+		format = "md"
+	}
+	kind, known := exportFormats[format]
+	if !known {
+		http.NotFound(w, r)
+		return
+	}
+
+	// Of the review being read, never of whichever one happens to be open —
+	// the same discipline as every other action on a target.
+	sess := s.openSession(r)
+	report := usecase.BuildReport(domain.Session{
+		ID: sess.ID, Prompt: sess.Prompt, Units: sess.Units, Notes: sess.Notes,
+	})
+
+	var body []byte
+	switch format {
+	case "json":
+		out, err := usecase.ExportJSON(report)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		body = out
+	case "slack":
+		body = []byte(usecase.ExportSlack(report))
+	default:
+		body = []byte(usecase.ExportMarkdown(report))
+	}
+
+	// It is a file someone keeps, so it arrives as one with a name rather than
+	// as a page they have to select and copy.
+	name := fmt.Sprintf("review-%s.%s", safeFileName(sess.ID), kind.ext)
+	w.Header().Set("Content-Type", kind.contentType)
+	w.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
+	w.Write(body)
+}
+
+// safeFileName keeps a target id fit for a Content-Disposition filename. Ids are
+// hex or ulid today, but a range target's id is derived from text a person
+// typed.
+func safeFileName(id string) string {
+	safe := strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_':
+			return r
+		default:
+			return '-'
+		}
+	}, id)
+	if safe == "" {
+		return "review"
+	}
+	return safe
 }

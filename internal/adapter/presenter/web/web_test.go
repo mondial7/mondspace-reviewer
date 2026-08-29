@@ -45,13 +45,6 @@ func get(t *testing.T, h http.Handler, path string) *httptest.ResponseRecorder {
 }
 
 // recordingNotes captures persisted annotations.
-type recordingNotes struct{ notes []domain.Note }
-
-func (r *recordingNotes) AppendNote(n domain.Note) error {
-	r.notes = append(r.notes, n)
-	return nil
-}
-
 func TestAnnotatePersistsNoteAndShowsIt(t *testing.T) {
 	store := &recordingNotes{}
 	h := web.NewServer(testSession(), store)
@@ -2726,4 +2719,114 @@ func TestNoBannerWhenNothingIsHidden(t *testing.T) {
 	if strings.Contains(get(t, web.NewServer(testSession(), nil), "/").Body.String(), "files hidden") {
 		t.Error("nothing hidden should mean no banner")
 	}
+}
+
+func TestTheReviewLogCanBeTakenOutOfTheApp(t *testing.T) {
+	// "The review log is the product" is stated in three places, and the only
+	// way to get it out was a separate CLI invocation against a session id
+	// (issue #19).
+	sess := testSession()
+	sess.Notes = []domain.Note{
+		{ID: "n1", UnitID: "s-f001", Kind: domain.NoteObjection, Text: "this retries forever"},
+	}
+	h := web.NewServer(sess, nil)
+
+	if !strings.Contains(get(t, h, "/").Body.String(), "/export") {
+		t.Error("the cockpit should offer the review log")
+	}
+
+	for _, tc := range []struct{ format, contentType, want string }{
+		{"md", "text/markdown", "this retries forever"},
+		{"json", "application/json", `"objection"`},
+		{"slack", "text/plain", "this retries forever"},
+	} {
+		rec := get(t, h, "/export?format="+tc.format)
+		if rec.Code != http.StatusOK {
+			t.Errorf("GET /export?format=%s = %d", tc.format, rec.Code)
+			continue
+		}
+		if got := rec.Header().Get("Content-Type"); !strings.HasPrefix(got, tc.contentType) {
+			t.Errorf("%s Content-Type = %q, want %q", tc.format, got, tc.contentType)
+		}
+		if !strings.Contains(rec.Body.String(), tc.want) {
+			t.Errorf("%s export missing %q:\n%s", tc.format, tc.want, rec.Body.String())
+		}
+		// It is a file you keep, so it arrives as one with a name.
+		if cd := rec.Header().Get("Content-Disposition"); !strings.Contains(cd, "attachment") {
+			t.Errorf("%s should download, got Content-Disposition %q", tc.format, cd)
+		}
+	}
+}
+
+func TestExportDefaultsToMarkdownAndRefusesNonsense(t *testing.T) {
+	h := web.NewServer(testSession(), nil)
+
+	if got := get(t, h, "/export").Header().Get("Content-Type"); !strings.HasPrefix(got, "text/markdown") {
+		t.Errorf("no format should mean markdown, got %q", got)
+	}
+	if rec := get(t, h, "/export?format=parquet"); rec.Code != http.StatusNotFound {
+		t.Errorf("an unknown format = %d, want 404", rec.Code)
+	}
+}
+
+func TestExportIsOfTheReviewYouAreLookingAt(t *testing.T) {
+	// Exporting one review while looking at another is the same class of
+	// mistake as auditing the wrong one.
+	other := testSession()
+	other.ID = "other"
+	other.Notes = []domain.Note{
+		{ID: "n2", UnitID: "s-f001", Kind: domain.NoteOK, Text: "a note from the other review"},
+	}
+	h := web.NewServer(testSession(), nil).
+		WithLoader(func(context.Context, string) (web.Session, error) { return other, nil }).
+		WithTargets([]web.TargetSummary{
+			{ID: "other", Ref: "otherref", Kind: domain.TargetCommit, Title: "other"},
+		})
+
+	body := get(t, h, "/export?target=otherref&format=md").Body.String()
+	if !strings.Contains(body, "a note from the other review") {
+		t.Errorf("the export should be of the review asked for:\n%s", body)
+	}
+}
+
+func TestAnnotatingAReviewOtherThanTheOpenOneShowsThere(t *testing.T) {
+	// Notes appended to whichever review msr started with, whatever was being
+	// annotated: so a note on a commit vanished on the redirect, and turned up
+	// on an unrelated review instead. Annotations are the product.
+	other := web.Session{
+		ID: "other", Prompt: "another review",
+		Units: []domain.Unit{{ID: "other-f001", SessionID: "other", Files: []string{"api/x.go"}}},
+		Diffs: map[string]domain.Diff{"other-f001": {Text: "@@\n+x\n"}},
+	}
+	kept := &recordingNotes{}
+	h := web.NewServer(testSession(), kept).
+		WithLoader(func(context.Context, string) (web.Session, error) { return other, nil }).
+		WithTargets([]web.TargetSummary{
+			{ID: "other", Ref: "otherref", Kind: domain.TargetCommit, Title: "other"},
+		})
+
+	req := httptest.NewRequest(http.MethodPost, "/units/other-f001/notes?target=otherref",
+		strings.NewReader("kind=objection&text=this+changes+the+signature"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	h.ServeHTTP(httptest.NewRecorder(), req)
+
+	// It is written against the review it was made on...
+	if len(kept.notes) != 1 || kept.notes[0].SessionID != "other" {
+		t.Fatalf("stored %+v, want one note against \"other\"", kept.notes)
+	}
+	// ...shows on that review...
+	if !strings.Contains(get(t, h, "/?target=otherref").Body.String(), "this changes the signature") {
+		t.Error("the note should show on the review it was made against")
+	}
+	// ...and not on the one msr happened to start with.
+	if strings.Contains(get(t, h, "/").Body.String(), "this changes the signature") {
+		t.Error("the note must not appear on an unrelated review")
+	}
+}
+
+type recordingNotes struct{ notes []domain.Note }
+
+func (r *recordingNotes) AppendNote(n domain.Note) error {
+	r.notes = append(r.notes, n)
+	return nil
 }
