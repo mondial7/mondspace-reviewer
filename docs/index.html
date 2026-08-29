@@ -444,7 +444,9 @@ footer p { margin: 0.3rem 0; }
       </div>
       <p>
         It opens on the newest thing worth reviewing. There is nothing to record first — it
-        reads the git history that is already there.
+        reads the git history that is already there. It binds to localhost and refuses
+        anything wider without <code>--allow-remote</code>: msr serves your source with no
+        authentication, so putting it on a network should be a decision, not a typo.
       </p>
     </article>
 
@@ -497,10 +499,12 @@ footer p { margin: 0.3rem 0; }
       <span class="step__n">3</span>
       <h3>Read, then annotate</h3>
       <p>
-        Click a filename for its diff. <kbd>j</kbd> and <kbd>k</kbd> walk the files without the
-        mouse. Every change takes a note and one of <code>ok</code> · <code>question</code> ·
-        <code>objection</code> · <code>debt</code> · <code>note</code>. That log is the thing
-        you are producing; the prose exists to help you produce it.
+        Click a filename for its diff, then click any changed <em>line</em> to write a note
+        about that line — it is anchored to the line's text, so it survives the diff growing
+        above it. <kbd>j</kbd> and <kbd>k</kbd> walk the files without the mouse. Every note
+        takes one of <code>ok</code> · <code>question</code> · <code>objection</code> ·
+        <code>debt</code> · <code>note</code>. That log is the thing you are producing; the
+        prose exists to help you produce it.
       </p>
     </article>
 
@@ -510,7 +514,8 @@ footer p { margin: 0.3rem 0; }
       <p>
         <b>Mark this reviewed</b>, with a closing comment if you have one. Reopening tomorrow
         says so, and the picker ticks what is done. If the code moved after you signed off,
-        it tells you that too rather than reading as current.
+        it tells you that too rather than reading as current. Then take the log with you —
+        markdown, JSON or a Slack message — from the card you made it on.
       </p>
     </article>
   </div>
@@ -563,12 +568,20 @@ footer p { margin: 0.3rem 0; }
       <p>Files, lines, commits, tags, pull requests. Nothing on the panel is model-derived, which is rather the point of putting it beside a narration feature.</p>
     </div>
     <div class="card">
+      <h3>Nothing you did not ask to hide</h3>
+      <p>A <code>.msrignore</code> keeps generated files out — lockfiles, mocks, <code>vendor/</code>. There are no defaults, because hiding a lockfile by default would mask the one dependency change worth seeing, and what is hidden is always named with the rule that hid it.</p>
+    </div>
+    <div class="card">
+      <h3>The log is searchable</h3>
+      <p>Every note, question, answer and finding across every review in the workspace. "Where did I write that about the retry loop" has an answer.</p>
+    </div>
+    <div class="card">
       <h3>You are not the only one pushing</h3>
       <p>A history card shows where you are against everything that has landed, and a branches page shows what everyone else is working on — each row opening a review of exactly that branch's work. Watching the remote is opt-in, because fetching is a network call that writes refs.</p>
     </div>
     <div class="card">
       <h3>Three readings, not one</h3>
-      <p>Story, security, breaking changes — each on demand, each independent. No analysis sees another's findings, because a model shown a previous answer anchors on it.</p>
+      <p>Story, security, breaking changes — each on demand, each independent. No analysis sees another's findings, because a model shown a previous answer anchors on it. A finding you decide is not a problem can be dismissed, and stays dismissed the next time you run it.</p>
     </div>
     <div class="card">
       <h3>It never writes to your repo</h3>

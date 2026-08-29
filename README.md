@@ -577,6 +577,9 @@ MSR_SUMMARIZER_URL=http://127.0.0.1:8081/v1 MSR_MODEL=qwen3-4b-instruct-2507 \
 - **Git-first review** — commits, tags, pull requests, the working tree, and
   recorded sessions, all reviewed by the same net-change-per-file engine
   ([ADR 0017](ADR/0017-git-first-review.md)).
+- **The review log is a real artefact** — notes on individual lines, searchable
+  across the workspace, exportable as markdown, JSON or Slack, and signed off
+  per target with a closing comment.
 - **Live watching** — a target that follows HEAD and keeps its identity across a
   commit, a toast when the repository moves, and work that arrives mid-review
   queued as a choice rather than folded in silently
