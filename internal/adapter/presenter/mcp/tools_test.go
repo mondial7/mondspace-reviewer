@@ -117,3 +117,52 @@ func TestStatusSaysWhereTheReviewStandsWithoutSpendingTheContext(t *testing.T) {
 		t.Errorf("status should say findings exist, not spend context on them:\n%s", got)
 	}
 }
+
+func TestAskingAboutOneFileGetsEverythingAHumanWroteThere(t *testing.T) {
+	// Narrower than review_feedback and therefore more generous: someone who
+	// names a file wants the whole human record of it, approvals included —
+	// "I already looked at this and it was fine" is worth an agent knowing.
+	superseded := note(domain.NoteQuestion, "http.go", "an earlier wording")
+	superseded.SupersededBy = "later"
+
+	w := space{open: mcp.Review{
+		ID: "abc123", Title: "add retries",
+		Notes: []domain.Note{
+			note(domain.NoteOK, "http.go", "the backoff reads fine"),
+			note(domain.NoteObjection, "http.go", "this retries forever"),
+			superseded,
+			note(domain.NoteQuestion, "main.go", "why the extra goroutine?"),
+		},
+		Analyses: []domain.Analysis{{
+			Kind: "security", At: time.Now(), Verdict: "one thing",
+			Findings: []domain.Finding{{File: "http.go", Note: "token in a log line"}},
+		}},
+	}}
+
+	got := tool(t, w, "review_file", map[string]any{"path": "http.go"})
+
+	for _, want := range []string{"the backoff reads fine", "this retries forever"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q from:\n%s", want, got)
+		}
+	}
+	for _, unwanted := range []string{
+		"why the extra goroutine?", // another file
+		"an earlier wording",       // replaced by a later note
+		"token in a log line",      // the model, not a human
+	} {
+		if strings.Contains(got, unwanted) {
+			t.Errorf("should not carry %q:\n%s", unwanted, got)
+		}
+	}
+}
+
+func TestAToolThatNeedsAPathSaysSoRatherThanAnsweringAboutNothing(t *testing.T) {
+	w := space{open: mcp.Review{ID: "abc123"}}
+
+	got := tool(t, w, "review_file", nil)
+
+	if !strings.Contains(got, "path") {
+		t.Errorf("want the missing argument named, got:\n%s", got)
+	}
+}
