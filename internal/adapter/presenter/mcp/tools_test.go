@@ -82,3 +82,38 @@ func TestFeedbackIsWhatAHumanWroteAndStillWants(t *testing.T) {
 		}
 	}
 }
+
+func TestStatusSaysWhereTheReviewStandsWithoutSpendingTheContext(t *testing.T) {
+	// The cheapest question an agent can ask, and the one it should ask first:
+	// is anyone still looking at this, and is there anything for me.
+	w := space{open: mcp.Review{
+		ID: "abc123", Title: "add retries", Ref: "abc123", Repo: "mondspace-reviewer",
+		Notes: []domain.Note{
+			note(domain.NoteObjection, "http.go", "this retries forever"),
+			note(domain.NoteOK, "http.go", "reads fine"),
+		},
+		Signoff: domain.Signoff{
+			TargetID: "abc123", At: time.Now(), Comment: "good apart from the retry loop",
+		},
+		Analyses: []domain.Analysis{{
+			Kind: "security", At: time.Now(), Verdict: "one thing worth a look",
+			Findings: []domain.Finding{{File: "http.go", Note: "token in a log line"}},
+		}},
+	}}
+
+	got := tool(t, w, "review_status", nil)
+
+	for _, want := range []string{
+		"add retries",                    // which review
+		"1 ",                             // how much is outstanding
+		"good apart from the retry loop", // the human's closing word
+		"model_findings",                 // where the inferred material lives
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q from:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "token in a log line") {
+		t.Errorf("status should say findings exist, not spend context on them:\n%s", got)
+	}
+}

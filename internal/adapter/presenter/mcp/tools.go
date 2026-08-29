@@ -42,8 +42,73 @@ type Workspace interface {
 // Tools is the msr surface an agent can pull on.
 func Tools(w Workspace) []Tool {
 	return []Tool{
+		statusTool(w),
 		feedbackTool(w),
 	}
+}
+
+// statusTool answers "where does this review stand" in a few lines.
+//
+// First because it is cheapest: an agent that reads this can decide whether any
+// of the other calls are worth making, and most of the time the answer is no.
+func statusTool(w Workspace) Tool {
+	return Tool{
+		Name: "review_status",
+		Description: "Where the review currently open in mondspace-reviewer " +
+			"stands: which change it covers, whether a human has signed it off " +
+			"and what they said, and how much is outstanding. Cheap — ask this " +
+			"first.",
+		Schema: object(nil),
+		Call: func(_ context.Context, args map[string]any) (string, error) {
+			review, err := w.Open()
+			if err != nil {
+				return "", err
+			}
+			return status(review), nil
+		},
+	}
+}
+
+// status is the summary itself: counts and the human's own closing word, with
+// pointers to the calls that would spend real context.
+func status(r Review) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "Review: %s\n", describe(r))
+
+	outstanding := 0
+	for _, n := range r.Notes {
+		if n.Actionable() {
+			outstanding++
+		}
+	}
+	fmt.Fprintf(&b, "Reviewer notes outstanding: %d", outstanding)
+	if outstanding > 0 {
+		b.WriteString(" — read them with review_feedback")
+	}
+	b.WriteString("\n")
+
+	if r.Signoff.Done() {
+		fmt.Fprintf(&b, "Signed off %s", r.Signoff.At.Format("2006-01-02 15:04"))
+		if r.Signoff.Comment != "" {
+			fmt.Fprintf(&b, ": %q", r.Signoff.Comment)
+		}
+		b.WriteString("\n")
+	} else {
+		b.WriteString("Not signed off — a human has not finished with this yet.\n")
+	}
+
+	// Counted, never quoted. The point of the separate call is that an agent
+	// opts into model output knowingly; leaking it into the cheap summary would
+	// undo that.
+	standing := 0
+	for _, a := range r.Analyses {
+		standing += len(a.Standing())
+	}
+	if standing > 0 {
+		fmt.Fprintf(&b, "Model findings not yet ruled on: %d — read them with "+
+			"model_findings, and verify each one yourself.\n", standing)
+	}
+	return b.String()
 }
 
 // feedbackTool hands back what the reviewer is still asking for.
@@ -150,6 +215,11 @@ func text(args map[string]any, key string) string {
 
 // object and str build the small JSON schemas these tools declare.
 func object(props map[string]any, required ...string) map[string]any {
+	if props == nil {
+		// Not nil: a client reading `"properties": null` is entitled to be
+		// unhappy about it, and "no arguments" is an empty object.
+		props = map[string]any{}
+	}
 	schema := map[string]any{"type": "object", "properties": props}
 	if len(required) > 0 {
 		schema["required"] = required
