@@ -515,6 +515,19 @@ alone — on 24 GB a second model has to earn a lot to be worth loading.
 
 ![Settings: which model answers, whether it is online, and what it has cost](docs/img/cockpit-status.png)
 
+### One server, or two
+
+Measured here, on one GPU: giving narration its own llama-server with the *same*
+model is 12.7s for a full read against 12.6s with everything on one — no gain,
+and 4.4 GB of memory to find that out. Two servers share one GPU, and there is
+no second queue to fill. Split the workloads when the *models* differ.
+
+And a thinking model still cannot do the schema-constrained work — but how it is
+served decides that. Qwen3.5-9B under LM Studio puts grammar-constrained JSON in
+`reasoning_content` and leaves `content` empty (58 of 59 completion tokens spent
+reasoning), so msr reports a fault and falls back to mechanical chapters. The
+same weights under `llama-server --reasoning-format none` answer in `content`.
+
 ### A model per workload
 
 If you do want to split — a bigger model for narration, a fast one for the rest

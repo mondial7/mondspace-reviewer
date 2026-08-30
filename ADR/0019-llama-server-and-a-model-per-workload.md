@@ -114,3 +114,29 @@ assistant half-working, and that must not read as green.
   model-written chapters, 0 failures, **0 reasoning tokens**. The same run
   against LM Studio produced the new error verbatim, which is the workaround's
   removal doing its job.
+
+## Addendum, 2026-08-30 — measured
+
+Two things were tested on the machine this is developed on (M-series, 24 GB, one
+GPU), after narration started sending diffs (ADR 0034) and so became the
+expensive call it was always expected to be.
+
+**A second llama-server with the same model buys nothing.** Narration on its own
+server and per-file descriptions on another: 12.7s for a full read, against
+12.6s with both on one. The two servers share one GPU, and msr's narration and
+descriptions are sequential within a review anyway, so there is no second queue
+to fill. It cost 4.4 GB of resident memory to learn that. Split the workloads
+when the models differ, not to add a server.
+
+**A thinking model still cannot do the schema-constrained work, and how it is
+served decides that.** Qwen3.5-9B under LM Studio returns the grammar-constrained
+JSON in `reasoning_content` and leaves `content` empty — 58 of 59 completion
+tokens spent reasoning, `finish_reason: stop`, nothing to parse. msr treats an
+empty content as a fault rather than digging the answer out of the reasoning
+channel, exactly so this is visible, and it falls back to the mechanical
+chapters. The same weights under llama-server with `--reasoning-format none`
+would answer in `content`; served by LM Studio they do not.
+
+So the recommendation for a single-GPU machine stands as one server and one
+non-thinking instruct model, with the per-workload split reserved for the case
+it was designed for: a genuinely different model behind one job.
