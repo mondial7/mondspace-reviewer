@@ -74,9 +74,13 @@ type TargetSummary struct {
 	Subtitle string
 	TS       time.Time
 	Sessions int
-	// Reviewed marks a target someone has finished with, so the picker shows
-	// at a glance what is still open (ADR 0021).
+	// Reviewed marks a target someone has finished with, so the list shows at a
+	// glance what is still open (ADR 0021).
 	Reviewed bool
+	// Commit is the point in history this sits at, when it sits at one. It is
+	// how a tag finds the commit it tags: a tag and the commit it names are one
+	// point, and two rows a second apart saying so is not a timeline.
+	Commit string
 }
 
 // SessionSummary is one row of the workspace: a review that exists, wherever it
@@ -2629,8 +2633,11 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 		CanRunAnalysis  bool
 		Log             LogView
 		HasLog          bool
-		Hidden          []usecase.Hidden
-		IgnoreFile      string
+		// Checkpoints is the history and everything else worth reviewing, in
+		// one list in time order.
+		Checkpoints []Checkpoint
+		Hidden      []usecase.Hidden
+		IgnoreFile  string
 		// Empty is a review with no changed files in it — the live target on a
 		// clean tree, most often. It is not a degenerate case to render
 		// carefully around: it is a state with one honest thing to say, and
@@ -2643,7 +2650,8 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 		Signoff: signoff, HasSignoff: signoffOf != nil, CanSignoff: canSignoff,
 		Analyses: analyses, CanAnalyse: canAnalyse, CanRunAnalysis: canRunAnalysis,
 		Log: gitlog, HasLog: logOf != nil && len(gitlog.Entries) > 0,
-		Hidden: sess.Hidden, IgnoreFile: gitsnapIgnoreFile,
+		Checkpoints: Timeline(gitlog.Entries, targets),
+		Hidden:      sess.Hidden, IgnoreFile: gitsnapIgnoreFile,
 		Empty:     len(sess.Units) == 0,
 		HasThread: len(thread) > 0,
 		Review:    describeReview(narrative, groupIDs(groups), narrating, s.narrate != nil, s.now()),

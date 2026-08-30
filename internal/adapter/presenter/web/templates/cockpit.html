@@ -645,10 +645,11 @@
             <p class="cockpit__legend">
               <span class="cockpit__key cockpit__key--add">growth</span>
               <span class="cockpit__key cockpit__key--del">deletion</span>
-              <span class="cockpit__key cockpit__key--flag">flagged</span>
             </p>
             <p class="pulseinfo__note">
-              One block per changed file, tallest where the most changed.
+              One block per changed file, tallest where the most changed, and
+              split green over red in the proportion it added to what it took
+              away.
               {{ if .Stats.Live }}It turns faster while work is landing.
               {{ else }}Nothing has landed for a while.{{ end }}
             </p>
@@ -701,26 +702,32 @@
             </a>
           </li>
 
-          {{ range .Log.Entries }}
+          <!-- Commits, the tags on them, tags on nothing here, and recorded
+               runs: one list in time order, because a reviewer looking for "the
+               one from Tuesday" should not have to know which kind it was. -->
+          {{ range .Checkpoints }}
           <li class="log__row
                      {{ if .Reviewing }}log__row--here{{ end }}
                      {{ if .RangeEnd }}log__row--end{{ else if .InRange }}log__row--inrange{{ end }}
                      {{ if .Incoming }}log__row--incoming{{ end }}">
             <input class="log__pick" type="checkbox" name="pick" value="{{ .Ref }}"
-                   aria-label="Pick {{ .Subject }} to compare">
-            <a class="log__link" href="/?target={{ .Ref }}" title="{{ .Subject }}">
+                   aria-label="Pick {{ .Title }} to compare">
+            <a class="log__link" href="{{ .Open }}" title="{{ .Title }}">
               <span class="log__marks">
                 {{ if .Reviewing }}<span class="log__here" title="what you are reviewing">▸</span>{{ end }}
                 {{ if .RangeEnd }}<span class="log__here" title="an end of the comparison">◆</span>{{ end }}
                 {{ if .Incoming }}<span class="log__incoming" title="on the remote, not here yet">incoming</span>
-                {{ else if not .OnRemote }}<span class="log__local" title="not pushed yet">local</span>{{ end }}
+                {{ else if and (not .Kind) (not .OnRemote) }}<span class="log__local" title="not pushed yet">local</span>{{ end }}
               </span>
-              <span class="log__subject">{{ .Subject }}</span>
+              <span class="log__subject">
+                {{ range .Tags }}<span class="log__tag" title="tagged {{ . }}">{{ . }}</span>{{ end }}
+                {{ .Title }}
+              </span>
               <!-- The hash, because it is what every other part of msr speaks,
                    and whether you have finished with it, because "what is left"
                    is the other half of "where am I". -->
               <span class="log__meta">
-                <code class="log__sha">{{ .Ref }}</code>
+                {{ with .Kind }}<span class="log__kind">{{ . }}</span>{{ else }}<code class="log__sha">{{ .Ref }}</code>{{ end }}
                 <span>{{ .Ago }}</span>
                 {{ if .SignedOff }}<span class="log__state log__state--yes" title="you signed this off">reviewed</span>
                 {{ else }}<span class="log__state log__state--no" title="you have not finished with this one">unreviewed</span>{{ end }}

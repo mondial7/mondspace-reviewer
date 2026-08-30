@@ -112,8 +112,6 @@ async function start() {
     palette = {
       add: colour(css, '--solid-add', '#a6e3a1'),
       del: colour(css, '--solid-del', '#f38ba8'),
-      flag: colour(css, '--solid-flag', '#f9e2af'),
-      ctx: colour(css, '--solid-ctx', '#cba6f7'),
     };
   }
   readPalette();
@@ -128,7 +126,7 @@ async function start() {
   // changes, so a new file appearing in the session appears here too.
   function build() {
     scene.remove(group);
-    for (const b of blocks) b.material.dispose();
+    for (const b of blocks) b.traverse((n) => n.material?.dispose());
     group = new THREE.Group();
     scene.add(group);
     blocks = [];
@@ -138,13 +136,37 @@ async function start() {
     side = Math.ceil(Math.sqrt(n));
 
     changes.forEach((c, i) => {
-      const cube = new THREE.Mesh(
-        geometry,
-        new THREE.MeshLambertMaterial({ color: palette[c.kind] }),
-      );
+      // A column is what the change did to that file: green for what it added,
+      // red for what it took away, in proportion. One colour per file said
+      // which of the two won and nothing about by how much — and the third
+      // colour, for "flagged", was a different question wearing the same shape.
+      const churn = c.added + c.removed;
+      // A file that changed without changing a line — a rename, a mode — is
+      // not a deletion, so it is drawn whole rather than split arbitrarily.
+      const grew = churn > 0 ? c.added / churn : 1;
+
+      const cube = new THREE.Group();
+      const parts = [
+        { share: grew, colour: palette.add },
+        { share: 1 - grew, colour: palette.del },
+      ];
+      let base = -0.5;
+      for (const part of parts) {
+        if (part.share <= 0) continue;
+        const slab = new THREE.Mesh(
+          geometry,
+          new THREE.MeshLambertMaterial({ color: part.colour }),
+        );
+        slab.scale.y = part.share;
+        // Stacked from the floor up: growth first, so a column reads bottom to
+        // top the way the numbers beside it read left to right.
+        slab.position.y = base + part.share / 2;
+        base += part.share;
+        cube.add(slab);
+      }
+
       // Log scale: a 4,000-line generated file is taller than a 40-line one, but
       // not a hundred times taller, or every real change becomes invisible.
-      const churn = c.added + c.removed;
       cube.userData.height = 0.25 + Math.log2(1 + churn) * 0.42;
       // Recency: index 0 is the newest change, drawn at the front of the field.
       cube.userData.recency = 1 - i / Math.max(n - 1, 1);
@@ -218,7 +240,10 @@ async function start() {
       const breath = Math.sin(t * 2 + cube.userData.phase) * 0.09 * attention;
       cube.scale.y = Math.max(0.1, cube.userData.height * (1 + breath));
       cube.position.y = cube.scale.y / 2;
-      cube.material.emissive.setScalar(attention * 0.16);
+      // A column is two slabs now, and the glow belongs to both. The material
+      // lives on the children; asking a Group for one throws, which killed the
+      // whole loop on its first frame and left the field blank.
+      for (const slab of cube.children) slab.material.emissive.setScalar(attention * 0.16);
     }
     renderer.render(scene, camera);
   }

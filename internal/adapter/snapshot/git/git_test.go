@@ -1234,3 +1234,33 @@ func TestResolvingATagGivesTheCommitItPointsAt(t *testing.T) {
 		t.Errorf("Label = %q, want the ref as given", ref.Label)
 	}
 }
+
+func TestAnAnnotatedTagReportsTheCommitItPointsAt(t *testing.T) {
+	// `for-each-ref %(objectname)` on an annotated tag is the tag object, not
+	// the commit — the third place in this adapter where a tag answered as
+	// itself and everything downstream compared it against commit hashes.
+	dir := newRepo(t)
+	commitAt(t, dir, time.Now().Add(-time.Hour), "a.go", "One")
+	gitCmd(t, dir, "tag", "-a", "v1.0.0", "-m", "annotated")
+	commitAt(t, dir, time.Now().Add(-30*time.Minute), "b.go", "Two")
+	gitCmd(t, dir, "tag", "v1.1.0") // lightweight, which points straight at it
+
+	s := gitsnap.New(dir, "s")
+	tags, err := s.Tags(context.Background(), 10)
+	if err != nil {
+		t.Fatalf("Tags: %v", err)
+	}
+	if len(tags) != 2 {
+		t.Fatalf("got %d tags", len(tags))
+	}
+
+	for _, tag := range tags {
+		// git will happily resolve a tag object for you, which is exactly why
+		// this has to compare the hash itself: everything downstream matches
+		// hashes against each other rather than asking git.
+		want := gitCmd(t, dir, "rev-parse", tag.Name+"^{commit}")
+		if tag.Hash != want {
+			t.Errorf("%s reported %q, want the commit %q", tag.Name, tag.Hash, want)
+		}
+	}
+}

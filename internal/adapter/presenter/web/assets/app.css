@@ -32,7 +32,6 @@
      200px block. Anything painted rather than written uses these. */
   --solid-add: #4fdc95;
   --solid-del: #ff6b83;
-  --solid-flag: #ffcc70;
   --solid-ctx: #a78bfa;
 
   /* Two faint nebulae behind the whole page. They are tokens rather than
@@ -71,7 +70,6 @@
   --inferred: #7a5c00;
   --solid-add: #35b06f;
   --solid-del: #ef5f76;
-  --solid-flag: #e0a52e;
   --solid-ctx: #8e6ae8;
   --nebula-a: #efeaff;
   --nebula-b: #e6f0f8;
@@ -95,7 +93,6 @@
   --inferred: #7a5c00;
   --solid-add: #35b06f;
   --solid-del: #ef5f76;
-  --solid-flag: #e0a52e;
   --solid-ctx: #8e6ae8;
   --nebula-a: #efeaff;
   --nebula-b: #e6f0f8;
@@ -125,7 +122,6 @@
   --inferred: #b58900;   /* yellow */
   --solid-add: #859900;   /* the canonical accents, unpulled: they were never */
   --solid-del: #dc322f;   /* meant to be read as words, and as material they   */
-  --solid-flag: #b58900;  /* are what Solarized actually looks like            */
   --solid-ctx: #6c71c4;
   --nebula-a: #06323d;
   --nebula-b: #052a33;
@@ -148,7 +144,6 @@
   --inferred: #8f6c00;
   --solid-add: #859900;
   --solid-del: #dc322f;
-  --solid-flag: #b58900;
   --solid-ctx: #6c71c4;
   --nebula-a: #f7edd6;
   --nebula-b: #f2efdd;
@@ -974,7 +969,6 @@ button .ico, a .ico, summary .ico { margin-right: 0.35em; }
 }
 .cockpit__key--add { color: var(--add); --swatch: var(--solid-add); }
 .cockpit__key--del { color: var(--del); --swatch: var(--solid-del); }
-.cockpit__key--flag { color: var(--inferred); --swatch: var(--solid-flag); }
 .cockpit__keynote { color: var(--fg-dim); opacity: 0.8; }
 
 .cockpit__stats {
@@ -2430,6 +2424,20 @@ a.toast:hover { border-color: var(--kind, var(--accent)); }
 }
 .log__state--no { color: var(--fg-dim); opacity: 0.6; }
 .log__sha { color: var(--hunk); }
+
+/* What kind of checkpoint a row is, when it is not a commit — a tag on nothing
+   here, or a recorded run. A commit needs no label: it is the default. */
+.log__kind {
+  padding: 0 0.3rem; border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent); text-transform: uppercase;
+}
+/* A tag rides the commit it names rather than taking a row beside it. */
+.log__tag {
+  padding: 0 0.28rem; margin-right: 0.25rem; border-radius: 4px;
+  background: color-mix(in srgb, var(--stated) 20%, transparent);
+  color: var(--stated); font-size: 0.62rem;
+}
 
 .log__link {
   display: grid;

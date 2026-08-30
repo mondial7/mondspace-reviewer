@@ -543,7 +543,13 @@ func (s *Snapshotter) Tags(ctx context.Context, limit int) ([]domain.Tag, error)
 	}
 	out, err := s.run(ctx, os.Environ(), "for-each-ref",
 		"--sort=-creatordate", fmt.Sprintf("--count=%d", limit),
-		"--format=%(refname:short)"+commitFieldSep+"%(objectname)"+commitFieldSep+"%(creatordate:iso-strict)",
+		// Both hashes: an annotated tag is an object of its own, so
+		// %(objectname) is the tag and %(*objectname) is the commit it points
+		// at. A lightweight tag has no second one and points straight at the
+		// commit. Everything downstream matches hashes against each other, so
+		// answering with a tag object means matching nothing.
+		"--format=%(refname:short)"+commitFieldSep+"%(objectname)"+commitFieldSep+
+			"%(creatordate:iso-strict)"+commitFieldSep+"%(*objectname)",
 		"refs/tags")
 	if err != nil || out == "" {
 		return nil, nil // no tags is an ordinary state
@@ -552,14 +558,18 @@ func (s *Snapshotter) Tags(ctx context.Context, limit int) ([]domain.Tag, error)
 	var tags []domain.Tag
 	for _, line := range strings.Split(out, "\n") {
 		fields := strings.Split(line, commitFieldSep)
-		if len(fields) != 3 {
+		if len(fields) != 4 {
 			continue
 		}
 		ts, err := time.Parse(time.RFC3339, fields[2])
 		if err != nil {
 			continue
 		}
-		tags = append(tags, domain.Tag{Name: fields[0], Hash: fields[1], TS: ts})
+		hash := fields[1]
+		if peeled := strings.TrimSpace(fields[3]); peeled != "" {
+			hash = peeled
+		}
+		tags = append(tags, domain.Tag{Name: fields[0], Hash: hash, TS: ts})
 	}
 	return tags, nil
 }

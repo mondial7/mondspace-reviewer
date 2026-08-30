@@ -874,6 +874,9 @@ func discoverTargets(ctx context.Context, repos []string, out string) []web.Targ
 			ID: t.ID, Ref: t.Ref, Repo: filepath.Base(mustAbs(t.Repo)), Kind: t.Kind,
 			Title: t.Title, Subtitle: t.Subtitle, TS: t.TS, Sessions: len(t.Sessions),
 			Reviewed: signedOff(t.ID).Done(),
+			// Where it sits in history, so a tag can find the commit it names
+			// rather than becoming a second row beside it.
+			Commit: t.To.Commit,
 		})
 	}
 	return summaries
