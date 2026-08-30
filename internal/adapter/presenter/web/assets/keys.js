@@ -187,7 +187,7 @@ document.addEventListener('keydown', (e) => {
     case '?': e.preventDefault(); openSheet(); break;
     case '/':
       e.preventDefault();
-      document.getElementById('target-input')?.focus();
+      document.getElementById('refs')?.focus();
       break;
     case 'a': {
       e.preventDefault();

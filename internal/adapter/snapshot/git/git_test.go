@@ -1175,3 +1175,37 @@ func keysOf(m map[string]domain.Diff) []string {
 	sort.Strings(out)
 	return out
 }
+
+func TestCommitsSeparatingCountsEitherWayRound(t *testing.T) {
+	// Comparing a newer point with an older one is a real question — "what
+	// would I lose going back to this" — and `newer..older` is empty by
+	// definition, so the tile read "0 commits" over a diff of sixteen files.
+	dir := newRepo(t)
+	base := time.Now()
+	commitAt(t, dir, base.Add(-4*time.Hour), "a.go", "One")
+	gitCmd(t, dir, "tag", "v1.0.0")
+	commitAt(t, dir, base.Add(-3*time.Hour), "b.go", "Two")
+	commitAt(t, dir, base.Add(-2*time.Hour), "c.go", "Three")
+	gitCmd(t, dir, "tag", "v1.1.0")
+
+	s := gitsnap.New(dir, "s")
+	older, _ := s.ResolveRef(context.Background(), "v1.0.0")
+	newer, _ := s.ResolveRef(context.Background(), "v1.1.0")
+
+	forward, err := s.CommitsSeparating(context.Background(), older, newer)
+	if err != nil {
+		t.Fatalf("CommitsSeparating: %v", err)
+	}
+	backward, err := s.CommitsSeparating(context.Background(), newer, older)
+	if err != nil {
+		t.Fatalf("CommitsSeparating: %v", err)
+	}
+
+	if len(forward) != 2 {
+		t.Errorf("forward: got %d, want 2", len(forward))
+	}
+	if len(backward) != len(forward) {
+		t.Errorf("backward: got %d, want the same %d — the two points are the same "+
+			"distance apart whichever order they were named in", len(backward), len(forward))
+	}
+}

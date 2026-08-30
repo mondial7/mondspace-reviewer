@@ -28,8 +28,11 @@
     {{ if .Work }}{{ range .Work }}{{ if .Running }}
     <span class="sidenav__busy" title="{{ .Detail }}"><span class="ask__spinner" aria-hidden="true"></span>{{ .Kind }}</span>
     {{ end }}{{ end }}{{ end }}
-    <button class="sidenav__theme" type="button" data-theme-toggle
-            title="Theme">auto</button>
+    <button class="storynav__link sidenav__theme" type="button" data-theme-toggle
+            title="Theme">
+      <svg class="ico sidenav__ico" aria-hidden="true"><use href="#i-theme"/></svg>
+      <span class="sidenav__word"><span data-theme-name>auto</span> theme</span>
+    </button>
     <!-- The rail itself folds to a strip of two-letter stops. ⌘Z hides it
          altogether, along with the instrument panel on the cockpit. -->
     <button class="sidenav__fold" type="button" data-sidenav-toggle

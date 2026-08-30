@@ -245,9 +245,8 @@ start();
 // driving each other fight the reader, and it was unusable.
 //
 // So the link is one-way and never moves anything the reader did not ask to
-// move: scrolling the changes lights the chapter that covers what you are
-// looking at, and clicking a chapter jumps the changes to it. Nothing scrolls
-// on its own.
+// move: clicking a chapter jumps the changes to it. Nothing scrolls on its own,
+// and nothing lights up — see below.
 function linkColumns() {
   const story = document.getElementById('story-col');
   const changes = document.getElementById('changes-col');
@@ -256,37 +255,18 @@ function linkColumns() {
   const chapters = [...story.querySelectorAll('.chron__chapter[data-anchor]')];
   if (!chapters.length) return;
 
-  function light(active) {
-    for (const c of chapters) c.dataset.active = String(c === active);
-  }
-
-  // Click a chapter to bring its files up. This is the only thing that scrolls.
+  // Click a chapter to bring its files up. This is the only thing that scrolls,
+  // and it is all it does: it used to mark the chapter you clicked as well, and
+  // the mark only landed when the scroll reached exactly the right place — so
+  // most clicks scrolled and left nothing lit, which reads as a broken button.
+  // A scroll is its own feedback.
   for (const c of chapters) {
     c.addEventListener('click', () => {
       const target = document.getElementById('unit-' + c.dataset.anchor);
       if (!target) return;
-      light(c);
       changes.scrollTo({ top: target.offsetTop - changes.offsetTop - 12, behavior: 'smooth' });
     });
   }
-
-  // Scrolling the changes only *highlights* — it never moves the story column.
-  const byAnchor = new Map(chapters.map((c) => ['unit-' + c.dataset.anchor, c]));
-  let pending = 0;
-  changes.addEventListener('scroll', () => {
-    cancelAnimationFrame(pending);
-    pending = requestAnimationFrame(() => {
-      let active = chapters[0];
-      for (const p of changes.querySelectorAll('.post')) {
-        if (p.offsetTop - changes.offsetTop <= changes.scrollTop + 40 && byAnchor.has(p.id)) {
-          active = byAnchor.get(p.id);
-        }
-      }
-      light(active);
-    });
-  }, { passive: true });
-
-  light(chapters[0]);
 }
 
 linkColumns();

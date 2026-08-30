@@ -30,8 +30,11 @@
     {{ if .Work }}{{ range .Work }}{{ if .Running }}
     <span class="sidenav__busy" title="{{ .Detail }}"><span class="ask__spinner" aria-hidden="true"></span>{{ .Kind }}</span>
     {{ end }}{{ end }}{{ end }}
-    <button class="sidenav__theme" type="button" data-theme-toggle
-            title="Theme">auto</button>
+    <button class="storynav__link sidenav__theme" type="button" data-theme-toggle
+            title="Theme">
+      <svg class="ico sidenav__ico" aria-hidden="true"><use href="#i-theme"/></svg>
+      <span class="sidenav__word"><span data-theme-name>auto</span> theme</span>
+    </button>
     <!-- The rail itself folds to a strip of two-letter stops. ⌘Z hides it
          altogether, along with the instrument panel on the cockpit. -->
     <button class="sidenav__fold" type="button" data-sidenav-toggle
@@ -182,19 +185,10 @@
       </form>
       {{ end }}
 
-      <!-- Your own verdict on the whole thing, as opposed to a note on one file.
-           It is the first thing you need on reopening something you looked at
-           yesterday (ADR 0021). Inside the card: it is part of the same answer
-           to "where is this review up to". -->
-      <!-- The review log is the product, so there is a way to leave with it
-           from where it was made (issue #19). -->
-      <p class="exports">
-        <svg class="ico" aria-hidden="true"><use href="#i-export"/></svg> take the log:
-        <a href="/export?target={{ .Session.ID }}&amp;format=md">markdown</a>
-        <a href="/export?target={{ .Session.ID }}&amp;format=json">json</a>
-        <a href="/export?target={{ .Session.ID }}&amp;format=slack">slack</a>
-      </p>
-
+      <!-- The bottom row is what *you* have decided about this change, and how
+           to leave with the log — your verdict on the whole thing as opposed to
+           a note on one file (ADR 0021), and the product itself (issue #19). -->
+      <div class="reviewcard__row reviewcard__row--yours">
       {{ if or .HasSignoff .CanSignoff }}
       <div class="signoff {{ if .Signoff.Done }}signoff--done{{ end }} {{ if .Signoff.Moved }}signoff--moved{{ end }}">
         <p class="signoff__state">{{ .Signoff.Sentence }}</p>
@@ -215,6 +209,16 @@
         {{ end }}
       </div>
       {{ end }}
+
+        <p class="exports">
+          <svg class="ico" aria-hidden="true"><use href="#i-export"/></svg>
+          <span class="exports__label">take the log:</span>
+          <a href="/export?target={{ .Session.ID }}&amp;format=md">markdown</a>
+          <a href="/export?target={{ .Session.ID }}&amp;format=json">json</a>
+          <a href="/export?target={{ .Session.ID }}&amp;format=slack">slack</a>
+        </p>
+      </div>
+
       </div>
       {{ end }}
     </section>
@@ -268,49 +272,18 @@
         {{ with .Err }}<p class="acard__err">{{ . }}</p>{{ end }}
         {{ with .Verdict }}<p class="acard__verdict">{{ . }}</p>{{ end }}
 
+        <!-- The verdict and the tally, and a way to read the rest. Five
+             findings with a paragraph each do not fit in a card in a column:
+             they push the two readings beside them off the screen, so the card
+             that found the most became the one you could read the least of. -->
         {{ if .Findings }}
-        <ul class="acard__findings">
-          {{ range .Findings }}
-          <li class="acard__finding acard__finding--{{ .Severity }}
-                     {{ if eq (printf "%s" .Verdict) "dismissed" }}acard__finding--dismissed{{ end }}">
-            <span class="acard__where">
-              <span class="sev sev--{{ .Severity }}">{{ .Severity }}</span>
-              {{ with .File }}<code class="acard__file">{{ . }}</code>{{ end }}
-              {{ with .Verdict }}<span class="acard__verdicted">{{ . }}</span>{{ end }}
-            </span>
-            <span class="acard__note">{{ .Note }}</span>
-
-            <!-- A finding you have ruled on comes back identically on every
-                 rerun. This is where that judgement goes (ADR 0030). -->
-            {{ if $card.CanJudge }}
-            <span class="acard__judge">
-              {{ if ne (printf "%s" .Verdict) "dismissed" }}
-              <form method="post" action="/analysis/{{ $card.Kind }}/judge?target={{ $.Session.ID }}">
-                <input type="hidden" name="file" value="{{ .File }}">
-                <input type="hidden" name="note" value="{{ .Note }}">
-                <input type="hidden" name="verdict" value="dismissed">
-                <button class="acard__judgebtn" type="submit" title="looked at it; not a problem">not a problem</button>
-              </form>
-              {{ else }}
-              <form method="post" action="/analysis/{{ $card.Kind }}/judge?target={{ $.Session.ID }}">
-                <input type="hidden" name="file" value="{{ .File }}">
-                <input type="hidden" name="note" value="{{ .Note }}">
-                <input type="hidden" name="verdict" value="confirmed">
-                <button class="acard__judgebtn" type="submit" title="put it back">put it back</button>
-              </form>
-              {{ end }}
-            </span>
-            {{ end }}
-          </li>
-          {{ end }}
-        </ul>
-        <!-- The same discipline as everywhere else: a model reading a diff is
-             suggesting where to look, never ruling (ADR 0003). -->
-        <!-- The severity is the model's suggestion of weight, not a rating.
-             Saying so here is what keeps three tidy labels from reading as a
-             judgement nobody made (ADR 0024). -->
-        <p class="acard__caveat"><span class="why why--inferred">inferred</span>
-          including how bad — worth a look, not a verdict</p>
+        <p class="acard__more">
+          <a class="acard__report" href="/analysis/{{ .Kind }}?target={{ $.Session.ID }}">
+            <svg class="ico" aria-hidden="true"><use href="#i-expand"/></svg>
+            read the report
+          </a>
+          <span class="acard__caveat"><span class="why why--inferred">inferred</span> — worth a look, not a verdict</span>
+        </p>
         {{ end }}
 
         {{ if $.CanRunAnalysis }}
@@ -367,7 +340,8 @@
                     placeholder="ask about these changes"></textarea>
           <p class="ask__hint">⌘⏎ to send · answered only from this review</p>
           <div class="ask__actions">
-            <button class="ask__cancel" type="button" id="ask-clear" disabled>clear</button>
+            <button class="ask__cancel" type="button" id="ask-clear" disabled
+                    title="clear the box" aria-label="Clear"><svg class="ico" aria-hidden="true"><use href="#i-close"/></svg></button>
             <button class="ask__btn" type="submit" id="ask-send" disabled><svg class="ico" aria-hidden="true"><use href="#i-ask"/></svg> ask</button>
           </div>
           <p class="ask__working" id="ask-working" hidden>
@@ -591,51 +565,30 @@
            requests, the working tree — and a recorded run is one kind among
            them rather than the index (ADR 0017). -->
       {{ if .Targets }}
-      <!-- One input, one vocabulary, searchable. Choosing what to review and
-           choosing the two ends of a comparison are the same question — "which
-           point in history" — and three different widgets made that unclear.
-           A native datalist, so it searches without any JavaScript. -->
-      <datalist id="refs">
-        {{ range .Targets }}
-        <!-- The tick is the whole point of recording a sign-off: what is left
-             to look at should be readable without opening anything. -->
-        <option value="{{ if .Ref }}{{ .Ref }}{{ else }}{{ .ID }}{{ end }}"
-                data-repo="{{ .Repo }}" data-reviewed="{{ .Reviewed }}"
-                label="{{ if .Reviewed }}✓ {{ end }}{{ .Kind }}{{ with stamp .TS }} · {{ . }}{{ end }} · {{ .Title }} — {{ .Repo }}"></option>
-        {{ end }}
-      </datalist>
-
       <form class="picker" method="get" action="/">
-        <label class="agentform__label" for="target-input">reviewing</label>
-        <input class="switcher__select" id="target-input" name="target" list="refs"
-               value="{{ if .Session.Target.Ref }}{{ .Session.Target.Ref }}{{ else }}{{ .Session.ID }}{{ end }}"
-               autocomplete="off" spellcheck="false"
-               aria-label="Choose what to review">
-        <!-- Enabled by default, because with no JavaScript it has to be. The
-             shell disables it while the box still names the review you are
-             already reading, which is the only state in which it does nothing. -->
-        <button class="switcher__go" type="submit" data-unless-changed="target-input">open</button>
+        <label class="agentform__label" for="refs">reviewing</label>
+        <!-- A list you can open, not a box that filters itself to nothing. It
+             was an <input list=…>, pre-filled with the ref you were already on,
+             and a browser filters a datalist by what is typed — so the one
+             thing guaranteed to be in the box was the one thing that hid every
+             option behind it. -->
+        <select class="switcher__select" id="refs" name="target"
+                aria-label="Choose what to review">
+          {{ $here := .Session.Target.Ref }}
+          {{ if not $here }}{{ $here = .Session.ID }}{{ end }}
+          {{ range .Targets }}
+          <!-- Each option names its repository as well as its point, because a
+               workspace spans repositories and the keyboard walks this list to
+               move between them. -->
+          <option value="{{ if .Ref }}{{ .Ref }}{{ else }}{{ .ID }}{{ end }}"
+                  data-repo="{{ .Repo }}" data-reviewed="{{ .Reviewed }}"
+                  {{ if eq (or .Ref .ID) $here }}selected{{ end }}>
+            {{ if .Reviewed }}✓ {{ end }}{{ .Kind }}{{ with stamp .TS }} · {{ . }}{{ end }} · {{ .Title }} — {{ .Repo }}
+          </option>
+          {{ end }}
+        </select>
+        <button class="switcher__go" type="submit" data-unless-changed="refs">open</button>
       </form>
-
-      {{ if .CanCompare }}
-      <details class="picker__compare">
-        <summary class="post__moresummary">compare two points</summary>
-        <form class="picker__compareform" method="get" action="/compare">
-          <input type="hidden" name="repo" value="{{ .Session.Repo }}">
-          <input class="switcher__select" name="from" list="refs" placeholder="from"
-                 id="compare-from" autocomplete="off" spellcheck="false" aria-label="Compare from">
-          <input class="switcher__select" name="to" list="refs" placeholder="to (default: working tree)"
-                 id="compare-to" autocomplete="off" spellcheck="false" aria-label="Compare to">
-          <!-- There is nothing to compare until a point is named, and nothing
-               to learn from comparing a point with itself or with the review
-               already on screen. -->
-          <button class="switcher__go" type="submit" disabled
-                  data-compare-guard="{{ if .Session.Target.Ref }}{{ .Session.Target.Ref }}{{ else }}{{ .Session.ID }}{{ end }}">
-            <svg class="ico" aria-hidden="true"><use href="#i-diff"/></svg> compare
-          </button>
-        </form>
-      </details>
-      {{ end }}
       {{ end }}
 
       <section class="brief">
@@ -650,14 +603,26 @@
         {{ end }}
         <h1 class="brief__title">{{ .Narrative.Title }}</h1>
         {{ with .Session.Target.Subtitle }}<p class="brief__sub">{{ . }}</p>{{ end }}
-        {{ with .Narrative.Intro }}<p class="brief__text">{{ . }}</p>{{ end }}
+        <!-- Only when it says something the title did not. A model handed the
+             same sentence twice is the commonest thing on this card, and two
+             copies of one sentence is not a summary. -->
+        {{ if and .Narrative.Intro (ne .Narrative.Intro .Narrative.Title) }}
+        <p class="brief__text">{{ .Narrative.Intro }}</p>
+        {{ end }}
         {{ with .Session.Prompt }}<p class="brief__task">{{ . }}</p>{{ end }}
         <p class="brief__src brief__src--{{ .Narrative.Source }}">
-          {{ if eq .Narrative.Source "model" }}<span class="why why--inferred">inferred</span> by {{ .Narrative.Model }}
-          {{ else }}<span class="why why--inferred">mechanical</span> · no model has read this yet{{ end }}
+          <!-- Quiet here. The stated/inferred distinction is load-bearing on a
+               headline the model wrote about somebody's code; on a line saying
+               who wrote this card it is a footnote, and a yellow one competed
+               with the card it was a footnote to. -->
+          {{ if eq .Narrative.Source "model" }}inferred by {{ .Narrative.Model }}
+          {{ else }}no model has read this yet{{ end }}
         </p>
       </section>
 
+      <!-- Nothing changed means nothing to draw, and an empty field is a large
+           box of nothing where the history could be. -->
+      {{ if not .Empty }}
       <section class="cockpit__pulse">
         <canvas class="cockpit__scene" id="cockpit-scene" aria-hidden="true"></canvas>
         <p class="cockpit__status cockpit__status--{{ if .Stats.Live }}live{{ else }}idle{{ end }}">
@@ -670,6 +635,7 @@
           <span class="cockpit__key cockpit__key--flag">flagged</span>
         </p>
       </section>
+      {{ end }}
 
       <!-- Where you are against everything that has landed, and what the rest
            of the team has pushed (issue #18). Scrolls on its own so a long

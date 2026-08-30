@@ -711,6 +711,15 @@ func (s *Server) handleCompare(w http.ResponseWriter, r *http.Request) {
 	s.mu.RUnlock()
 
 	from, to := r.URL.Query().Get("from"), r.URL.Query().Get("to")
+
+	// Two checkpoints ticked in the history arrive as `pick`, in the order the
+	// list shows them — newest first — so the second is the earlier point and a
+	// range runs from there. Handled here rather than in a script, so ticking
+	// two boxes and pressing the button is a plain form that works.
+	if picked := r.URL.Query()["pick"]; len(picked) == 2 && from == "" && to == "" {
+		from, to = picked[1], picked[0]
+	}
+
 	if compare == nil || from == "" || to == "" {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
@@ -1093,6 +1102,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /sessions", redirectReviews)
 	s.mux.HandleFunc("POST /story/narrate", s.handleNarrate)
 	s.mux.HandleFunc("POST /review/signoff", s.handleSignoff)
+	// A report of its own. A card in a column cannot hold five findings with a
+	// paragraph each without becoming the column.
+	s.mux.HandleFunc("GET /analysis/{kind}", s.handleReport)
 	s.mux.HandleFunc("POST /analysis/{kind}", s.handleAnalysis)
 	s.mux.HandleFunc("POST /analysis/{kind}/judge", s.handleJudge)
 	s.mux.HandleFunc("POST /live/include", s.handleInclude)
@@ -1964,7 +1976,16 @@ func (s *Server) noteOn(targetID string, note domain.Note) {
 // backTo is the page an action should return to: the review it acted on, at the
 // thing it acted on.
 func backTo(r *http.Request, fragment string) string {
-	if target := r.URL.Query().Get("target"); target != "" {
+	target := r.URL.Query().Get("target")
+	// Ruling on a finding from its report page belongs back on that page: the
+	// point of opening it was to work through the findings, and being thrown to
+	// the cockpit after each one undoes that.
+	if r.URL.Query().Get("back") == "report" && target != "" {
+		if kind := r.PathValue("kind"); kind != "" {
+			return "/analysis/" + url.PathEscape(kind) + "?target=" + url.QueryEscape(target)
+		}
+	}
+	if target != "" {
 		return "/?target=" + url.QueryEscape(target) + fragment
 	}
 	return "/" + fragment
@@ -2862,6 +2883,68 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.render(w, "settings.html", data)
+}
+
+// analysisCardsFor is the audit cards for one review, for whoever needs them
+// outside the cockpit's own assembly.
+func (s *Server) analysisCardsFor(sess Session) []analysisCard {
+	s.mu.RLock()
+	analysisOf := s.analysisOf
+	canJudge := s.judge != nil
+	running := map[string]bool{}
+	failed := map[string]string{}
+	for _, w := range s.workLocked() {
+		if w.Target != sess.ID {
+			continue
+		}
+		switch {
+		case w.Running():
+			running[w.Kind] = true
+		case w.Failed():
+			failed[w.Kind] = w.Err
+		}
+	}
+	s.mu.RUnlock()
+
+	return analysisCards(analysisOf, running, failed, sess.ID,
+		usecase.Fingerprint(sess.Units), s.now(), canJudge)
+}
+
+// handleReport serves one audit in full, on its own page.
+//
+// Five findings with a paragraph each do not fit in a card in a column: they
+// push the two readings beside them off the screen, which is how the card that
+// found the most became the one you could read the least of. The card keeps the
+// verdict and the tally; this is where the findings are read.
+func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
+	kind := r.PathValue("kind")
+	sess := s.openSession(r)
+
+	var card analysisCard
+	for _, c := range s.analysisCardsFor(sess) {
+		if c.Kind == kind {
+			card = c
+		}
+	}
+	if card.Kind == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	icon := "diff"
+	switch kind {
+	case "security":
+		icon = "tour"
+	case "breaking":
+		icon = "compare"
+	}
+
+	s.render(w, "report.html", struct {
+		Session Session
+		Card    analysisCard
+		Icon    string
+		Back    string
+	}{Session: sess, Card: card, Icon: icon, Back: backTo(r, "#analyses")})
 }
 
 // analysisCard is one audit as the page needs it: what it is, whether it has

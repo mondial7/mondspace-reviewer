@@ -289,8 +289,11 @@
 }
 
 /* Everything that is not the sidebar. */
-.shell { min-width: 0; display: flex; flex-direction: column; padding-top: var(--gutter); }
-.page--cockpit .shell { padding-top: 0; }   /* the cockpit pads its own grid */
+/* The rail used to supply the space above and beside the first thing on the
+   page. It is a column now, so the page provides its own — on every page but
+   the cockpit, which pads its own grid. */
+.shell { min-width: 0; display: flex; flex-direction: column; padding: var(--gutter) var(--gutter) 0; }
+.page--cockpit .shell { padding: 0; }
 
 /* Content floats above the scene, with just enough backdrop to stay readable. */
 .masthead, .queue { position: relative; z-index: 1; }
@@ -421,14 +424,13 @@
 .page--zen.page--cockpit .cockpit { grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); }
 .page--zen.page--cockpit .cockpit__head { grid-column: 1 / span 2; }
 
+/* A row in the rail, not a pill floating beside it: it is a control like the
+   destinations above it and it should look like one. */
 .sidenav__theme {
-  font: inherit; font-size: 0.7rem; letter-spacing: 0.09em; text-transform: uppercase;
-  color: var(--fg-dim); background: transparent; cursor: pointer;
-  border: 1px solid var(--rule); border-radius: 999px;
-  padding: 0.22rem 0.7rem;
+  font: inherit; font-size: inherit; letter-spacing: inherit; text-transform: inherit;
+  width: 100%; text-align: left; cursor: pointer;
+  background: transparent; border: 0;
 }
-.sidenav__theme:hover,
-.sidenav__theme[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
 
 /* The theme menu. Five themes is one too many to cycle through: four clicks to
    get back where you started is not a control, so the button opens a list. */
@@ -531,16 +533,16 @@
   display: flex; align-items: center; gap: 0.55rem;
   padding: 0.32rem 0.5rem; border-radius: 6px;
   color: var(--fg-dim); text-decoration: none;
-  border-left: 2px solid transparent;
 }
 .storynav__link:hover {
   color: var(--fg);
   background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 /* Marked, not merely highlighted: hover already owns the highlight. */
+/* Marked by its ground, not by a bar beside it: the bar sat outside the shape
+   it was marking and read as a second element. */
 .storynav__link[aria-current="page"] {
   color: var(--fg);
-  border-left-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 16%, transparent);
 }
 .storynav__spacer { flex: 1 1 auto; }
@@ -590,8 +592,14 @@ button .ico, a .ico, summary .ico { margin-right: 0.35em; }
 .page--folded .sidenav__busy { display: none; }
 .page--folded .sidenav__fold { align-self: center; }
 
-/* The menu opens beside the rail rather than below it. */
-.sidenav .thememenu { left: 100%; right: auto; top: 0; margin-left: 0.4rem; }
+/* Beside the rail rather than below it, and upward: the control sits at the
+   bottom of a full-height sidebar, so a menu hanging off its top edge hung off
+   the bottom of the window. */
+.sidenav .thememenu {
+  left: 100%; right: auto;
+  top: auto; bottom: 0;
+  margin-left: 0.4rem;
+}
 
 /* On a narrow screen the words do not earn 11rem of a 22rem window, so the rail
    is the folded strip whatever the reader last chose. Their choice is kept and
@@ -812,7 +820,7 @@ button .ico, a .ico, summary .ico { margin-right: 0.35em; }
   overflow-wrap: anywhere;
 }
 .brief__text { margin: 0.4rem 0 0; color: var(--fg-dim); font-size: 0.83rem; line-height: 1.5; }
-.brief__src { margin: 0.5rem 0 0; font-size: 0.7rem; color: var(--fg-dim); }
+.brief__src { margin: 0.5rem 0 0; font-size: 0.7rem; color: var(--fg-dim); opacity: 0.85; }
 .brief__busy { margin: 0.5rem 0 0; font-size: 0.75rem; color: var(--fg-dim); }
 .brief__retry { margin: 0.5rem 0 0; }
 
@@ -836,8 +844,9 @@ button .ico, a .ico, summary .ico { margin-right: 0.35em; }
 .chron__chapter:last-of-type { border-bottom: none; }
 /* The chapter covering whatever you have scrolled to is lit; the rest recede
    a little — not so far that the story becomes unreadable. */
-.chron__chapter[data-active="false"] { opacity: 0.55; }
-.chron__chapter[data-active="true"] { border-left-color: var(--accent); }
+/* No "current" chapter. Clicking one scrolls the changes, and the scroll is its
+   own feedback; marking one as well only worked when the scroll landed exactly,
+   so most clicks lit nothing and read as a broken button. */
 .chron__index { font-size: 0.68rem; color: var(--accent); letter-spacing: 0.15em; }
 .chron__chaptertitle { margin: 0.15rem 0 0.35rem; font-size: 0.98rem; color: var(--fg); }
 .chron__prose { margin: 0; color: var(--fg-dim); font-size: 0.87rem; line-height: 1.6; }
@@ -1026,7 +1035,7 @@ button:disabled:hover, .btn:disabled:hover {
 /* One file's whole diff, on its own. It is the only thing on the page, so it
    gets the page: full width, and as tall as the window rather than the 22rem a
    diff is given when it is one of forty in a column. */
-.fulldiff { padding: 0 var(--gutter) var(--gutter); }
+.fulldiff { padding: 0 0 var(--gutter); }
 .fulldiff .post__diff { max-height: calc(100vh - 12rem); }
 
 /* Hiding the panel gives the feed the whole screen. */
@@ -1157,7 +1166,7 @@ button:disabled:hover, .btn:disabled:hover {
   display: grid; gap: var(--gutter);
   grid-template-columns: minmax(0, 13.5rem) minmax(0, 1fr);
   align-items: start;
-  padding: 0 var(--gutter) var(--gutter);
+  padding: 0 0 var(--gutter);
 }
 .settings__pane {
   display: flex; flex-direction: column; gap: var(--gutter);
@@ -1234,7 +1243,7 @@ button:disabled:hover, .btn:disabled:hover {
   display: grid; gap: var(--gutter);
   grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: start;
-  padding: 0 var(--gutter) var(--gutter);
+  padding: 0 0 var(--gutter);
 }
 .board__col { display: flex; flex-direction: column; gap: var(--gutter); min-width: 0; }
 
@@ -1476,10 +1485,13 @@ button:disabled:hover, .btn:disabled:hover {
   border: none; border-radius: 6px; padding: 0.35rem 0.9rem;
 }
 .ask__cancel {
-  font: inherit; font-size: 0.75rem; cursor: pointer;
+  font: inherit; cursor: pointer; line-height: 1;
+  display: inline-flex; align-items: center; justify-content: center;
   color: var(--fg-dim); background: transparent;
-  border: 1px solid var(--rule); border-radius: 6px; padding: 0.3rem 0.7rem;
+  border: 1px solid var(--rule); border-radius: 6px; padding: 0.35rem;
 }
+.ask__cancel .ico { margin: 0; width: 0.95rem; height: 0.95rem; }
+.ask__cancel:hover:not(:disabled) { color: var(--del); border-color: var(--del); }
 .ask__hint { margin: 0; color: var(--fg-dim); font-size: 0.7rem; }
 
 /* Working state: a local model can take half a minute, and a form that looks
@@ -1582,8 +1594,8 @@ button:disabled:hover, .btn:disabled:hover {
 
 .reviewcard { min-width: 0; }
 .reviewcard__inner {
-  display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; min-width: 0;
-  padding: 0.6rem 0.9rem;
+  display: flex; flex-direction: column; gap: 0.5rem; min-width: 0;
+  padding: 0.7rem 0.9rem;
   border: 1px solid var(--rule); border-radius: 10px;
   background: var(--panel); box-shadow: var(--panel-glow);
   font-size: 0.82rem;
@@ -1598,10 +1610,18 @@ button:disabled:hover, .btn:disabled:hover {
   color: var(--fg); min-width: 0;
 }
 .reviewcard__when { color: var(--fg-dim); }
-.reviewcard__progress {
-  display: flex; gap: 0.8rem; flex-wrap: wrap;
-  color: var(--fg-dim); flex: 0 1 auto; min-width: 0;
+/* One row per question. The state and the button that changes it on top; what
+   you have decided, and how to leave with it, underneath. */
+.reviewcard__row {
+  display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; min-width: 0;
 }
+.reviewcard__row--yours {
+  gap: 0.6rem 1.5rem;
+  padding-top: 0.5rem; border-top: 1px solid var(--rule);
+  color: var(--fg-dim); font-size: 0.78rem;
+}
+.reviewcard__progress { color: var(--fg-dim); }
+.exports__label { color: var(--fg-dim); }
 .reviewcard__partial { color: var(--inferred); }
 .reviewcard__go { margin-left: auto; }
 .reviewcard__inner.reviewcard--reading { border-color: var(--inferred); }
@@ -2713,6 +2733,17 @@ a.log__branch:hover { text-decoration: underline; }
 }
 
 .acard__judge { margin-top: 0.1rem; }
+
+/* The card is a summary with a door in it. */
+.acard__more { margin: 0.3rem 0 0; display: flex; flex-direction: column; gap: 0.25rem; }
+.acard__report { color: var(--accent); font-size: 0.8rem; }
+
+.report { display: flex; flex-direction: column; gap: var(--gutter); max-width: 62rem; }
+.report__context .brief__kind { margin-top: 0; }
+.report__what { margin: 0.2rem 0 0; color: var(--fg); font-size: 0.95rem; }
+.report__stats { margin: 0.5rem 0 0; color: var(--fg-dim); font-size: 0.8rem; }
+.report__back { margin: 0.7rem 0 0; font-size: 0.82rem; }
+.report__findings { gap: 0.9rem; display: flex; flex-direction: column; }
 
 .acard__judgebtn {
   padding: 0;

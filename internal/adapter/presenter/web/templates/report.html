@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ .Card.Title }} — {{ .Session.Prompt }}</title>
+  <link rel="stylesheet" href="/assets/app.css">
+  <script type="module" src="/assets/chrome.js" defer></script>
+</head>
+<body class="page">
+  {{ template "icons.html" }}
+  <canvas class="backdrop" id="backdrop" aria-hidden="true"></canvas>
+
+  <nav class="sidenav" id="sidenav">
+    <a class="storynav__brand" href="/" title="mondspace-reviewer">
+      <span class="sidenav__mark" aria-hidden="true">&#9626;</span><span class="sidenav__word">msr</span>
+    </a>
+
+    <a class="storynav__link" href="/" title="cockpit"><svg class="ico sidenav__ico" aria-hidden="true"><use href="#i-cockpit"/></svg><span class="sidenav__word">cockpit</span></a>
+    <a class="storynav__link" href="/branches" title="branches"><svg class="ico sidenav__ico" aria-hidden="true"><use href="#i-branches"/></svg><span class="sidenav__word">branches</span></a>
+    <a class="storynav__link" href="/search" title="search"><svg class="ico sidenav__ico" aria-hidden="true"><use href="#i-search"/></svg><span class="sidenav__word">search</span></a>
+    <a class="storynav__link" href="/activity" title="activity"><svg class="ico sidenav__ico" aria-hidden="true"><use href="#i-activity"/></svg><span class="sidenav__word">activity</span></a>
+    <a class="storynav__link" href="/settings" title="settings"><svg class="ico sidenav__ico" aria-hidden="true"><use href="#i-settings"/></svg><span class="sidenav__word">settings</span></a>
+    <a class="storynav__link" href="/tutorial" title="tour"><svg class="ico sidenav__ico" aria-hidden="true"><use href="#i-tour"/></svg><span class="sidenav__word">tour</span></a>
+
+    <span class="storynav__spacer"></span>
+    <button class="storynav__link sidenav__theme" type="button" data-theme-toggle
+            title="Theme">
+      <svg class="ico sidenav__ico" aria-hidden="true"><use href="#i-theme"/></svg>
+      <span class="sidenav__word"><span data-theme-name>auto</span> theme</span>
+    </button>
+    <button class="sidenav__fold" type="button" data-sidenav-toggle
+            aria-controls="sidenav" aria-expanded="true"
+            title="Collapse the sidebar">&#8249;</button>
+  </nav>
+
+  <div class="shell">
+  <header class="masthead">
+    <h1 class="masthead__title">
+      <svg class="ico masthead__ico" aria-hidden="true"><use href="#i-{{ .Icon }}"/></svg>
+      {{ .Card.Title }}
+    </h1>
+    <p class="masthead__meta">
+      <span class="masthead__count">{{ .Card.Tally }}</span>
+      <span class="masthead__hint">
+        {{ .Card.Purpose }} — <a href="{{ .Back }}">back to the review &rarr;</a>
+      </span>
+    </p>
+  </header>
+
+  <main class="report">
+    <!-- What is being reviewed, because a list of findings out of context is a
+         list of assertions about code you cannot see from here. -->
+    <section class="board__panel report__context">
+      <h2 class="board__title">what this is about</h2>
+      {{ with .Session.Target.Kind }}<p class="brief__kind brief__kind--{{ . }}">{{ . }}</p>{{ end }}
+      <p class="report__what">{{ .Session.Prompt }}</p>
+      {{ with .Session.Target.Subtitle }}<p class="brief__sub">{{ . }}</p>{{ end }}
+      <p class="report__stats">
+        {{ .Session.Stats.Files }} file(s) ·
+        <span class="unit__stat unit__stat--add">+{{ .Session.Stats.Added }}</span>
+        <span class="unit__stat unit__stat--del">&minus;{{ .Session.Stats.Removed }}</span>
+      </p>
+      <p class="report__back"><a href="{{ .Back }}">&larr; back to the review, where you left it</a></p>
+    </section>
+
+    <section class="board__panel">
+      <h2 class="board__title">{{ .Card.State }} · {{ .Card.When }}</h2>
+      {{ with .Card.Verdict }}<p class="acard__verdict">{{ . }}</p>{{ end }}
+      {{ with .Card.Err }}<p class="acard__err">{{ . }}</p>{{ end }}
+
+      {{ if .Card.Findings }}
+      <ul class="acard__findings report__findings">
+        {{ $card := .Card }}
+        {{ range .Card.Findings }}
+        <li class="acard__finding acard__finding--{{ .Severity }}
+                   {{ if eq (printf "%s" .Verdict) "dismissed" }}acard__finding--dismissed{{ end }}">
+          <span class="acard__where">
+            <span class="sev sev--{{ .Severity }}">{{ .Severity }}</span>
+            {{ with .File }}<code class="acard__file">{{ . }}</code>{{ end }}
+            {{ with .Verdict }}<span class="acard__verdicted">{{ . }}</span>{{ end }}
+          </span>
+          <span class="acard__note">{{ .Note }}</span>
+          {{ if $card.CanJudge }}
+          <span class="acard__judge">
+            <form method="post" action="/analysis/{{ $card.Kind }}/judge?target={{ $.Session.ID }}&amp;back=report">
+              <input type="hidden" name="file" value="{{ .File }}">
+              <input type="hidden" name="note" value="{{ .Note }}">
+              <input type="hidden" name="verdict"
+                     value="{{ if eq (printf "%s" .Verdict) "dismissed" }}confirmed{{ else }}dismissed{{ end }}">
+              <button class="acard__judgebtn" type="submit">
+                {{ if eq (printf "%s" .Verdict) "dismissed" }}put it back{{ else }}not a problem{{ end }}
+              </button>
+            </form>
+          </span>
+          {{ end }}
+        </li>
+        {{ end }}
+      </ul>
+      <p class="acard__caveat"><span class="why why--inferred">inferred</span>
+        including how bad — worth a look, not a verdict</p>
+      {{ else }}
+      <p class="queue__empty">Nothing to report.</p>
+      {{ end }}
+    </section>
+  </main>
+  </div>
+</body>
+</html>

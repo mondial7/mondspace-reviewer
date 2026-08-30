@@ -571,6 +571,41 @@ func (s *Snapshotter) IsDirty(ctx context.Context) (bool, error) {
 // is how a tagged release came to report zero commits in it.
 //
 // An empty far end means the working tree, so everything after `from` counts.
+// CommitTime is when a commit was made. Empty for the working tree, which has
+// no time of its own.
+func (s *Snapshotter) CommitTime(ctx context.Context, ref domain.SnapshotRef) (time.Time, error) {
+	if ref.Commit == "" || ref.Commit == emptyTree {
+		return time.Time{}, nil
+	}
+	// `log -1`, not `show -s`: an annotated tag resolves to the tag object, and
+	// asking `show` for one prints the tag message rather than a date.
+	out, err := s.run(ctx, os.Environ(), "log", "-1", "--format=%cI", ref.Commit)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return time.Parse(time.RFC3339, strings.TrimSpace(out))
+}
+
+// CommitsSeparating is how many commits lie between two points, whichever order
+// they were named in.
+//
+// Comparing a newer point with an older one is a real question — "what would I
+// lose going back to this" — and `newer..older` is empty by definition, so the
+// tile read "0 commits" over a diff of sixteen files. Two points are the same
+// distance apart whichever way round you say them.
+func (s *Snapshotter) CommitsSeparating(ctx context.Context, from, to domain.SnapshotRef) ([]domain.Commit, error) {
+	forward, err := s.CommitsBetween(ctx, from, to)
+	if err != nil || len(forward) > 0 {
+		return forward, err
+	}
+	// Only when the near end is a real commit: an empty `from` already means
+	// "all of history up to the far end", which is not a range to reverse.
+	if from.Commit == "" || from.Commit == emptyTree || to.Commit == "" {
+		return forward, nil
+	}
+	return s.CommitsBetween(ctx, to, from)
+}
+
 func (s *Snapshotter) CommitsBetween(ctx context.Context, from, to domain.SnapshotRef) ([]domain.Commit, error) {
 	spec := from.Commit + ".."
 	if to.Commit != "" {

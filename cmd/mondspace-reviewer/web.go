@@ -1003,7 +1003,10 @@ func targetLoader() web.Loader {
 		if t.Kind == domain.TargetSession {
 			commits, _ = snap.CommitsSince(ctx, t.TS)
 		} else {
-			commits, _ = snap.CommitsBetween(ctx, t.From, t.To)
+			// Separating, not between: comparing a newer point with an older
+			// one is a real question, and `newer..older` is empty by
+			// definition — which reported "0 commits" over a real diff.
+			commits, _ = snap.CommitsSeparating(ctx, t.From, t.To)
 		}
 
 		view := web.Session{
@@ -1291,9 +1294,25 @@ func compareRefs() web.CompareFunc {
 
 		title := from + " … " + firstNonEmpty(to, "working tree")
 		target := usecase.RangeTarget(entry.repo, title, fromRef, toRef)
+		// When each end was, under the title. Two refs say which points; the
+		// dates say how far apart they are, which is the question a comparison
+		// is usually asking.
+		target.Subtitle = spanOf(ctx, snap, fromRef, toRef)
 		registerTarget(target.ID, targetEntry{target: target, repo: entry.repo, out: entry.out})
 		return target.ID, nil
 	}
+}
+
+// spanOf dates the two ends of a comparison, for the line under its title.
+func spanOf(ctx context.Context, snap *gitsnap.Snapshotter, from, to domain.SnapshotRef) string {
+	when := func(ref domain.SnapshotRef) string {
+		t, err := snap.CommitTime(ctx, ref)
+		if err != nil || t.IsZero() {
+			return "the working tree"
+		}
+		return t.Local().Format("2 Jan 15:04")
+	}
+	return when(from) + " → " + when(to)
 }
 
 // anyEntryFor finds a repository in the workspace by its short name, which is

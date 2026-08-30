@@ -1436,9 +1436,11 @@ func TestATargetCanBeOpenedByItsRefNotOnlyItsID(t *testing.T) {
 	}
 }
 
-func TestAllThreeInputsShareOneList(t *testing.T) {
-	// One element, one vocabulary, searchable. Three different widgets for three
-	// versions of "which point in history" was the confusing part.
+func TestOneListYouCanActuallyOpen(t *testing.T) {
+	// It was an <input list=…> pre-filled with the ref you were already on, and
+	// a browser filters a datalist by what is typed — so the one thing
+	// guaranteed to be in the box was the one thing that hid every option
+	// behind it. Nobody ever saw a list. It is a select.
 	h := web.NewServer(testSession(), nil).
 		WithTargets([]web.TargetSummary{
 			{ID: "t1", Ref: "v5.1.0", Kind: domain.TargetTag, Title: "v5.1.0", Repo: "api"},
@@ -1448,17 +1450,22 @@ func TestAllThreeInputsShareOneList(t *testing.T) {
 
 	body := get(t, h, "/").Body.String()
 
-	if n := strings.Count(body, `list="refs"`); n != 3 {
-		t.Errorf("found %d inputs bound to the shared list, want 3 (target, from, to)", n)
+	if !strings.Contains(body, `<select class="switcher__select" id="refs"`) {
+		t.Errorf("the picker should be a list you can open:\n%s", body)
 	}
-	if !strings.Contains(body, `<datalist id="refs"`) {
-		t.Error("the shared list of points in history is missing")
+	if strings.Contains(body, `list="refs"`) || strings.Contains(body, "<datalist") {
+		t.Error("the datalist it used to filter itself with should be gone")
 	}
-	// Every known point is offered, whichever field you are filling in.
+	// Every known point is offered.
 	for _, want := range []string{"v5.1.0", "a1b2c3d4"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the list is missing %q", want)
 		}
+	}
+	// And the free-text compare boxes are gone: two points are picked in the
+	// history, which is the one place they are listed.
+	if strings.Contains(body, `name="from"`) || strings.Contains(body, `name="to"`) {
+		t.Error("comparing is done by picking in the history, not by typing refs twice")
 	}
 }
 
@@ -2221,12 +2228,26 @@ func TestFindingsAreShownWithTheirFile(t *testing.T) {
 			}
 		})
 
-	body := get(t, h, "/").Body.String()
+	// The card summarises and offers the report; the findings are read there.
+	// Five of them with a paragraph each do not fit in a card in a column.
+	card := get(t, h, "/").Body.String()
+	if !strings.Contains(card, "One exported signature changed.") {
+		t.Error("the card should carry the verdict")
+	}
+	if !strings.Contains(card, `href="/analysis/breaking?target=s"`) {
+		t.Errorf("the card should offer the report:\n%s", card)
+	}
+
+	body := get(t, h, "/analysis/breaking?target=s").Body.String()
 	if !strings.Contains(body, "api/handler.go") {
 		t.Error("a finding should name its file")
 	}
 	if !strings.Contains(body, "existing callers will not compile") {
 		t.Error("a finding should say what it found")
+	}
+	// The report has to carry enough context to read a finding by.
+	if !strings.Contains(body, "back to the review") {
+		t.Error("the report should lead back to where you left the review")
 	}
 	// The honesty label: a model reading a diff is suggesting, not ruling.
 	if !strings.Contains(body, "inferred") {
@@ -2397,9 +2418,13 @@ func TestACardIsColouredByItsWorstFinding(t *testing.T) {
 		t.Errorf("the card should tally by severity:\n%s", body)
 	}
 	// And the severity is labelled as inferred like everything else the model
-	// says, or three tidy labels read as a judgement nobody made.
-	if !strings.Contains(body, "including how bad") {
-		t.Error("the severity should be marked as inferred too")
+	// says, or three tidy labels read as a judgement nobody made — on the card
+	// briefly, and in full where the findings are actually read.
+	if !strings.Contains(body, "worth a look, not a verdict") {
+		t.Error("the card should mark its findings inferred")
+	}
+	if !strings.Contains(get(t, h, "/analysis/security?target=s").Body.String(), "including how bad") {
+		t.Error("the report should say the severity is inferred too")
 	}
 }
 

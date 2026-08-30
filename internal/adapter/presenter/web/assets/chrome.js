@@ -100,7 +100,11 @@ function applyTheme() {
   if (theme === 'system') root.removeAttribute('data-theme');
   else root.setAttribute('data-theme', theme);
   for (const b of document.querySelectorAll('[data-theme-toggle]')) {
-    b.textContent = themeLabel(theme);
+    // The button is a row in the rail like any other, so only the word inside
+    // it changes — replacing its whole contents would take the icon with it.
+    const name = b.querySelector('[data-theme-name]');
+    if (name) name.textContent = themeLabel(theme);
+    else b.textContent = themeLabel(theme);
     b.title = `Theme: ${themeLabel(theme)} — click to change (\u2318J cycles)`;
     b.setAttribute('aria-expanded', 'false');
   }
@@ -428,29 +432,32 @@ for (const button of document.querySelectorAll('[data-unless-changed]')) {
   input.addEventListener('change', sync);
 }
 
-// The compare form asks for two points. Until one is named there is nothing to
-// compare, and comparing a point with itself — or with the review already on
-// screen — is a page you are already looking at.
+// Comparing is picking two checkpoints in the history. The button lights when
+// exactly two are ticked; the form itself works without this — the server reads
+// the pair in the order the list shows them.
 
-for (const button of document.querySelectorAll('[data-compare-guard]')) {
+for (const button of document.querySelectorAll('[data-compare-picks]')) {
   const form = button.closest('form');
-  const from = form?.querySelector('[name="from"]');
-  const to = form?.querySelector('[name="to"]');
-  if (!from || !to) continue;
+  if (!form) continue;
 
-  const current = button.dataset.compareGuard.trim();
+  const picks = () => [...form.querySelectorAll('.log__pick:checked')];
+  const hint = form.querySelector('.log__hint');
+
   const sync = () => {
-    const a = from.value.trim();
-    const b = to.value.trim();
-    const pointless = a === '' || a === b || (b === '' && a === current);
-    button.disabled = pointless;
-    button.title = pointless
-      ? 'name a point to compare from, and one that is not where you already are'
-      : `compare ${a} with ${b || 'the working tree'}`;
+    const n = picks().length;
+    button.disabled = n !== 2;
+    if (hint) {
+      hint.textContent = n === 0 ? 'tick two checkpoints'
+        : n === 1 ? 'tick one more'
+        : n === 2 ? 'ready' : 'tick only two';
+    }
   };
   sync();
-  for (const box of [from, to]) {
-    box.addEventListener('input', sync);
-    box.addEventListener('change', sync);
-  }
+  form.addEventListener('change', (e) => {
+    if (!e.target.classList?.contains('log__pick')) return;
+    // A third tick is a question with no answer, so the oldest goes.
+    const on = picks();
+    if (on.length > 2) on[0].checked = false;
+    sync();
+  });
 }

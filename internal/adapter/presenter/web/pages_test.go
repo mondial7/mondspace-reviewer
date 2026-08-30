@@ -305,3 +305,38 @@ func TestNoEmojiIsNoRow(t *testing.T) {
 		t.Error("an empty list should render nothing at all")
 	}
 }
+
+func TestTwoPointsPickedInTheHistoryCompareWithoutJavaScript(t *testing.T) {
+	// The history is the one place the checkpoints are listed, so it is the one
+	// place to pick them. Picking is two checkboxes and a submit, which has to
+	// work as a plain form — the script only decides when the button lights up.
+	var gotFrom, gotTo string
+	h := wiredServer(t).WithCompare(
+		func(_ context.Context, _, from, to string) (string, error) {
+			gotFrom, gotTo = from, to
+			return "range-1", nil
+		})
+
+	rec := get(t, h, "/compare?repo=demo&pick=newer&pick=older")
+
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("GET /compare = %d, want a redirect to the range", rec.Code)
+	}
+	// The history is newest first, so the second one picked is the earlier
+	// point — and a range runs from the earlier one.
+	if gotFrom != "older" || gotTo != "newer" {
+		t.Errorf("compared %q…%q, want older…newer", gotFrom, gotTo)
+	}
+}
+
+func TestOnePointPickedIsNotARange(t *testing.T) {
+	h := wiredServer(t).WithCompare(
+		func(context.Context, string, string, string) (string, error) {
+			t.Error("one point is not something to compare")
+			return "", nil
+		})
+
+	if rec := get(t, h, "/compare?repo=demo&pick=only"); rec.Code != http.StatusSeeOther {
+		t.Errorf("GET /compare = %d, want it turned away", rec.Code)
+	}
+}
