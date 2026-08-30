@@ -785,8 +785,13 @@ button .ico, a .ico, summary .ico { margin-right: 0.35em; }
 /* Everything in the panel is sized by its content except the isometric field,
    which takes whatever is left. A fixed row list meant adding a box moved which
    one could grow. */
+/* Everything in the panel is sized by its content except the history, which
+   takes whatever is left. It is the one thing in there that can always use more
+   room — the field is a picture at any size, and the numbers are three tiles —
+   and when a review is empty the field is not rendered at all, so a panel where
+   only the field could grow ended in a column of dead space. */
 .cockpit__panel > * { flex: 0 0 auto; }
-.cockpit__panel > .cockpit__pulse { flex: 1 1 auto; min-height: 8rem; }
+.cockpit__panel > .cockpit__pulse { flex: 0 0 auto; height: clamp(9rem, 22vh, 15rem); }
 
 /* Moving between sessions and repositories. */
 .switcher { display: flex; gap: 0.4rem; min-width: 0; }
@@ -2418,7 +2423,7 @@ a.toast:hover { border-color: var(--kind, var(--accent)); }
 
 /* The panel gives its spare room to the isometric field; with a log there too,
    the field yields first. */
-.cockpit__panel > .log { flex: 0 1 auto; }
+.cockpit__panel > .log { flex: 1 1 auto; min-height: 6rem; }
 
 /* Somebody else's work, on the remote and not here yet. The one row in the list
    that is about the team rather than about you (issue #18). */
