@@ -143,14 +143,16 @@ func mechanicalProse(group string, n int) string {
 // It always returns a usable narrative. The error is non-nil when it fell back to
 // the deterministic grouping, and says why — a silent fallback is impossible to
 // diagnose when a model is involved.
-func Narrate(ctx context.Context, n Narrator, sess domain.Session, units []domain.Unit) (domain.Narrative, error) {
-	return NarrateProgressively(ctx, n, sess, units, nil)
+func Narrate(ctx context.Context, n Narrator, sess domain.Session, units []domain.Unit,
+	diffs map[string]domain.Diff) (domain.Narrative, error) {
+	return NarrateProgressively(ctx, n, sess, units, diffs, nil)
 }
 
 // NarrateProgressively is Narrate with a callback invoked each time a chapter is
 // narrated, so a caller can publish the story as it is written rather than after
 // the last chapter. onProgress may be nil.
-func NarrateProgressively(ctx context.Context, n Narrator, sess domain.Session, units []domain.Unit, onProgress func(domain.Narrative)) (domain.Narrative, error) {
+func NarrateProgressively(ctx context.Context, n Narrator, sess domain.Session, units []domain.Unit,
+	diffs map[string]domain.Diff, onProgress func(domain.Narrative)) (domain.Narrative, error) {
 	fallback := domain.Narrative{
 		SessionID: sess.ID,
 		Title:     fallbackTitle(sess),
@@ -178,7 +180,19 @@ func NarrateProgressively(ctx context.Context, n Narrator, sess domain.Session, 
 	// same shape, fall through to narrating one area at a time.
 	var parsed modelNarrative
 	shown := boundedGroups(groups)
-	reply, err := ask(ctx, n, narrativePrompt(sess, units, shown, promptExamplesPerGroup), narrativeSchema(shown))
+
+	// With the diffs to hand, ask what *changed* rather than what is where. A
+	// chapter named after a directory tells a reviewer where to look and
+	// nothing about what happened, and it gets more generic the more files
+	// there are — which is the opposite of what a story is for. Without them,
+	// the older shape: area names and filenames, which is all there is to say.
+	prompt, schema := narrativePrompt(sess, units, shown, promptExamplesPerGroup), narrativeSchema(shown)
+	byFiles := len(diffs) > 0
+	if byFiles {
+		prompt, schema = behaviourPrompt(sess, units, diffs), behaviourSchema(units)
+	}
+
+	reply, err := ask(ctx, n, prompt, schema)
 	lastErr := err
 	if err == nil {
 		if m, ok := parseNarrative(reply); ok {
@@ -206,10 +220,13 @@ func NarrateProgressively(ctx context.Context, n Narrator, sess domain.Session, 
 	}
 
 	resolved := make([]domain.Chapter, 0, len(parsed.Chapters))
+	byFile := unitsByFile(units)
 	for _, c := range parsed.Chapters {
-		resolved = append(resolved, domain.Chapter{
-			Title: c.Title, Prose: c.Prose, UnitIDs: c.resolve(groups),
-		})
+		ids := c.resolve(groups)
+		if byFiles {
+			ids = append(c.resolveFiles(byFile), ids...)
+		}
+		resolved = append(resolved, domain.Chapter{Title: c.Title, Prose: c.Prose, UnitIDs: ids})
 	}
 	chapters, kept := reconcileChapters(resolved, units)
 	if kept == 0 {
@@ -383,8 +400,12 @@ type modelNarrative struct {
 }
 
 type modelChapter struct {
-	Title   string   `json:"title"`
-	Prose   string   `json:"prose"`
+	Title string `json:"title"`
+	Prose string `json:"prose"`
+	// Files is what a chapter covers when the model was shown the change: a
+	// chapter is one thing that happened, and the files it happened in can sit
+	// in three different directories.
+	Files   []string `json:"files"`
 	Groups  []string `json:"groups"`
 	UnitIDs []string `json:"unit_ids"`
 }

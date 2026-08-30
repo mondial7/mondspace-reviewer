@@ -67,7 +67,7 @@ func TestGroupByPathClustersRelatedFiles(t *testing.T) {
 func TestNarrateFallsBackWhenModelUnavailable(t *testing.T) {
 	n := &narrator{err: errors.New("summarizer offline")}
 
-	got, _ := usecase.Narrate(context.Background(), n, domain.Session{ID: "s", Prompt: "add auth"}, narrativeUnits())
+	got, _ := usecase.Narrate(context.Background(), n, domain.Session{ID: "s", Prompt: "add auth"}, narrativeUnits(), nil)
 
 	if got.Source != domain.NarrativeMechanical {
 		t.Errorf("Source = %q, want mechanical when the model is unavailable", got.Source)
@@ -89,7 +89,7 @@ func TestNarrateUsesModelChapters(t *testing.T) {
 	   {"title":"Request path","prose":"Middleware now guards every route.","unit_ids":["s-f003"]}
 	 ]}`}
 
-	got, _ := usecase.Narrate(context.Background(), n, domain.Session{ID: "s", Prompt: "add auth"}, narrativeUnits())
+	got, _ := usecase.Narrate(context.Background(), n, domain.Session{ID: "s", Prompt: "add auth"}, narrativeUnits(), nil)
 
 	if got.Source != domain.NarrativeModel {
 		t.Fatalf("Source = %q, want model", got.Source)
@@ -126,7 +126,7 @@ func TestNarrativePromptStaysBoundedForHugeSessions(t *testing.T) {
 	}
 	n := &narrator{err: errors.New("offline")}
 
-	_, _ = usecase.Narrate(context.Background(), n, domain.Session{ID: "s"}, units)
+	_, _ = usecase.Narrate(context.Background(), n, domain.Session{ID: "s"}, units, nil)
 
 	// A 400-file session must not produce a 400-line prompt.
 	if lines := strings.Count(n.asked, "\n"); lines > 60 {
@@ -143,7 +143,7 @@ func TestModelChaptersResolveFromAreaNames(t *testing.T) {
 	   {"title":"Auth work","prose":"p","groups":["auth"]},
 	   {"title":"The rest","prose":"q","groups":["http","root"]}]}`}
 
-	got, _ := usecase.Narrate(context.Background(), n, domain.Session{ID: "s"}, narrativeUnits())
+	got, _ := usecase.Narrate(context.Background(), n, domain.Session{ID: "s"}, narrativeUnits(), nil)
 
 	if got.Source != domain.NarrativeModel {
 		t.Fatalf("Source = %q, want model", got.Source)
@@ -163,7 +163,7 @@ func TestNarrateDropsHallucinatedUnitIDs(t *testing.T) {
 	n := &narrator{reply: `{"title":"T","intro":"I","chapters":[
 	   {"title":"Real and invented","prose":"p","unit_ids":["s-f001","s-f999","nonsense"]}]}`}
 
-	got, _ := usecase.Narrate(context.Background(), n, domain.Session{ID: "s"}, narrativeUnits())
+	got, _ := usecase.Narrate(context.Background(), n, domain.Session{ID: "s"}, narrativeUnits(), nil)
 
 	for _, c := range got.Chapters {
 		for _, id := range c.UnitIDs {
@@ -191,7 +191,7 @@ func (n *perChapterNarrator) Answer(_ context.Context, question string, _ domain
 func TestNarrateFallsBackToPerChapterNarration(t *testing.T) {
 	n := &perChapterNarrator{}
 
-	got, err := usecase.Narrate(context.Background(), n, domain.Session{ID: "s"}, narrativeUnits())
+	got, err := usecase.Narrate(context.Background(), n, domain.Session{ID: "s"}, narrativeUnits(), nil)
 	if err != nil {
 		t.Fatalf("per-chapter narration should succeed: %v", err)
 	}
@@ -230,7 +230,7 @@ func TestPerChapterNarrationKeepsAreaOnPartialFailure(t *testing.T) {
 	// A narrator that fails everything: the story still stands, mechanically.
 	n := &narrator{err: errors.New("Context size has been exceeded")}
 
-	got, err := usecase.Narrate(context.Background(), n, domain.Session{ID: "s"}, narrativeUnits())
+	got, err := usecase.Narrate(context.Background(), n, domain.Session{ID: "s"}, narrativeUnits(), nil)
 
 	if err == nil {
 		t.Error("a total failure should be reported, not hidden")
@@ -256,7 +256,7 @@ func (unmatchedThenPerChapter) Answer(_ context.Context, question string, _ doma
 }
 
 func TestNarrateRejectsAStoryThatMatchedNothing(t *testing.T) {
-	got, err := usecase.Narrate(context.Background(), unmatchedThenPerChapter{}, domain.Session{ID: "s"}, narrativeUnits())
+	got, err := usecase.Narrate(context.Background(), unmatchedThenPerChapter{}, domain.Session{ID: "s"}, narrativeUnits(), nil)
 	if err != nil {
 		t.Fatalf("should have recovered per-chapter: %v", err)
 	}
@@ -293,7 +293,7 @@ func TestNarrateConstrainsTheReplyWhenTheNarratorCan(t *testing.T) {
 		reply: `{"title":"T","intro":"I","chapters":[{"title":"Auth","prose":"p","groups":["auth"]}]}`,
 	}}
 
-	got, err := usecase.Narrate(context.Background(), n, domain.Session{ID: "s"}, narrativeUnits())
+	got, err := usecase.Narrate(context.Background(), n, domain.Session{ID: "s"}, narrativeUnits(), nil)
 	if err != nil {
 		t.Fatalf("Narrate: %v", err)
 	}
@@ -323,7 +323,7 @@ func TestNarrativeSchemaAllowsOnlyRealAreaNames(t *testing.T) {
 		reply: `{"title":"T","intro":"I","chapters":[{"title":"Auth","prose":"p","groups":["auth"]}]}`,
 	}}
 
-	if _, err := usecase.Narrate(context.Background(), n, domain.Session{ID: "s"}, narrativeUnits()); err != nil {
+	if _, err := usecase.Narrate(context.Background(), n, domain.Session{ID: "s"}, narrativeUnits(), nil); err != nil {
 		t.Fatalf("Narrate: %v", err)
 	}
 
@@ -363,7 +363,7 @@ func TestPerChapterNarrationIsAlsoConstrained(t *testing.T) {
 	// because the model is short of room, which is when it rambles.
 	n := &schemaNarrator{narrator: narrator{reply: `not json at all`}}
 
-	_, _ = usecase.Narrate(context.Background(), n, domain.Session{ID: "s"}, narrativeUnits())
+	_, _ = usecase.Narrate(context.Background(), n, domain.Session{ID: "s"}, narrativeUnits(), nil)
 
 	if len(n.schemas) != 4 {
 		t.Fatalf("asked with %d schemas, want 1 whole-session + 3 per-chapter", len(n.schemas))
@@ -380,7 +380,7 @@ func TestPerChapterNarrationIsAlsoConstrained(t *testing.T) {
 func TestNarrateFallsBackOnUnparseableReply(t *testing.T) {
 	n := &narrator{reply: "I think the session was mostly about authentication, honestly."}
 
-	got, _ := usecase.Narrate(context.Background(), n, domain.Session{ID: "s"}, narrativeUnits())
+	got, _ := usecase.Narrate(context.Background(), n, domain.Session{ID: "s"}, narrativeUnits(), nil)
 
 	if got.Source != domain.NarrativeMechanical {
 		t.Errorf("Source = %q, want mechanical for an unparseable reply", got.Source)

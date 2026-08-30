@@ -1223,9 +1223,11 @@ func narrateTarget(ctx context.Context, handler *web.Server, sum port.Summarizer
 		return
 	}
 	started := time.Now()
+	// With the diffs: a chapter is written from what the change did, and it
+	// cannot be if the model never sees it (ADR 0034).
 	narrative, err := usecase.NarrateProgressively(ctx, sum, domain.Session{
 		ID: targetID, Prompt: entry.target.Title,
-	}, units, func(partial domain.Narrative) { handler.SetNarrativeFor(targetID, partial) })
+	}, units, diffs, func(partial domain.Narrative) { handler.SetNarrativeFor(targetID, partial) })
 	narrative.Fingerprint = usecase.Fingerprint(units)
 	narrative.Model = model
 	narrative.WrittenAt = time.Now()
