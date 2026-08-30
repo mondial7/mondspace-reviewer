@@ -873,16 +873,17 @@
 .page--focus.page--cockpit .cockpit__pulse { flex: 0 0 auto; }
 .page--focus.page--cockpit .cockpit__pulse { min-height: 0; }
 
-/* A narrow window stacks the panel above the feed and lets the page scroll. */
-@media (max-width: 1400px) {
+/* How many columns there are. Where each region *goes* is decided further down,
+   next to the rules that place them at full width — keeping the two apart is
+   what let a placement here be silently overridden by an unconditional rule
+   written later in the file. */
+@media (max-width: 1180px) {
   .cockpit { grid-template-columns: minmax(240px, 19rem) minmax(0, 1fr); }
-  .cockpit__story { grid-column: 2; }
-  .cockpit__changes { grid-column: 2; }
 }
 @media (max-width: 1000px) {
   .page--cockpit { height: auto; overflow: visible; }
   .cockpit { grid-template-columns: minmax(0, 1fr); }
-  .cockpit__story, .cockpit__changes { grid-column: 1; overflow-y: visible; }
+  .cockpit__story, .cockpit__changes { overflow-y: visible; }
   .cockpit__pulse { min-height: 220px; }
   .cockpit__stats { grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); }
 }
@@ -1232,21 +1233,48 @@
   background: var(--panel); box-shadow: var(--panel-glow);
   font-size: 0.82rem;
 }
-.reviewcard__state { display: flex; align-items: center; gap: 0.5rem; color: var(--fg); }
+/* Both halves wrap, and neither is told to fill the row.
+   `flex: 1` gave the progress a basis of zero and then let its contents spill
+   out of it — and the button, being later in the document, painted straight
+   over the spill. At 1200px "1 chapter(s) 1/1 described" was underneath "read
+   again". Wrapping is what should happen when a row runs out of room. */
+.reviewcard__state {
+  display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;
+  color: var(--fg); min-width: 0;
+}
 .reviewcard__when { color: var(--fg-dim); }
-.reviewcard__progress { display: flex; gap: 0.8rem; color: var(--fg-dim); flex: 1; min-width: 0; }
+.reviewcard__progress {
+  display: flex; gap: 0.8rem; flex-wrap: wrap;
+  color: var(--fg-dim); flex: 0 1 auto; min-width: 0;
+}
 .reviewcard__partial { color: var(--inferred); }
 .reviewcard__go { margin-left: auto; }
 .reviewcard__inner.reviewcard--reading { border-color: var(--inferred); }
 .reviewcard__inner.reviewcard--unread { border-color: color-mix(in srgb, var(--del) 45%, var(--rule)); }
 .reviewcard__inner.reviewcard--read { border-color: color-mix(in srgb, var(--add) 35%, var(--rule)); }
 
-@media (max-width: 1400px) {
-  .reviewcard { grid-column: 2; }
+/* Every rule that places a region has to be undone by every rule that changes
+   the column count, and all of them live here so that stays visible.
+   Two things had gone wrong. The header is placed by `.cockpit__head` and the
+   narrow-window rules named `.reviewcard`, a box inside it, so they moved
+   nothing. And asking for a column the grid does not have creates it: at 1000px
+   the one-column cockpit was silently three columns wide, overflowing the
+   window and painting the cards over the panel. */
+
+/* One reading column beside the panel: the story above the changes, each still
+   scrolling on its own. */
+@media (max-width: 1180px) {
+  .cockpit { grid-template-rows: auto minmax(0, 1fr) minmax(0, 1fr); }
+  .cockpit__panel { grid-row: 1 / span 3; }
+  .cockpit__head { grid-column: 2; grid-row: 1; }
+  .cockpit__story { grid-column: 2; grid-row: 2; }
+  .cockpit__changes { grid-column: 2; grid-row: 3; }
 }
+
+/* Narrower than that, nothing sits beside anything: one column, page scrolls. */
 @media (max-width: 1000px) {
   .cockpit { grid-template-rows: none; }
-  .cockpit__panel, .reviewcard, .cockpit__story, .cockpit__changes {
+  .cockpit__panel, .cockpit__head, .cockpit__story, .cockpit__changes {
     grid-column: 1; grid-row: auto;
   }
 }
