@@ -483,12 +483,13 @@ func TestReviewContentIsInTheDOMNotOnlyTheCanvas(t *testing.T) {
 			t.Errorf("review content %q must be server-rendered, not canvas-only", want)
 		}
 	}
-	// Both things that fold are in the markup, so what the shortcut hides is
-	// decided by the page rather than invented by a script.
-	for _, control := range []string{"data-sidenav-toggle", "data-panel-toggle"} {
-		if !strings.Contains(body, control) {
-			t.Errorf("page should expose %s:\n%s", control, body)
-		}
+	// The sidebar folds from a control on the page. The instrument panel has
+	// none: ⌘Z hides both, and nothing else does.
+	if !strings.Contains(body, "data-sidenav-toggle") {
+		t.Errorf("page should expose data-sidenav-toggle:\n%s", body)
+	}
+	if strings.Contains(body, "data-panel-toggle") {
+		t.Errorf("the panel should have no control of its own:\n%s", body)
 	}
 	// The scene is progressive enhancement: a vendored module, not a CDN.
 	if strings.Contains(body, "//unpkg.com") || strings.Contains(body, "//cdn.") {

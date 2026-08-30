@@ -28,33 +28,26 @@ function remember(key, value) {
 
 // ── Folding the shell ───────────────────────────────────────────────────────
 //
-// Three states, and the third is the other two at once. The sidebar folds to a
-// strip of two-letter stops; the cockpit's instrument panel folds to a sliver;
-// and zen (⌘Z) hides both, because "get out of my way" is one thought rather
-// than two clicks. Each is remembered, and one state across every page, so
-// moving around does not keep re-opening what you closed.
+// The sidebar folds to a strip of two-letter stops, and zen (⌘Z) hides it along
+// with the cockpit's instrument panel. The panel has no control of its own: it
+// is worth losing when you want the width and not otherwise, and that is one
+// thought — the shortcut — rather than a button sitting on top of the thing it
+// hides. Both are remembered, one state across every page, so moving around does
+// not keep re-opening what you closed.
 
 const FOLD_KEY = 'msr:sidenav';
-const PANEL_KEY = 'msr:panel';
 
 let folded = stored(FOLD_KEY) === 'on';
-let panelFolded = stored(PANEL_KEY) === 'on';
 let zen = prefersReducedMotion || stored(ZEN_KEY) === 'on';
 
 function applyShell() {
   body.classList.toggle('page--folded', folded && !zen);
-  body.classList.toggle('page--panelfolded', panelFolded && !zen);
   body.classList.toggle('page--zen', zen);
 
   for (const b of document.querySelectorAll('[data-sidenav-toggle]')) {
     b.setAttribute('aria-expanded', String(!folded));
     b.textContent = folded ? '\u203A' : '\u2039';
     b.title = folded ? 'Expand the sidebar' : 'Collapse the sidebar';
-  }
-  for (const b of document.querySelectorAll('[data-panel-toggle]')) {
-    b.setAttribute('aria-expanded', String(!panelFolded));
-    b.textContent = panelFolded ? '\u2039' : '\u203A';
-    b.title = panelFolded ? 'Show the panel' : 'Collapse the panel';
   }
 }
 
@@ -70,18 +63,9 @@ function setFolded(on) {
   applyShell();
 }
 
-function setPanelFolded(on) {
-  panelFolded = on;
-  remember(PANEL_KEY, on ? 'on' : 'off');
-  applyShell();
-}
-
 applyShell();
 for (const b of document.querySelectorAll('[data-sidenav-toggle]')) {
   b.addEventListener('click', () => setFolded(!folded));
-}
-for (const b of document.querySelectorAll('[data-panel-toggle]')) {
-  b.addEventListener('click', () => setPanelFolded(!panelFolded));
 }
 
 // ── Theme ───────────────────────────────────────────────────────────────────
@@ -216,7 +200,6 @@ const DESTINATIONS = [
   { label: 'Next theme', hint: 'auto · light · dark · solarized', action: cycleTheme },
   { label: 'Toggle zen', hint: 'hide the sidebar and the panel — ⌘Z', action: () => setZen(!zen) },
   { label: 'Fold the sidebar', hint: 'two-letter stops instead of words', action: () => setFolded(!folded) },
-  { label: 'Fold the panel', hint: 'give the diff the whole width', action: () => setPanelFolded(!panelFolded) },
   { label: 'Keyboard shortcuts', hint: 'moving around without the mouse — or press ?',
     action: () => document.dispatchEvent(new CustomEvent('msr:shortcuts')) },
 ];

@@ -410,28 +410,6 @@
 .page > *:not(.backdrop) { position: relative; z-index: 1; }
 
 /* Zen strips the shell — backdrop and rail — leaving only the work. */
-/* The instrument panel folds to a strip. What it holds is a glance, so losing
-   it costs the diff nothing and gains it 21rem. */
-.panel__fold {
-  align-self: flex-end;
-  font: inherit; font-size: 0.9rem; line-height: 1; cursor: pointer;
-  color: var(--fg-dim); background: transparent;
-  border: 1px solid var(--rule); border-radius: 6px;
-  padding: 0.1rem 0.45rem;
-}
-.panel__fold:hover { color: var(--accent); border-color: var(--accent); }
-
-.page--panelfolded .cockpit {
-  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr) 2.4rem;
-}
-.page--panelfolded .cockpit__panel > *:not(.panel__fold) { display: none; }
-.page--panelfolded .panel__fold { align-self: center; }
-.page--panelfolded .cockpit__panel { align-items: center; }
-
-@media (max-width: 1180px) {
-  .page--panelfolded .cockpit { grid-template-columns: minmax(0, 1fr) 2.4rem; }
-}
-
 /* Zen: the shell and nothing else. One shortcut over the top of the two things
    that fold on their own, because "get out of my way" is one thought. */
 .page--zen .backdrop { display: none; }
