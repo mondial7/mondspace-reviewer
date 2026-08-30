@@ -2354,25 +2354,43 @@ a.toast:hover { border-color: var(--kind, var(--accent)); }
 .log__behind { color: var(--inferred); }
 .log__ahead { color: var(--fg-dim); }
 
+/* All of it, scrolled. The card used to show the newest handful, which answers
+   "what just happened" and not "where is the commit I want" — and it is the one
+   place checkpoints are chosen from. It grows into the panel, so how much is on
+   screen is decided by the window rather than by a number here. */
 .log__rows {
   margin: 0;
   padding: 0;
   list-style: none;
-  max-height: 13rem;
+  flex: 1 1 auto;
+  min-height: 6rem;
   overflow-y: auto;
-  min-height: 0;
+  overscroll-behavior: contain;
 }
 
-.log__row { border-left: 2px solid transparent; }
+/* Marked by their ground, not by a bar beside them: a bar sits outside the
+   shape it is marking and reads as a second element. */
+.log__row--here { background: color-mix(in srgb, var(--accent) 14%, transparent); }
 
-/* The one you are reading. It is the only thing in this list that is about you
-   rather than about history. */
-.log__row--here {
-  border-left-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 9%, transparent);
+/* The two ends of a comparison, and what lies between them — the question the
+   card could not answer in compare mode, since a range is not one commit. */
+.log__row--inrange { background: color-mix(in srgb, var(--hunk) 8%, transparent); }
+.log__row--end {
+  background: color-mix(in srgb, var(--hunk) 22%, transparent);
 }
 
-.log__row--signed { border-left-color: color-mix(in srgb, var(--stated) 55%, transparent); }
+.log__state {
+  padding: 0 0.3rem;
+  border-radius: 999px;
+  white-space: nowrap;                 /* two words, never two lines */
+  font-family: var(--mono); font-size: 0.56rem; text-transform: uppercase;
+}
+.log__state--yes {
+  color: var(--stated);
+  background: color-mix(in srgb, var(--stated) 14%, transparent);
+}
+.log__state--no { color: var(--fg-dim); opacity: 0.6; }
+.log__sha { color: var(--hunk); }
 
 .log__link {
   display: grid;
@@ -2416,6 +2434,7 @@ a.toast:hover { border-color: var(--kind, var(--accent)); }
 
 .log__meta {
   grid-column: 2;
+  display: flex; align-items: baseline; gap: 0.35rem; flex-wrap: wrap;
   color: var(--fg-dim);
   font-family: var(--mono);
   font-size: 0.62rem;
@@ -2444,7 +2463,7 @@ a.toast:hover { border-color: var(--kind, var(--accent)); }
 
 /* Somebody else's work, on the remote and not here yet. The one row in the list
    that is about the team rather than about you (issue #18). */
-.log__row--incoming { border-left-color: var(--hunk); }
+.log__row--incoming { background: color-mix(in srgb, var(--inferred) 10%, transparent); }
 
 .log__incoming {
   padding: 0 0.25rem;

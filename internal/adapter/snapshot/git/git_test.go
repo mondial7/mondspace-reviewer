@@ -1209,3 +1209,28 @@ func TestCommitsSeparatingCountsEitherWayRound(t *testing.T) {
 			"distance apart whichever order they were named in", len(backward), len(forward))
 	}
 }
+
+func TestResolvingATagGivesTheCommitItPointsAt(t *testing.T) {
+	// An annotated tag is an object of its own, and `rev-parse v1.0.0` answers
+	// with *that* object. Everything downstream then compares a tag hash with
+	// commit hashes and finds nothing: the range a reviewer picked could not be
+	// marked in the history, and the tag's date came back as its message.
+	dir := newRepo(t)
+	commitAt(t, dir, time.Now().Add(-time.Hour), "a.go", "One")
+	gitCmd(t, dir, "tag", "-a", "v1.0.0", "-m", "the first one")
+
+	s := gitsnap.New(dir, "s")
+	ref, err := s.ResolveRef(context.Background(), "v1.0.0")
+	if err != nil {
+		t.Fatalf("ResolveRef: %v", err)
+	}
+
+	head := gitCmd(t, dir, "rev-parse", "HEAD")
+	if ref.Commit != head {
+		t.Errorf("ResolveRef = %q, want the commit %q it points at", ref.Commit, head)
+	}
+	// And the label is still what the reviewer typed.
+	if ref.Label != "v1.0.0" {
+		t.Errorf("Label = %q, want the ref as given", ref.Label)
+	}
+}

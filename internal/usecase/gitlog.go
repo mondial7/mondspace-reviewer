@@ -32,6 +32,11 @@ type LogEntry struct {
 	// the reason to watch a remote at all — seeing it an hour later is seeing
 	// it too late (issue #18).
 	Incoming bool
+	// InRange and RangeEnd answer "which two am I comparing", which is the one
+	// question the card could not answer in compare mode: a range is two
+	// commits and everything between them, and Reviewing marks one commit.
+	InRange  bool
+	RangeEnd bool
 }
 
 // BuildLog turns recent history into the rows of the log card.
@@ -146,4 +151,40 @@ func branchPulses(before, after []string) []domain.Pulse {
 		})
 	}
 	return out
+}
+
+// MarkRange marks the two ends of a comparison and everything between them.
+//
+// The log is newest first, so the range is the span from whichever end appears
+// first to whichever appears last — which way round they were named does not
+// matter, and comparing a newer point with an older one is a real question.
+// Unknown hashes mark nothing rather than guessing at a span.
+func MarkRange(entries []LogEntry, from, to string) []LogEntry {
+	if from == "" || to == "" {
+		return entries
+	}
+
+	is := func(e LogEntry, hash string) bool {
+		return hash != "" && (e.Hash == hash || e.Ref == shortHash(hash))
+	}
+
+	first, last := -1, -1
+	for i, e := range entries {
+		if is(e, from) || is(e, to) {
+			if first < 0 {
+				first = i
+			}
+			last = i
+		}
+	}
+	if first < 0 || first == last {
+		return entries
+	}
+
+	for i := first; i <= last; i++ {
+		entries[i].InRange = true
+	}
+	entries[first].RangeEnd = true
+	entries[last].RangeEnd = true
+	return entries
 }

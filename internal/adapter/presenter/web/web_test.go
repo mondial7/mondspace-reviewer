@@ -2460,8 +2460,10 @@ func TestTheLogCardShowsHistoryAndWhereYouAre(t *testing.T) {
 	if !strings.Contains(body, "log__row--here") {
 		t.Error("the log should mark where the reviewer is")
 	}
-	if !strings.Contains(body, "log__row--signed") {
-		t.Error("the log should mark what has been reviewed")
+	// Said in words rather than by a bar down the side: "what is left" is the
+	// other half of "where am I", and it should be readable, not decoded.
+	if !strings.Contains(body, "reviewed") {
+		t.Error("the log should say what has been reviewed")
 	}
 	if !strings.Contains(body, "log__local") {
 		t.Error("the log should mark what has not left this machine")

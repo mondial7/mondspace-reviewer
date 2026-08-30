@@ -225,3 +225,43 @@ func TestWithNoRemoteNothingIsIncoming(t *testing.T) {
 		}
 	}
 }
+
+func TestBothEndsOfAComparisonAreMarked(t *testing.T) {
+	// In compare mode the card has to answer "which two am I looking at". It
+	// marked the one being reviewed, and a range is not one commit.
+	now := time.Now()
+	commits := []domain.Commit{
+		{Hash: "aaaaaaaaaaaa", Subject: "newest", TS: now},
+		{Hash: "bbbbbbbbbbbb", Subject: "middle", TS: now.Add(-time.Hour)},
+		{Hash: "cccccccccccc", Subject: "oldest", TS: now.Add(-2 * time.Hour)},
+	}
+
+	got := usecase.MarkRange(
+		usecase.BuildLog(commits, "", nil, nil, now),
+		"cccccccccccc", "aaaaaaaaaaaa")
+
+	if !got[0].RangeEnd || !got[2].RangeEnd {
+		t.Errorf("both ends should be marked: %+v", got)
+	}
+	if got[1].RangeEnd {
+		t.Error("a commit inside the range is not an end of it")
+	}
+	// What lies between them is worth marking too: it is what the range covers.
+	if !got[1].InRange {
+		t.Errorf("the middle commit is in the range: %+v", got[1])
+	}
+	if !got[0].InRange || !got[2].InRange {
+		t.Error("the ends are in the range as well")
+	}
+}
+
+func TestNoRangeMarksNothing(t *testing.T) {
+	now := time.Now()
+	commits := []domain.Commit{{Hash: "aaaaaaaaaaaa", Subject: "one", TS: now}}
+
+	got := usecase.MarkRange(usecase.BuildLog(commits, "", nil, nil, now), "", "")
+
+	if got[0].InRange || got[0].RangeEnd {
+		t.Errorf("nothing to mark when nothing is being compared: %+v", got[0])
+	}
+}

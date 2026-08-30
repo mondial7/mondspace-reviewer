@@ -260,7 +260,11 @@ func analysisOf() web.AnalysisOf {
 
 // logLimit is how much history the card shows. Enough to see where you are in
 // a morning's work, not a substitute for `git log`.
-const logLimit = 30
+// The history card is the one place a checkpoint is chosen from, so it carries
+// the history rather than the newest handful. The rows are small and the card
+// scrolls; what costs is the git call, and one call for five hundred commits is
+// the same call as one for thirty.
+const logLimit = 500
 
 // buildLog assembles the git log card for whichever review is open: recent
 // history, which commits the upstream can already reach, and which have been
@@ -289,10 +293,10 @@ func buildLog(fallback string) web.LogOf {
 			return web.LogView{}
 		}
 
-		onRemote := snap.ReachableFrom(ctx, state.Upstream, 400)
+		onRemote := snap.ReachableFrom(ctx, state.Upstream, 2000)
 		local := map[string]bool{}
 		if state.Upstream != "" {
-			local = snap.ReachableFrom(ctx, "HEAD", 400)
+			local = snap.ReachableFrom(ctx, "HEAD", 2000)
 		}
 
 		// A commit's review is signed off under the target id derived from its
@@ -304,10 +308,15 @@ func buildLog(fallback string) web.LogOf {
 			}
 		}
 
-		return web.LogView{
-			Entries: usecase.BuildLogAcross(commits, reviewingRef, onRemote, reviewed, local, time.Now()),
-			Remote:  state,
+		entries := usecase.BuildLogAcross(commits, reviewingRef, onRemote, reviewed, local, time.Now())
+
+		// In compare mode the card has to say which two: a range is two commits
+		// and everything between them, and "the one being reviewed" is one.
+		if entry, known := lookupTarget(targetID); known && entry.target.Kind == domain.TargetRange {
+			entries = usecase.MarkRange(entries, entry.target.From.Commit, entry.target.To.Commit)
 		}
+
+		return web.LogView{Entries: entries, Remote: state}
 	}
 }
 

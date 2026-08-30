@@ -126,9 +126,19 @@ func (s *Snapshotter) Baseline(ctx context.Context, before time.Time) (domain.Sn
 // SnapshotRef, so a caller-supplied `--since`/`--until` can be diffed the same
 // way as any other snapshot.
 func (s *Snapshotter) ResolveRef(ctx context.Context, ref string) (domain.SnapshotRef, error) {
-	out, err := s.run(ctx, os.Environ(), "rev-parse", ref)
+	// Peeled to the commit. An annotated tag is an object of its own, and
+	// `rev-parse v1.0.0` answers with *that* — after which everything
+	// downstream compares a tag hash against commit hashes and finds nothing:
+	// the range a reviewer picked could not be marked in the history, and the
+	// tag's date came back as its message.
+	out, err := s.run(ctx, os.Environ(), "rev-parse", ref+"^{commit}")
 	if err != nil {
-		return domain.SnapshotRef{}, fmt.Errorf("resolving ref %q: %w", ref, err)
+		// Not everything peels — the empty tree, for one — so a ref that will
+		// not is still worth resolving as itself.
+		out, err = s.run(ctx, os.Environ(), "rev-parse", ref)
+		if err != nil {
+			return domain.SnapshotRef{}, fmt.Errorf("resolving ref %q: %w", ref, err)
+		}
 	}
 	return domain.SnapshotRef{Commit: out, Label: ref}, nil
 }
