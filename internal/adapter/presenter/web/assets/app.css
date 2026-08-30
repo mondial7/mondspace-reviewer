@@ -920,6 +920,105 @@
   .cockpit__stats { grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); }
 }
 
+/* ── A setting ──────────────────────────────────────────────────────────────
+   One thing you can change: what it is, whether it is on, what "on" currently
+   means, and the control. A tick in a box is the control, not the answer —
+   reading a checkbox to find out whether msr is talking to your remote is the
+   wrong way round. */
+.setting {
+  margin: 0.9rem 0 0;
+  padding: 0.85rem 0.95rem;
+  border: 1px solid var(--rule); border-radius: 10px;
+  background: color-mix(in srgb, var(--bg-raised) 55%, transparent);
+}
+.setting__head {
+  display: flex; align-items: baseline; gap: 0.6rem; flex-wrap: wrap;
+  margin-bottom: 0.35rem;
+}
+.setting__name { margin: 0; font-size: 0.9rem; font-weight: 600; color: var(--fg); }
+
+/* The state, said out loud and coloured from the same rule as everything else
+   that is up or down on this page. */
+.setting__state {
+  padding: 0.05rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.64rem; letter-spacing: 0.1em; text-transform: uppercase;
+  border: 1px solid var(--rule); color: var(--fg-dim);
+}
+.setting[data-state="on"] .setting__state {
+  color: var(--stated);
+  border-color: color-mix(in srgb, var(--stated) 55%, transparent);
+  background: color-mix(in srgb, var(--stated) 12%, transparent);
+}
+.setting[data-state="off"] .setting__state { opacity: 0.8; }
+
+.setting__now { margin: 0; font-size: 0.82rem; color: var(--fg); }
+.setting__note { margin: 0.4rem 0 0; font-size: 0.74rem; color: var(--fg-dim); line-height: 1.5; }
+.setting__form { display: flex; flex-direction: column; gap: 0.7rem; margin-top: 0.8rem; }
+
+.setting__apply { display: flex; align-items: center; gap: 0.7rem; flex-wrap: wrap; }
+/* Said once, next to the button: a form that quietly discards what you typed
+   because you never pressed anything is the oldest trap there is. */
+.setting__pending { font-size: 0.7rem; color: var(--fg-dim); }
+
+/* A switch, which is a checkbox with somewhere to look. The input is real and
+   still does all the work — it is moved out of sight rather than hidden, so it
+   keeps its keyboard focus and its label. */
+.switch { display: flex; align-items: center; gap: 0.55rem; cursor: pointer; font-size: 0.82rem; }
+.switch__input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.switch__track {
+  flex: 0 0 auto;
+  width: 2.1rem; height: 1.15rem;
+  border-radius: 999px;
+  border: 1px solid var(--rule);
+  background: color-mix(in srgb, var(--fg-dim) 22%, transparent);
+  transition: background 140ms ease, border-color 140ms ease;
+  display: flex; align-items: center; padding: 0 2px;
+}
+.switch__knob {
+  width: 0.8rem; height: 0.8rem; border-radius: 50%;
+  background: var(--fg-dim);
+  transition: transform 140ms ease, background 140ms ease;
+}
+.switch__input:checked + .switch__track {
+  background: color-mix(in srgb, var(--stated) 30%, transparent);
+  border-color: color-mix(in srgb, var(--stated) 60%, transparent);
+}
+.switch__input:checked + .switch__track .switch__knob {
+  transform: translateX(0.9rem);
+  background: var(--stated);
+}
+.switch__input:focus-visible + .switch__track { outline: 2px solid var(--accent); outline-offset: 2px; }
+.switch__text { color: var(--fg); }
+
+/* A labelled box, sized to what goes in it. A four-character interval in a
+   full-width input tells you it expects a sentence. */
+.field { display: flex; flex-direction: column; gap: 0.2rem; min-width: 0; }
+.field--narrow { max-width: 9rem; }
+.field__label {
+  font-size: 0.66rem; color: var(--fg-dim);
+  text-transform: uppercase; letter-spacing: 0.08em;
+}
+.field__input {
+  font: inherit; font-size: 0.82rem;
+  color: var(--fg); background: var(--bg-raised);
+  border: 1px solid var(--rule); border-radius: 8px;
+  padding: 0.45rem 0.6rem;
+  min-width: 0;
+}
+.field__input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
+.field__hint { font-size: 0.68rem; color: var(--fg-dim); }
+
+/* The one button style the settings forms use. */
+.btn {
+  font: inherit; font-size: 0.8rem; cursor: pointer;
+  border-radius: 8px; padding: 0.42rem 0.9rem;
+  border: 1px solid var(--rule); background: transparent; color: var(--fg);
+}
+.btn:hover { border-color: var(--accent); color: var(--accent); }
+.btn--go { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+.btn--go:hover { color: var(--bg); filter: brightness(1.08); }
+
 /* ── Settings ───────────────────────────────────────────────────────────────*/
 /* A sidebar and one pane. Most of this page is configuration you set once, and
    putting it in a column beside a live usage counter meant scrolling past the
@@ -1156,7 +1255,14 @@
 .versions__author { color: var(--fg-dim); opacity: 0.7; }
 
 /* Opening another repository from the status page. */
-.addrepo { display: flex; gap: 0.4rem; margin-top: 0.8rem; min-width: 0; }
+/* Label above, box and button on the row below: a label dropped into a flex row
+   sits beside the box it names, which is not a label, it is a prefix. */
+.addrepo {
+  display: grid; gap: 0.25rem 0.4rem; margin-top: 0.9rem; min-width: 0;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+.addrepo > .field__label { grid-column: 1 / -1; }
+.addrepo > .field__input { grid-column: 1; }
 .addrepo__input {
   flex: 1; min-width: 0; font: inherit; font-size: 0.8rem;
   color: var(--fg); background: var(--bg);

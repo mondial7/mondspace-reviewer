@@ -2619,6 +2619,27 @@ func (s *Server) handleTutorial(w http.ResponseWriter, r *http.Request) {
 	s.render(w, "tutorial.html", nil)
 }
 
+// TidyInterval renders a duration the way somebody would type it back.
+//
+// Go writes 1m0s, 2m0s, 1h0m0s. None of those are wrong and none of them are
+// what anybody writes, and this value goes into a box a person then edits — so
+// the trailing zero units come off, and what is left still parses.
+func TidyInterval(d string) string {
+	// Only a whole zero unit comes off. Trimming "0s" from "1m30s" would leave
+	// "1m3", which is both wrong and unparseable — so the character before the
+	// suffix has to be a unit rather than a digit.
+	for _, zero := range []string{"0m0s", "0s"} {
+		if len(d) <= len(zero) || !strings.HasSuffix(d, zero) {
+			continue
+		}
+		if before := d[len(d)-len(zero)-1]; before >= '0' && before <= '9' {
+			continue
+		}
+		d = strings.TrimSuffix(d, zero)
+	}
+	return d
+}
+
 // settingsSection is one pane of the settings page.
 type settingsSection struct {
 	Slug, Name, Hint string
@@ -2675,7 +2696,7 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		// The interval is shown in the syntax the form accepts, so what is on
 		// the page can be typed straight back into it. humanDuration drops
 		// seconds, which is right for "open 2h 10m" and wrong for "every 45s".
-		watching, watchEvery = on, every.String()
+		watching, watchEvery = on, TidyInterval(every.String())
 	}
 	repoErr := s.repoErr
 	canAddRepo := s.addRepo != nil

@@ -127,17 +127,11 @@
         </span>
       </div>
       <div class="board__row">
-        <span class="board__key">model</span>
-        <span class="board__val">{{ if .Agent.Model }}{{ .Agent.Model }}{{ else }}—{{ end }}</span>
-      </div>
-      <div class="board__row">
-        <span class="board__key">endpoint</span>
-        <span class="board__val">{{ if .Agent.Endpoint }}{{ .Agent.Endpoint }}{{ else }}—{{ end }}</span>
-      </div>
-      <div class="board__row">
         <span class="board__key">last checked</span>
         <span class="board__val">{{ .Checked }}</span>
       </div>
+      <!-- The model and the endpoint are not repeated here: they are in the
+           boxes below, which say the same thing and can be edited. -->
 
       {{ with .Agent.Workloads }}
       <!-- With two models answering, "the model" is no longer a single fact,
@@ -153,48 +147,80 @@
       {{ if .CanConfigure }}
       <!-- Pointing msr at another machine or another model, without editing a
            file and restarting. Applied at once and remembered. -->
-      <form class="agentform" method="post" action="/agent">
-        <label class="agentform__label" for="agent-endpoint">endpoint</label>
-        <input class="addrepo__input" id="agent-endpoint" name="endpoint" type="text"
-               value="{{ .Agent.Endpoint }}" placeholder="http://localhost:1234/v1"
-               autocomplete="off" spellcheck="false">
+      <form class="setting__form" method="post" action="/agent">
+        <div class="field">
+          <label class="field__label" for="agent-endpoint">endpoint</label>
+          <input class="field__input" id="agent-endpoint" name="endpoint" type="text"
+                 value="{{ .Agent.Endpoint }}" placeholder="http://localhost:1234/v1"
+                 autocomplete="off" spellcheck="false" aria-describedby="agent-endpoint-hint">
+          <span class="field__hint" id="agent-endpoint-hint">
+            any OpenAI-compatible server — llama-server, LM Studio, Ollama
+          </span>
+        </div>
 
-        <label class="agentform__label" for="agent-model">model</label>
-        <input class="addrepo__input" id="agent-model" name="model" type="text"
-               value="{{ .Agent.Model }}" placeholder="qwen/qwen3.5-9b"
-               autocomplete="off" spellcheck="false">
+        <div class="field">
+          <label class="field__label" for="agent-model">model</label>
+          <input class="field__input" id="agent-model" name="model" type="text"
+                 value="{{ .Agent.Model }}" placeholder="qwen/qwen3.5-9b"
+                 autocomplete="off" spellcheck="false" aria-describedby="agent-model-hint">
+          <span class="field__hint" id="agent-model-hint">
+            exactly as that server names it
+          </span>
+        </div>
 
-        <label class="agentform__check">
-          <input type="checkbox" name="no_thinking" {{ if .Agent.NoThinking }}checked{{ end }}>
-          ask the model to skip its reasoning phase
-        </label>
-        <details class="picker__compare">
-          <summary class="post__moresummary">why this may do nothing</summary>
-          <p class="agentform__note">
-            msr always sends the request; whether it does anything is decided by
-            the model's chat template. Measured as doing nothing on Qwen3.5-9B,
-            under both LM Studio and llama-server — the real switch there is
-            <code>--reasoning-budget 0</code> on the server, and that did not
-            work either. A model with no thinking mode needs none of this.
-          </p>
-        </details>
+        <div class="setting" data-state="{{ if .Agent.NoThinking }}on{{ else }}off{{ end }}">
+          <div class="setting__head">
+            <h3 class="setting__name">Skip the reasoning phase</h3>
+            <span class="setting__state">{{ if .Agent.NoThinking }}on{{ else }}off{{ end }}</span>
+          </div>
+          <label class="switch" for="no-thinking">
+            <input class="switch__input" type="checkbox" name="no_thinking" id="no-thinking"
+                   {{ if .Agent.NoThinking }}checked{{ end }}>
+            <span class="switch__track" aria-hidden="true"><span class="switch__knob"></span></span>
+            <span class="switch__text">ask the model not to think out loud</span>
+          </label>
+          <details class="picker__compare">
+            <summary class="post__moresummary">why this may do nothing</summary>
+            <p class="setting__note">
+              msr always sends the request; whether it does anything is decided by
+              the model's chat template. Measured as doing nothing on Qwen3.5-9B,
+              under both LM Studio and llama-server — the real switch there is
+              <code>--reasoning-budget 0</code> on the server, and that did not
+              work either. A model with no thinking mode needs none of this.
+              <a href="/settings?s=usage">Usage</a> says whether it is being ignored.
+            </p>
+          </details>
+        </div>
 
         <!-- Sending one job to its own model. Both boxes empty means it uses
              the settings above, which is how two servers collapse into one. -->
         <details class="picker__compare">
           <summary class="post__moresummary">send a workload to its own model</summary>
+          <p class="setting__note">
+            Leave a pair empty and that workload uses the endpoint and model above.
+          </p>
           {{ range .WorkloadForm }}
-          <label class="agentform__label" for="wl-{{ .Workload }}">{{ .Workload }}</label>
-          <input class="addrepo__input" id="wl-{{ .Workload }}" name="endpoint_{{ .Workload }}"
-                 type="text" value="{{ .Endpoint }}" placeholder="endpoint (default: the one above)"
-                 autocomplete="off" spellcheck="false">
-          <input class="addrepo__input" name="model_{{ .Workload }}"
-                 type="text" value="{{ .Model }}" placeholder="model (default: the one above)"
-                 autocomplete="off" spellcheck="false">
+          <div class="field">
+            <label class="field__label" for="wl-{{ .Workload }}-endpoint">{{ .Workload }} — endpoint</label>
+            <input class="field__input" id="wl-{{ .Workload }}-endpoint" name="endpoint_{{ .Workload }}"
+                   type="text" value="{{ .Endpoint }}" placeholder="default: the endpoint above"
+                   autocomplete="off" spellcheck="false">
+          </div>
+          <div class="field">
+            <label class="field__label" for="wl-{{ .Workload }}-model">{{ .Workload }} — model</label>
+            <input class="field__input" id="wl-{{ .Workload }}-model" name="model_{{ .Workload }}"
+                   type="text" value="{{ .Model }}" placeholder="default: the model above"
+                   autocomplete="off" spellcheck="false">
+          </div>
           {{ end }}
         </details>
 
-        <button class="addrepo__btn" type="submit">apply</button>
+        <div class="setting__apply">
+          <button class="btn btn--go" type="submit">apply</button>
+          <span class="setting__pending">
+            nothing changes until you apply — msr checks the endpoint answers first
+          </span>
+        </div>
       </form>
       {{ with .AgentErr }}<p class="addrepo__err">{{ . }}</p>{{ end }}
       {{ end }}
@@ -202,40 +228,61 @@
     {{ end }}
 
     {{ if eq .Section "remote" }}
-    <!-- Fetching is the one thing msr does that talks to the network and
-         writes to the repository, so what it is doing has to be on the page
-         rather than only in how it was started (ADR 0025, ADR 0026). -->
+    <!-- Fetching is the one thing msr does that talks to the network and writes
+         to the repository, so what it is doing has to be on the page rather
+         than only in how it was started (ADR 0025, ADR 0026). -->
     <section class="board__panel">
       <h2 class="board__title">watching the remote</h2>
       {{ if or .HasWatch .CanWatch }}
-      <div class="board__row">
-        <span class="board__key">state</span>
-        <span class="board__val {{ if not .Watching }}board__val--down{{ end }}">
-          {{ if .Watching }}fetching every {{ .WatchEvery }}{{ else }}not fetching{{ end }}
-        </span>
+
+      <div class="setting" data-state="{{ if .Watching }}on{{ else }}off{{ end }}">
+        <div class="setting__head">
+          <h3 class="setting__name">Fetching from the remote</h3>
+          <span class="setting__state">{{ if .Watching }}on{{ else }}off{{ end }}</span>
+        </div>
+        <!-- What is true now, rather than a description of both states and a
+             checkbox to work out which one you are in. -->
+        <p class="setting__now">
+          {{ if .Watching }}
+          msr runs <code>git fetch</code> every {{ .WatchEvery }}, so you see what the
+          rest of the team pushes without asking for it.
+          {{ else }}
+          msr reads whatever your own last <code>git fetch</code> brought in. Nothing
+          here talks to your remote.
+          {{ end }}
+        </p>
+        <p class="setting__note">
+          It writes remote-tracking refs and talks to your remote. It never
+          touches HEAD, your index or your working tree.
+        </p>
+
+        {{ if .CanWatch }}
+        <form class="setting__form" method="post" action="/remote">
+          <label class="switch" for="watch-on">
+            <input class="switch__input" type="checkbox" name="watch" id="watch-on"
+                   {{ if .Watching }}checked{{ end }}>
+            <span class="switch__track" aria-hidden="true"><span class="switch__knob"></span></span>
+            <span class="switch__text">fetch in the background</span>
+          </label>
+
+          <div class="field field--narrow">
+            <label class="field__label" for="watch-every">how often</label>
+            <input class="field__input" id="watch-every" name="every" type="text"
+                   value="{{ if .WatchEvery }}{{ .WatchEvery }}{{ else }}2m{{ end }}"
+                   placeholder="2m" autocomplete="off" spellcheck="false"
+                   aria-describedby="watch-every-hint">
+            <span class="field__hint" id="watch-every-hint">30s · 2m · 1h</span>
+          </div>
+
+          <div class="setting__apply">
+            <button class="btn btn--go" type="submit">apply</button>
+            <span class="setting__pending">nothing changes until you apply</span>
+          </div>
+        </form>
+        {{ end }}
       </div>
-      <p class="agentform__note">
-        Off, msr reads whatever your own last <code>git fetch</code> brought in.
-        On, it fetches for you so you see what the rest of the team pushes. It
-        writes remote-tracking refs and talks to your remote — it never touches
-        HEAD, your index or your working tree.
-      </p>
 
-      {{ if .CanWatch }}
-      <form class="agentform" method="post" action="/remote">
-        <label class="agentform__check">
-          <input type="checkbox" name="watch" {{ if .Watching }}checked{{ end }}>
-          fetch in the background
-        </label>
-        <label class="agentform__label" for="watch-every">how often</label>
-        <input class="addrepo__input" id="watch-every" name="every" type="text"
-               value="{{ if .WatchEvery }}{{ .WatchEvery }}{{ else }}2m{{ end }}"
-               placeholder="2m" autocomplete="off" spellcheck="false">
-        <button class="addrepo__btn" type="submit">apply</button>
-      </form>
-      {{ end }}
-
-      <p class="agentform__note"><a href="/branches">See every branch →</a></p>
+      <p class="agentform__note"><a href="/branches">See every branch &rarr;</a></p>
       {{ else }}
       <p class="queue__empty">
         This workspace has no remote to watch — msr is reading a repository with
@@ -280,9 +327,10 @@
 
       {{ if .CanAddRepo }}
       <form class="addrepo" method="post" action="/repos">
-        <input class="addrepo__input" name="path" type="text" autocomplete="off"
-               placeholder="path to another repository…">
-        <button class="addrepo__btn" type="submit">watch</button>
+        <label class="field__label" for="add-repo">open another repository</label>
+        <input class="field__input" id="add-repo" name="path" type="text" autocomplete="off"
+               placeholder="/path/to/a/checkout">
+        <button class="btn btn--go" type="submit">watch</button>
       </form>
       {{ with .RepoErr }}<p class="addrepo__err">{{ . }}</p>{{ end }}
       {{ end }}
