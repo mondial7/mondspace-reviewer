@@ -26,6 +26,13 @@
   --stated: #4fdc95;
   --inferred: #ffcc70;
 
+  /* Two faint nebulae behind the whole page. They are tokens rather than
+     literals because a colour written into a rule belongs to no theme, so no
+     theme can override it — which is how these two stayed dark on the light
+     page while nothing in the light block looked wrong. */
+  --nebula-a: #150f2e;
+  --nebula-b: #06182b;
+
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
   --panel-glow: inset 0 1px 0 rgba(167, 139, 250, 0.06);
   --gutter: clamp(0.75rem, 1.6vw, 1.25rem);
@@ -34,9 +41,12 @@
 /* Light is reachable two ways: by the operating system's preference, and by an
    explicit choice that overrides it. The values are written twice because CSS
    has no way to share a block between two selectors — the alternative is a
-   toggle that cannot turn light mode ON for someone whose OS is dark. */
+   toggle that cannot turn light mode ON for someone whose OS is dark.
+   `:not([data-theme])` rather than `:not([data-theme="dark"])`: every explicit
+   theme has to beat the OS, not just the one that existed when this was
+   written. */
 @media (prefers-color-scheme: light) {
-  :root:not([data-theme="dark"]) {
+  :root:not([data-theme]) {
   --bg: #fbfbfd;
   --bg-raised: #ffffff;
   --panel: #ffffff;
@@ -50,6 +60,8 @@
   --accent: #6d3fb5;
   --stated: #1d7a45;
   --inferred: #7a5c00;
+  --nebula-a: #efeaff;
+  --nebula-b: #e6f0f8;
   --panel-glow: 0 1px 2px rgba(20, 20, 45, 0.07);
   }
 }
@@ -68,7 +80,54 @@
   --accent: #6d3fb5;
   --stated: #1d7a45;
   --inferred: #7a5c00;
+  --nebula-a: #efeaff;
+  --nebula-b: #e6f0f8;
   --panel-glow: 0 1px 2px rgba(20, 20, 45, 0.07);
+}
+
+/* Solarized (Ethan Schoonover), both ways round.
+   It is a deliberately low-contrast palette: base1 on base03 measures 5.6:1
+   where msr's own dark theme measures 13.6:1, and softening the page is the
+   whole point of choosing it. What is not negotiable is that anything carrying
+   meaning stays readable, so body text is one step off the canonical base and
+   the accents are pulled until each clears 4.5:1 on its own ground — the same
+   hue, enough of it to read. */
+:root[data-theme="solarized-dark"] {
+  --bg: #002b36;         /* base03 */
+  --bg-raised: #073642;  /* base02 */
+  --panel: #04313d;
+  --hull: #001d25;
+  --rule: #1d5f6e;
+  --fg: #a8b6b6;         /* base1, lifted: 7.2:1 */
+  --fg-dim: #7a8f94;
+  --add: #859900;        /* green */
+  --del: #e56462;        /* red, lifted off base03 */
+  --hunk: #2f93d9;       /* blue */
+  --accent: #8287cd;     /* violet */
+  --stated: #859900;
+  --inferred: #b58900;   /* yellow */
+  --nebula-a: #06323d;
+  --nebula-b: #052a33;
+  --panel-glow: inset 0 1px 0 rgba(130, 135, 205, 0.08);
+}
+
+:root[data-theme="solarized-light"] {
+  --bg: #fdf6e3;         /* base3 */
+  --bg-raised: #fffdf6;
+  --panel: #fffdf6;
+  --hull: #eee8d5;       /* base2 */
+  --rule: #e0d8c2;
+  --fg: #46595f;         /* base01, deepened: 6.8:1 */
+  --fg-dim: #657b83;     /* base00 */
+  --add: #697800;
+  --del: #c02b28;
+  --hunk: #2076b3;
+  --accent: #6369c1;
+  --stated: #697800;
+  --inferred: #8f6c00;
+  --nebula-a: #f7edd6;
+  --nebula-b: #f2efdd;
+  --panel-glow: 0 1px 2px rgba(88, 110, 117, 0.10);
 }
 
 * { box-sizing: border-box; }
@@ -196,8 +255,8 @@
   /* Two very faint nebulae, far dimmer than before: at this depth they should
      be a suggestion of colour, not a gradient you can name. */
   background:
-    radial-gradient(1300px 900px at 72% -12%, #150f2e 0%, transparent 62%),
-    radial-gradient(1000px 800px at 8% 112%, #06182b 0%, transparent 58%),
+    radial-gradient(1300px 900px at 72% -12%, var(--nebula-a) 0%, transparent 62%),
+    radial-gradient(1000px 800px at 8% 112%, var(--nebula-b) 0%, transparent 58%),
     var(--bg);
 }
 
@@ -332,6 +391,41 @@
 .storynav__zen:hover,
 .storynav__zen[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
 
+/* The theme menu. Five themes is one too many to cycle through: four clicks to
+   get back where you started is not a control, so the button opens a list. */
+.thememenu__anchor { position: relative; display: inline-block; }
+.thememenu {
+  position: absolute; right: 0; top: calc(100% + 0.4rem); z-index: 40;
+  min-width: 15.5rem;
+  background: var(--panel);
+  border: 1px solid var(--rule); border-radius: 8px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+  padding: 0.25rem;
+  display: flex; flex-direction: column;
+  text-transform: none; letter-spacing: normal;
+}
+.thememenu__item {
+  font: inherit; font-size: 0.78rem; text-align: left;
+  display: flex; flex-direction: column; gap: 0.05rem;
+  padding: 0.35rem 0.55rem; border-radius: 5px;
+  background: transparent; border: 0; color: var(--fg); cursor: pointer;
+}
+.thememenu__item:hover, .thememenu__item:focus-visible {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  outline: none;
+}
+/* The chosen one is marked, not merely highlighted: hover already owns the
+   highlight, and a menu where "current" and "under the cursor" look the same
+   cannot answer what you are on. */
+.thememenu__item[aria-checked="true"] .thememenu__name::before {
+  content: "\2713\00a0"; color: var(--accent);
+}
+.thememenu__item:not([aria-checked="true"]) .thememenu__name::before {
+  content: "\00a0\00a0\00a0";
+}
+.thememenu__name { color: var(--fg); }
+.thememenu__hint { color: var(--fg-dim); font-size: 0.7rem; padding-left: 1.1rem; }
+
 /* Command palette — the way around when zen has hidden the rail. */
 .palette {
   position: fixed; inset: 0; z-index: 50;
@@ -374,6 +468,12 @@
   font-size: 0.82rem; letter-spacing: 0.06em; text-transform: uppercase;
   position: relative;
 }
+/* Above the content, not merely before it: the rail carries a menu that opens
+   downward, and the first card on the page was painting over everything but
+   the menu's top row. Written against `.page >` because the blanket rule that
+   puts every child on layer 1 is written that way too, and a bare `.storynav`
+   loses to it on specificity however far down the file it sits. */
+.page > .storynav { z-index: 30; }
 /* A hairline of "power" along the bottom edge of the rail. */
 .storynav::after {
   content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 1px;
