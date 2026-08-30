@@ -608,12 +608,12 @@
              the same sentence far more often than not — always, for the live
              target, whose name *is* "Live · uncommitted work" — and three
              copies of one sentence is not a summary. -->
-        {{ if and .Narrative.Intro (ne .Narrative.Intro .Narrative.Title) }}
+        {{ if and .Narrative.Intro (not (echoes .Narrative.Intro .Narrative.Title)) }}
         <p class="brief__text">{{ .Narrative.Intro }}</p>
         {{ end }}
         {{ if and .Session.Prompt
-                  (ne .Session.Prompt .Narrative.Title)
-                  (ne .Session.Prompt .Narrative.Intro) }}
+                  (not (echoes .Session.Prompt .Narrative.Title))
+                  (not (echoes .Session.Prompt .Narrative.Intro)) }}
         <p class="brief__task">{{ .Session.Prompt }}</p>
         {{ end }}
         <p class="brief__src brief__src--{{ .Narrative.Source }}">

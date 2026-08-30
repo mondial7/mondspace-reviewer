@@ -405,16 +405,22 @@
   position: fixed; inset: 0; width: 100%; height: 100%;
   z-index: 0; pointer-events: none;
 }
-/* Everything on the page sits above the scene — everything, that is, that is
-   meant to be *on* the page.
-   The exceptions are listed here rather than fought one at a time further down:
-   this rule outranks a bare class selector, so any child that means to be fixed
-   or absolute quietly becomes relative instead. The body is a two-column grid,
-   so "quietly becomes relative" means "takes a grid cell and moves the layout".
-   It has now done exactly that twice — the icon sprite pushed the whole shell
-   below the fold, and the live-update toasts pushed the page up from the
-   bottom. A new out-of-flow child goes in this list. */
-.page > *:not(.backdrop):not(.sprite):not(.toasts) { position: relative; z-index: 1; }
+/* Everything on the page sits above the scene.
+   One class of exception, and every override of it is written `.page > .thing`
+   and placed after this rule: same specificity, later wins. Adding the
+   exceptions to the selector here instead raised its specificity above those
+   overrides and silently demoted the sidebar to layer 1 — after which the theme
+   menu, which lives in the sidebar, opened behind the cards. */
+.page > *:not(.backdrop) { position: relative; z-index: 1; }
+
+/* The sprite draws nothing and must not be laid out: the page is a two-column
+   grid, and an in-flow first child took a column and pushed the whole shell
+   below the fold. */
+.page > .sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+
+/* The toasts float over the page rather than joining it; in flow they took a
+   cell and pushed the page up from the bottom. */
+.page > .toasts { position: fixed; }
 
 /* Zen strips the shell — backdrop and rail — leaving only the work. */
 /* Zen: the shell and nothing else. One shortcut over the top of the two things
@@ -561,8 +567,7 @@
 .storynav__link:hover .sidenav__ico,
 .storynav__link[aria-current="page"] .sidenav__ico { opacity: 1; }
 .sidenav__word { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-/* The sprite draws nothing and must not be laid out. */
-.sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+
 
 /* An icon inside a control sits on the text baseline and keeps its distance;
    inside a heading it is a size bigger and a shade quieter, so it labels the

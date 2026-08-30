@@ -3340,6 +3340,21 @@ func funcs() template.FuncMap {
 		// A path in two halves, so the browser can trim the middle. Cutting the
 		// end off a path loses the filename, which is the half anybody was
 		// looking for; the directories in the middle are what nobody reads.
+		// Whether two lines are the same sentence, allowing for one of them
+		// having been cut to fit. Equality was not enough: before a model has
+		// read anything the title *is* the commit subject, truncated — so it
+		// never equalled the subject printed under it, and the card said the
+		// same thing twice with an ellipsis between the copies.
+		"echoes": func(a, b string) bool {
+			trim := func(v string) string {
+				return strings.TrimSpace(strings.TrimRight(strings.TrimSpace(v), "…."))
+			}
+			x, y := trim(a), trim(b)
+			if x == "" || y == "" {
+				return false
+			}
+			return strings.HasPrefix(x, y) || strings.HasPrefix(y, x)
+		},
 		"pathHead": func(s string) string {
 			if i := strings.LastIndex(s, "/"); i >= 0 {
 				return s[:i+1]

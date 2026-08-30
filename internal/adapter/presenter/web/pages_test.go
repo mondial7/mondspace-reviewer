@@ -465,3 +465,26 @@ func TestTheKeyboardCanStillWalkEveryPoint(t *testing.T) {
 		t.Error("and each one should still name its repository")
 	}
 }
+
+func TestATruncatedTitleStillCountsAsTheSameSentence(t *testing.T) {
+	// Before a model has read anything the title is the commit subject, cut to
+	// fit — so it is never *equal* to the subject printed under it, and an
+	// equality test let the card say the same thing twice with an ellipsis
+	// between the two copies.
+	subject := "Put tags and recorded runs in the history, and colour a column by what it did"
+	sess := testSession()
+	sess.Prompt = subject
+	sess.Target = domain.Target{Kind: domain.TargetCommit, Ref: "34938765", Subtitle: "34938765 · Someone"}
+	sess.Narrative = domain.Narrative{
+		Title:  "Put tags and recorded runs in the history, and colour a column by…",
+		Source: domain.NarrativeMechanical,
+	}
+
+	body := get(t, web.NewServer(sess, nil), "/cockpit").Body.String()
+	card := body[strings.Index(body, `<section class="brief">`):]
+	card = card[:strings.Index(card, "</section>")]
+
+	if strings.Contains(card, subject) {
+		t.Errorf("the card repeats the subject it already truncated at the top:\n%s", card)
+	}
+}

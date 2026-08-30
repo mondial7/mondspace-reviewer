@@ -4,6 +4,51 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.2.0] — 2026-08-30
+
+### Added
+
+- **Five themes** — auto, light, dark and Solarized both ways. Every colour
+  lives in a theme and a test refuses one written anywhere else; the starfield
+  and the isometric field re-read the palette when it changes, which they never
+  did before ([ADR 0032](ADR/0032-five-themes-and-colours-that-belong-to-one.md)).
+- **A sidebar instead of a top rail**, foldable to a strip of icons, with the
+  cockpit's instrument panel moved to the right. ⌘Z hides both; it lost its
+  button and kept its shortcut.
+- **Settings** (was `/status`), one pane at a time — overview, model, remote,
+  repositories, reviews, usage. A pane you are not on is not built
+  ([ADR 0033](ADR/0033-settings-as-a-place.md)).
+- **The whole diff.** A compacted diff now says how many lines it left out and
+  offers them: expanded in place, or as that file's own page without JavaScript.
+- **One list of checkpoints.** Commits, the tags on them and recorded runs, in
+  time order, with the working tree at the top. Tick two to compare. The
+  separate picker is gone.
+- **A report page per audit.** The card keeps a verdict and a tally; the
+  findings are read on their own page, with what is being reviewed above them.
+- **Three to five emoji** for a change, chosen by the model and filtered to
+  actual pictographs.
+- **`air`** for development, and **`msr mcp`** gained `--target`/the open review
+  across the CLI.
+
+### Fixed
+
+- The review card painted over its own text at 1200px, and below 1000px the
+  cockpit was silently three columns wide and overflowed the window.
+- An annotated tag resolved to the tag object rather than the commit, in three
+  separate places — which is why a tag's date came back as its message and a
+  compared range could not be marked in the history.
+- A range named newest-first reported "0 commits" over a real diff.
+- Notes on lines a compacted diff had dropped were reported as orphaned, as
+  though the code had moved under them.
+- Live-update toasts pushed the page up from the bottom instead of floating over
+  it; the icon sprite pushed the whole shell below the fold. Both were the same
+  rule quietly putting a fixed child back into a two-column grid.
+- The brief said the same sentence up to three times.
+- `msr review --since` ignored `.msrignore`, and `msr ask` did not keep what it
+  asked.
+- Controls that could do nothing looked like they could: "open" on the review
+  you are reading, "run" while it is running, "ask" with an empty box.
+
 ## [6.1.0] — 2026-08-29
 
 ### Added
@@ -670,6 +715,7 @@ First public release. Watching one agent, one session, one repo.
 - Session identifiers are validated to prevent path traversal outside the store
   root.
 
+[6.2.0]: https://github.com/mondial7/mondspace-reviewer/releases/tag/v6.2.0
 [6.1.0]: https://github.com/mondial7/mondspace-reviewer/releases/tag/v6.1.0
 [6.0.0]: https://github.com/mondial7/mondspace-reviewer/releases/tag/v6.0.0
 [5.8.0]: https://github.com/mondial7/mondspace-reviewer/releases/tag/v5.8.0

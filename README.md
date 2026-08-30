@@ -622,7 +622,7 @@ MSR_SUMMARIZER_URL=http://127.0.0.1:8081/v1 MSR_MODEL=qwen3-4b-instruct-2507 \
 
 ## Status
 
-**v6.1.0** — the review reaches the agent.
+**v6.2.0** — the page you review in.
 
 - **Cockpit** (`msr web`) — one page: the change as a story, the diffs,
   annotation, re-analysis, a live isometric field, and a workspace spanning any
@@ -657,6 +657,18 @@ MSR_SUMMARIZER_URL=http://127.0.0.1:8081/v1 MSR_MODEL=qwen3-4b-instruct-2507 \
 - **Schema-enforced model output**, on-demand descriptions, persisted
   conversations, and full accounting of every call and token at `/activity` and
   `/settings`.
+- **The cockpit rebuilt** — navigation down the left as a foldable sidebar, the
+  instrument panel on the right, and a diff you can always open in full. One
+  history holds commits, the tags on them and your recorded runs in time order,
+  and is the only place a checkpoint is chosen — tick two to compare them
+  ([ADR 0033](ADR/0033-settings-as-a-place.md)).
+- **Five themes** — auto, light, dark and Solarized both ways, with the
+  isometric field and the starfield following them
+  ([ADR 0032](ADR/0032-five-themes-and-colours-that-belong-to-one.md)).
+- **Settings**, one pane at a time, opening on an overview of whether any of
+  this is working.
+- **`air` for development** — the templates and stylesheet are embedded, so
+  editing one is a rebuild; `air` does it on every save.
 - **MCP server** (`msr mcp`) — your coding agent pulls the review when it wants
   it, never interrupted. What a human wrote and what a model inferred arrive
   through separate calls ([ADR 0031](ADR/0031-an-agent-pulls-the-review.md)).

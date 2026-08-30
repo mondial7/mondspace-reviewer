@@ -66,6 +66,36 @@ body::before {
 
 @keyframes drift { to { transform: translate3d(-55rem, 0, 0); } }
 
+/* ── Narrow screens ────────────────────────────────────────────────────────
+   The page had no width breakpoints at all: the rail was a single row of six
+   uppercase links, the hero was sized for a desktop, and a wide table pushed
+   the whole document sideways. */
+@media (max-width: 760px) {
+  :root { --gutter: 1rem; }
+
+  .rail { flex-wrap: wrap; gap: 0.5rem 0.9rem; padding: 0.6rem var(--gutter); font-size: 0.7rem; }
+  .rail__spacer { display: none; }
+
+  .hero { padding: 2.5rem 0 1.75rem; }
+  .hero__title { font-size: clamp(1.8rem, 9vw, 2.6rem); }
+  .btns { flex-wrap: wrap; }
+  .btn { width: 100%; text-align: center; }
+
+  /* Anything that cannot shrink scrolls inside itself rather than widening
+     the page: a document that scrolls sideways is a document you have lost. */
+  .term pre { font-size: 0.76rem; padding: 0.8rem; }
+  .scroller { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .tbl { font-size: 0.82rem; }
+  .tbl th, .tbl td { padding: 0.4rem 0.5rem; }
+
+  .grid { grid-template-columns: minmax(0, 1fr); }
+  .shot { margin-bottom: 1.75rem; }
+  .shot figcaption { font-size: 0.82rem; }
+}
+
+/* An image never widens the page, whatever it was captured at. */
+img { max-width: 100%; height: auto; }
+
 @media (prefers-reduced-motion: reduce) {
   body::before { animation: none; }
 }
@@ -360,7 +390,7 @@ footer p { margin: 0.3rem 0; }
 
 <section id="shots">
   <figure class="shot">
-    <img src="img/cockpit.png" alt="The msr cockpit: a fixed panel with what the change is and its numbers, the change told as chapters of prose, and every changed file with its flags and key lines." loading="lazy" width="1600" height="1000">
+    <img src="img/cockpit.png" alt="The msr cockpit: navigation down the left, the change told as chapters of prose beside every changed file, and an instrument panel on the right with the isometric field and the history." loading="lazy" width="1600" height="1000">
     <figcaption><b>One page.</b> What this change is and its numbers on the left, the story in the middle, every file on the right. Nothing on the panel is model-derived — every number is a git fact.</figcaption>
   </figure>
 
@@ -370,8 +400,13 @@ footer p { margin: 0.3rem 0; }
   </figure>
 
   <figure class="shot">
-    <img src="img/cockpit-analyses.png" alt="Three analysis cards side by side: story, security pass and breaking changes, each with its own verdict and findings." loading="lazy" width="1600" height="1050">
+    <img src="img/cockpit-analyses.png" alt="Three analysis cards side by side: story, security pass and breaking changes, each with its own verdict, its tally by severity, and a button to read the full report." loading="lazy" width="1600" height="360">
     <figcaption><b>Three readings, on demand.</b> The story, a security pass and a breaking-change check — each run when you ask, and none of them shown what the others found. Capped at five findings by the schema, and labelled <code>inferred</code>, because a small local model suggests where to look; it does not rule.</figcaption>
+  </figure>
+
+  <figure class="shot">
+    <img src="img/report.png" alt="One audit in full on its own page: what is being reviewed above, then every finding with its severity, the file it is in and a control to dismiss it." loading="lazy" width="1600" height="900">
+    <figcaption><b>The report.</b> A card holds a verdict and a tally; the findings are read here, with what is being reviewed above them and two ways back to where you left off.</figcaption>
   </figure>
 
   <figure class="shot">
@@ -583,6 +618,14 @@ footer p { margin: 0.3rem 0; }
     <div class="card">
       <h3>Three readings, not one</h3>
       <p>Story, security, breaking changes — each on demand, each independent. No analysis sees another's findings, because a model shown a previous answer anchors on it. A finding you decide is not a problem can be dismissed, and stays dismissed the next time you run it.</p>
+    </div>
+    <div class="card">
+      <h3>One list of checkpoints</h3>
+      <p>Commits, the tags on them and your recorded runs, in one history in time order — with the working tree at the top. Tick two and compare them. It is the only place a checkpoint is chosen, because two controls asking the same question is one too many.</p>
+    </div>
+    <div class="card">
+      <h3>Five themes, and a field that follows them</h3>
+      <p>Auto, light, dark and Solarized both ways. Each column of the isometric field is one changed file, split green over red in the proportion it added to what it took away.</p>
     </div>
     <div class="card">
       <h3>Your agent can ask</h3>
