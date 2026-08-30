@@ -671,6 +671,14 @@ Decisions are recorded in [`ADR/`](ADR); planned work in
 
 This project is built strictly test-first. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
+Working on the web app? The templates and stylesheet are embedded in the binary,
+so `air` does the rebuilding:
+
+```sh
+go install github.com/air-verse/air@latest
+air        # http://127.0.0.1:7777, rebuilt on every save
+```
+
 ## Security
 
 Found a vulnerability? See [SECURITY.md](SECURITY.md).

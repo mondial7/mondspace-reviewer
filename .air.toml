@@ -1,0 +1,47 @@
+# air — rebuild and restart `msr web` as you edit.
+#
+#   go install github.com/air-verse/air@latest
+#   air
+#
+# The templates and the stylesheet are compiled into the binary with go:embed,
+# so editing one is a rebuild, not a refresh — which is why html, css and js are
+# watched here alongside go. Reload the page after air says it has restarted.
+
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  cmd = "go build -o ./tmp/msr ./cmd/mondspace-reviewer"
+  bin = "./tmp/msr"
+  # Flags belong here rather than in `bin`: air runs `full_bin` verbatim.
+  full_bin = "./tmp/msr web --repo=. --addr=127.0.0.1:7777"
+
+  include_ext = ["go", "html", "css", "js", "toml"]
+
+  # msr writes to its own store on every page load — the pointer to the open
+  # review, the narrative, an audit result. Watching it would mean every page
+  # view rebuilt the binary and restarted the server underneath the page that
+  # caused it, forever.
+  exclude_dir = ["tmp", "dist", ".git", ".github", ".claude", ".mondspace-reviewer", "docs", "testdata"]
+  exclude_regex = ["_test\\.go$"]
+
+  # Long enough that saving several files at once is one rebuild, short enough
+  # that a single save feels immediate.
+  delay = 400
+
+  # A failed build leaves the last working server running rather than dropping
+  # you onto a dead port while you fix a typo.
+  stop_on_error = true
+
+  # SIGINT rather than SIGKILL: msr listens for it, and a killed server leaves
+  # the port held for long enough to break the next restart.
+  send_interrupt = true
+  kill_delay = "2s"
+
+[log]
+  time = true
+
+[misc]
+  # `air` is a development loop, not a build system: it should not leave
+  # binaries behind when it stops.
+  clean_on_exit = true
