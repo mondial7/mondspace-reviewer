@@ -2489,10 +2489,35 @@ a.toast:hover { border-color: var(--kind, var(--accent)); }
 .log__form { display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto; }
 .log__row { display: flex; align-items: flex-start; gap: 0.45rem; }
 .log__row .log__link { flex: 1 1 auto; min-width: 0; }
+/* A round mark in the page's own colours rather than the platform's square.
+   The input keeps doing the work and keeps its focus ring; only its skin is
+   ours, which is what appearance:none is for. */
 .log__pick {
-  flex: 0 0 auto; margin-top: 0.45rem;
-  accent-color: var(--accent); cursor: pointer;
+  appearance: none; -webkit-appearance: none;
+  flex: 0 0 auto; margin: 0.42rem 0 0;
+  width: 0.85rem; height: 0.85rem; border-radius: 50%;
+  border: 1px solid var(--rule);
+  background: color-mix(in srgb, var(--bg-raised) 70%, transparent);
+  cursor: pointer;
+  display: grid; place-content: center;
+  transition: border-color 120ms ease, background 120ms ease;
 }
+.log__pick::after {
+  content: ""; width: 0.4rem; height: 0.4rem; border-radius: 50%;
+  background: var(--bg); transform: scale(0);
+  transition: transform 120ms ease;
+}
+.log__pick:hover { border-color: var(--accent); }
+.log__pick:checked {
+  background: var(--accent); border-color: var(--accent);
+}
+.log__pick:checked::after { transform: scale(1); }
+.log__pick:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* The live row has nothing to compare from, so it keeps the column without a
+   mark in it — the rows below it must not shift sideways. */
+.log__pickgap { flex: 0 0 auto; width: 0.85rem; }
+.log__row--live .log__subject { color: var(--accent); }
 .log__compare {
   display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;
   padding-top: 0.5rem; margin-top: 0.4rem;

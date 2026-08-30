@@ -430,3 +430,38 @@ func TestATitleThatIsNotAPathIsLeftAlone(t *testing.T) {
 		t.Error("and it should still be shown")
 	}
 }
+
+func TestTheLiveTargetIsTheTopOfTheHistory(t *testing.T) {
+	// Choosing what to review happens in one place, and that place is the list
+	// of checkpoints. The working tree is a checkpoint like any other — the
+	// newest one — so it sits at the top of the list rather than in a control
+	// of its own beside it.
+	h := wiredServer(t)
+
+	body := get(t, h, "/cockpit").Body.String()
+
+	if !strings.Contains(body, `href="/?target=live"`) {
+		t.Errorf("the history should lead to the live target:\n%s", firstLines(body, 6))
+	}
+	// And the control that used to do it is gone.
+	if strings.Contains(body, `class="picker"`) {
+		t.Error("the separate picker should be gone")
+	}
+}
+
+func TestTheKeyboardCanStillWalkEveryPoint(t *testing.T) {
+	// `[`, `]`, `{` and `}` read the option list to move between reviews and
+	// between repositories. Removing the visible picker must not remove what
+	// they walk — a workspace spans repositories, and the history card only
+	// knows about one.
+	h := wiredServer(t)
+
+	body := get(t, h, "/cockpit").Body.String()
+
+	if !strings.Contains(body, `<datalist id="refs"`) {
+		t.Errorf("the list of every point should still be in the page:\n%s", firstLines(body, 6))
+	}
+	if !strings.Contains(body, `data-repo="demo"`) {
+		t.Error("and each one should still name its repository")
+	}
+}

@@ -578,30 +578,17 @@
            requests, the working tree — and a recorded run is one kind among
            them rather than the index (ADR 0017). -->
       {{ if .Targets }}
-      <form class="picker" method="get" action="/">
-        <label class="agentform__label" for="refs">reviewing</label>
-        <!-- A list you can open, not a box that filters itself to nothing. It
-             was an <input list=…>, pre-filled with the ref you were already on,
-             and a browser filters a datalist by what is typed — so the one
-             thing guaranteed to be in the box was the one thing that hid every
-             option behind it. -->
-        <select class="switcher__select" id="refs" name="target"
-                aria-label="Choose what to review">
-          {{ $here := .Session.Target.Ref }}
-          {{ if not $here }}{{ $here = .Session.ID }}{{ end }}
-          {{ range .Targets }}
-          <!-- Each option names its repository as well as its point, because a
-               workspace spans repositories and the keyboard walks this list to
-               move between them. -->
-          <option value="{{ if .Ref }}{{ .Ref }}{{ else }}{{ .ID }}{{ end }}"
-                  data-repo="{{ .Repo }}" data-reviewed="{{ .Reviewed }}"
-                  {{ if eq (or .Ref .ID) $here }}selected{{ end }}>
-            {{ if .Reviewed }}✓ {{ end }}{{ .Kind }}{{ with stamp .TS }} · {{ . }}{{ end }} · {{ .Title }} — {{ .Repo }}
-          </option>
-          {{ end }}
-        </select>
-        <button class="switcher__go" type="submit" data-unless-changed="refs">open</button>
-      </form>
+      <!-- Every point in the workspace, rendered and not shown. Choosing one
+           happens in the history card, which is the list of checkpoints; this
+           is what `[`, `]`, `{` and `}` walk, and it is the only thing that
+           knows about the other repositories a workspace spans. -->
+      <datalist id="refs">
+        {{ range .Targets }}
+        <option value="{{ if .Ref }}{{ .Ref }}{{ else }}{{ .ID }}{{ end }}"
+                data-repo="{{ .Repo }}" data-reviewed="{{ .Reviewed }}"
+                label="{{ if .Reviewed }}✓ {{ end }}{{ .Kind }}{{ with stamp .TS }} · {{ . }}{{ end }} · {{ .Title }} — {{ .Repo }}"></option>
+        {{ end }}
+      </datalist>
       {{ end }}
 
       <section class="brief">
@@ -700,6 +687,20 @@
         <form class="log__form" method="get" action="/compare">
           <input type="hidden" name="repo" value="{{ .Session.Repo }}">
         <ol class="log__rows">
+          <!-- The working tree: the newest checkpoint there is, and the one you
+               come back to. It has no hash and nothing to compare from, so it
+               is a row without a tick. -->
+          <li class="log__row log__row--live {{ if eq (printf "%s" .Session.Target.Kind) "live" }}log__row--here{{ end }}">
+            <span class="log__pickgap" aria-hidden="true"></span>
+            <a class="log__link" href="/?target=live" title="the working tree, against HEAD">
+              <span class="log__marks">
+                {{ if eq (printf "%s" .Session.Target.Kind) "live" }}<span class="log__here" title="what you are reviewing">▸</span>{{ end }}
+              </span>
+              <span class="log__subject">live · uncommitted work</span>
+              <span class="log__meta"><span>the working tree, against HEAD</span></span>
+            </a>
+          </li>
+
           {{ range .Log.Entries }}
           <li class="log__row
                      {{ if .Reviewing }}log__row--here{{ end }}
@@ -737,6 +738,27 @@
             <span class="log__hint">tick two checkpoints</span>
           </div>
         </form>
+      </section>
+      {{ else if .Targets }}
+      <!-- No git log wired, so the history card cannot be built — but choosing
+           what to review is not optional. The same list, as links. -->
+      <section class="log" id="log">
+        <header class="log__head"><span class="log__title">checkpoints</span></header>
+        <ol class="log__rows">
+          {{ range .Targets }}
+          <li class="log__row">
+            <a class="log__link" href="/?target={{ if .Ref }}{{ .Ref }}{{ else }}{{ .ID }}{{ end }}"
+               title="{{ .Title }}">
+              <span class="log__subject">{{ .Title }}</span>
+              <span class="log__meta">
+                <span>{{ .Kind }}</span>{{ with stamp .TS }}<span>{{ . }}</span>{{ end }}
+                {{ if .Reviewed }}<span class="log__state log__state--yes">reviewed</span>
+                {{ else }}<span class="log__state log__state--no">unreviewed</span>{{ end }}
+              </span>
+            </a>
+          </li>
+          {{ end }}
+        </ol>
       </section>
       {{ end }}
 

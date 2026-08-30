@@ -830,9 +830,11 @@ func TestCockpitOffersATargetPicker(t *testing.T) {
 
 	body := get(t, h, "/").Body.String()
 
-	// Navigable without JavaScript: a plain form the browser can submit.
-	if !strings.Contains(body, `name="target"`) {
-		t.Errorf("the cockpit needs a target picker:\n%s", body)
+	// Navigable without JavaScript: every point is a link. Choosing one happens
+	// in the history card, which is the list of checkpoints — there is no
+	// separate control beside it any more.
+	if !strings.Contains(body, `href="/?target=`) {
+		t.Errorf("the cockpit needs a way to open another point:\n%s", body)
 	}
 	// Git supplies most of what is reviewable; a session is one kind among them.
 	for _, want := range []string{"Fix the retry", "v2.0.0", "port the parser", "commit", "tag"} {
@@ -1436,11 +1438,12 @@ func TestATargetCanBeOpenedByItsRefNotOnlyItsID(t *testing.T) {
 	}
 }
 
-func TestOneListYouCanActuallyOpen(t *testing.T) {
-	// It was an <input list=…> pre-filled with the ref you were already on, and
-	// a browser filters a datalist by what is typed — so the one thing
-	// guaranteed to be in the box was the one thing that hid every option
-	// behind it. Nobody ever saw a list. It is a select.
+func TestNoPickerBesideTheListOfCheckpoints(t *testing.T) {
+	// It began as an <input list=…> pre-filled with the ref you were already on
+	// — and a browser filters a datalist by what is typed, so the one thing
+	// guaranteed to be in the box was the one thing that hid every option.
+	// Nobody ever saw a list. Then it was a select, which worked and was still
+	// a second control asking the same question as the history beside it.
 	h := web.NewServer(testSession(), nil).
 		WithTargets([]web.TargetSummary{
 			{ID: "t1", Ref: "v5.1.0", Kind: domain.TargetTag, Title: "v5.1.0", Repo: "api"},
@@ -1450,13 +1453,13 @@ func TestOneListYouCanActuallyOpen(t *testing.T) {
 
 	body := get(t, h, "/").Body.String()
 
-	if !strings.Contains(body, `<select class="switcher__select" id="refs"`) {
-		t.Errorf("the picker should be a list you can open:\n%s", body)
+	// The control is gone entirely: choosing a checkpoint happens in the list of
+	// checkpoints, and a second widget beside it asking the same question was
+	// the confusing part.
+	if strings.Contains(body, `class="picker"`) || strings.Contains(body, `<select`) {
+		t.Errorf("there should be no separate picker:\n%s", body)
 	}
-	if strings.Contains(body, `list="refs"`) || strings.Contains(body, "<datalist") {
-		t.Error("the datalist it used to filter itself with should be gone")
-	}
-	// Every known point is offered.
+	// Every known point is still reachable.
 	for _, want := range []string{"v5.1.0", "a1b2c3d4"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the list is missing %q", want)
