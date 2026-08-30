@@ -634,6 +634,10 @@
 .activity__took { color: var(--add); font-variant-numeric: tabular-nums; }
 .activity__row--failed { border-color: var(--del); }
 .masthead__hint { color: var(--fg-dim); }
+/* "5 on the remote  what everyone is working on" read as one sentence with a
+   word missing. Only where a count precedes it — on the pages that have no
+   count the hint is the whole line. */
+.masthead__count + .masthead__hint::before { content: "· "; }
 
 @media (max-width: 700px) {
   .activity__row { grid-template-columns: auto 1fr; }
@@ -1821,6 +1825,10 @@ a.toast:hover { border-color: var(--kind, var(--accent)); }
   display: grid;
   gap: 0.6rem;
   grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  /* Each card is as tall as what it has to say. Stretched to match its
+     neighbours, the story card — four lines and a button — became a thousand
+     pixels of nothing next to a security pass with five findings in it. */
+  align-items: start;
 }
 
 .acard {
@@ -1896,13 +1904,19 @@ a.toast:hover { border-color: var(--kind, var(--accent)); }
   list-style: none;
 }
 
+/* Where · what · what you made of it. The judgement sits at the end of the
+   first line rather than on a line of its own: five findings meant five
+   underlined sentences saying "not a problem", which read as content. */
 .acard__finding {
-  display: flex;
-  flex-direction: column;
-  gap: 0.1rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.1rem 0.5rem;
   padding-left: 0.55rem;
   border-left: 2px solid color-mix(in srgb, var(--inferred) 45%, transparent);
 }
+.acard__finding > .acard__where { grid-column: 1; }
+.acard__finding > .acard__note { grid-column: 1 / -1; }
+.acard__finding > .acard__judge { grid-column: 2; grid-row: 1; justify-self: end; }
 
 .acard__file {
   color: var(--hunk);
@@ -2147,7 +2161,10 @@ a.toast:hover { border-color: var(--kind, var(--accent)); }
    be to review (ADR 0026). A page rather than a panel card, because the panel
    is 20rem wide and this needs a name, a subject, an author and two counts. */
 
-.branches { display: block; max-width: 62rem; margin: 0 auto; }
+/* Full width, like every other board. Centred inside 62rem under a full-bleed
+   masthead, the list read as though it had been indented by accident — and it
+   left a column of nothing on either side of cards that tile perfectly well. */
+.branches { display: block; }
 
 .branchlist {
   display: grid;
@@ -2450,12 +2467,21 @@ a.log__branch:hover { text-decoration: underline; }
   background: none;
   color: var(--fg-dim);
   font: inherit;
-  font-size: 0.68rem;
-  text-decoration: underline dotted;
+  font-size: 0.64rem;
+  white-space: nowrap;
+  opacity: 0.6;
+  text-decoration: none;
   cursor: pointer;
 }
 
-.acard__judgebtn:hover { color: var(--accent); }
+/* Quiet until wanted, and never hidden: a control only hover can find is one a
+   keyboard cannot. */
+.acard__judgebtn:hover,
+.acard__judgebtn:focus-visible {
+  color: var(--accent);
+  opacity: 1;
+  text-decoration: underline dotted;
+}
 
 /* ── Search ─────────────────────────────────────────────────────────────────
    Everything written across the workspace. Grouped by review, because several
@@ -2464,6 +2490,18 @@ a.log__branch:hover { text-decoration: underline; }
 .search { display: block; max-width: 54rem; margin: 0 auto; }
 
 .search__form { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
+.search__starts {
+  margin: 0.6rem 0 0; padding: 0; list-style: none;
+  display: flex; flex-wrap: wrap; gap: 0.4rem;
+}
+.search__starts a {
+  display: block;
+  padding: 0.35rem 0.7rem;
+  border: 1px solid var(--rule); border-radius: 999px;
+  background: var(--panel);
+  color: var(--fg-dim); text-decoration: none; font-size: 0.76rem;
+}
+.search__starts a:hover { color: var(--accent); border-color: var(--accent); }
 .search__form input { flex: 1 1 auto; }
 
 .search__count {

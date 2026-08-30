@@ -42,7 +42,19 @@
     </form>
 
     {{ if .Blank }}
-    <p class="queue__empty">Type something to look for.</p>
+    <!-- A blank box was a blank page. Kind is part of what a query matches, so
+         these are ordinary searches rather than a feature of their own — and
+         they are the four questions people actually arrive with. -->
+    <p class="queue__empty">
+      Every word has to match, and the search covers the kind as well as the
+      words — so a kind on its own is a perfectly good query.
+    </p>
+    <ul class="search__starts">
+      <li><a href="/search?q=objection">everything you objected to</a></li>
+      <li><a href="/search?q=debt">debt you wrote down</a></li>
+      <li><a href="/search?q=question">questions you asked</a></li>
+      <li><a href="/search?q=security">what the security pass turned up</a></li>
+    </ul>
     {{ else if not .Groups }}
     <p class="queue__empty">Nothing written matches “{{ .Query }}”.</p>
     {{ else }}
