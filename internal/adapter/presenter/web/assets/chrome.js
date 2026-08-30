@@ -55,35 +55,119 @@ for (const b of document.querySelectorAll('[data-zen-toggle]')) {
 
 // ── Theme ───────────────────────────────────────────────────────────────────
 //
-// Three states, not two: dark, light, and following the operating system. A
-// two-state toggle silently overrides the OS forever after one click, which is
-// the wrong default for someone who switches at sunset.
+// Following the operating system is a state of its own, not the absence of a
+// choice: a two-state toggle silently overrides the OS forever after one click,
+// which is the wrong default for someone who switches at sunset.
+//
+// With five of them, cycling is no longer a reasonable way to arrive anywhere —
+// four clicks to get back to where you were is not a control. The button opens
+// a menu instead, built here rather than in the six templates that carry the
+// nav, so adding a theme is one list and not six edits.
 
 const THEME_KEY = 'msr:theme';
-const THEMES = ['system', 'dark', 'light'];
+const THEMES = [
+  { id: 'system', label: 'auto', hint: 'follow the operating system' },
+  { id: 'light', label: 'light', hint: 'the daylight palette' },
+  { id: 'dark', label: 'dark', hint: 'the deep-universe palette' },
+  { id: 'solarized-light', label: 'solar light', hint: 'Solarized, on paper' },
+  { id: 'solarized-dark', label: 'solar dark', hint: 'Solarized, at night' },
+];
 
-let theme = THEMES.includes(stored(THEME_KEY)) ? stored(THEME_KEY) : 'system';
+const themeIds = THEMES.map((t) => t.id);
+let theme = themeIds.includes(stored(THEME_KEY)) ? stored(THEME_KEY) : 'system';
+
+function themeLabel(id) {
+  return (THEMES.find((t) => t.id === id) || THEMES[0]).label;
+}
 
 function applyTheme() {
   const root = document.documentElement;
   if (theme === 'system') root.removeAttribute('data-theme');
   else root.setAttribute('data-theme', theme);
   for (const b of document.querySelectorAll('[data-theme-toggle]')) {
-    b.textContent = theme === 'system' ? 'auto' : theme;
-    b.title = `Theme: ${theme} — click to change (\u2318J)`;
+    b.textContent = themeLabel(theme);
+    b.title = `Theme: ${themeLabel(theme)} — click to change (\u2318J cycles)`;
+    b.setAttribute('aria-expanded', 'false');
   }
+  for (const item of document.querySelectorAll('[data-theme-id]')) {
+    item.setAttribute('aria-checked', String(item.dataset.themeId === theme));
+  }
+  // The starfield and the isometric field are painted on canvases from these
+  // same custom properties, and a canvas does not re-read a stylesheet on its
+  // own. Without this the page changed theme and the two drawings did not.
+  document.dispatchEvent(new CustomEvent('msr:theme', { detail: { theme } }));
 }
 
-function cycleTheme() {
-  theme = THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length];
+function setTheme(id) {
+  theme = themeIds.includes(id) ? id : 'system';
   remember(THEME_KEY, theme);
   applyTheme();
 }
 
-applyTheme();
-for (const b of document.querySelectorAll('[data-theme-toggle]')) {
-  b.addEventListener('click', cycleTheme);
+function cycleTheme() {
+  setTheme(themeIds[(themeIds.indexOf(theme) + 1) % themeIds.length]);
 }
+
+// themeMenu builds the popover next to one toggle button.
+function themeMenu(button) {
+  const menu = document.createElement('div');
+  menu.className = 'thememenu';
+  menu.setAttribute('role', 'menu');
+  menu.hidden = true;
+
+  for (const t of THEMES) {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'thememenu__item';
+    item.dataset.themeId = t.id;
+    item.setAttribute('role', 'menuitemradio');
+    item.setAttribute('aria-checked', String(t.id === theme));
+    const name = document.createElement('span');
+    name.className = 'thememenu__name';
+    name.textContent = t.label;
+    const hint = document.createElement('span');
+    hint.className = 'thememenu__hint';
+    hint.textContent = t.hint;
+    item.append(name, hint);
+    item.addEventListener('click', () => {
+      setTheme(t.id);
+      close();
+    });
+    menu.append(item);
+  }
+
+  function open() {
+    menu.hidden = false;
+    button.setAttribute('aria-expanded', 'true');
+    menu.querySelector('[aria-checked="true"]')?.focus();
+  }
+  function close() {
+    menu.hidden = true;
+    button.setAttribute('aria-expanded', 'false');
+  }
+
+  button.setAttribute('aria-haspopup', 'menu');
+  button.addEventListener('click', (e) => {
+    e.stopPropagation();
+    menu.hidden ? open() : close();
+  });
+  menu.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { close(); button.focus(); }
+  });
+  // Anywhere else dismisses it. A menu that only closes by choosing something
+  // makes changing your mind cost a choice.
+  document.addEventListener('click', () => { if (!menu.hidden) close(); });
+
+  const shell = document.createElement('span');
+  shell.className = 'thememenu__anchor';
+  button.replaceWith(shell);
+  shell.append(button, menu);
+}
+
+for (const b of document.querySelectorAll('[data-theme-toggle]')) {
+  themeMenu(b);
+}
+applyTheme();
 
 // ── Command palette ─────────────────────────────────────────────────────────
 //
@@ -98,7 +182,7 @@ const DESTINATIONS = [
   { label: 'How to use this', hint: 'the four things, in order', href: '/tutorial' },
   { label: 'Search the review log', hint: 'every note, question and finding', href: '/search' },
   { label: 'Sessions', hint: 'every review, across repositories', href: '/status' },
-  { label: 'Toggle theme', hint: 'dark · light · follow the system', action: cycleTheme },
+  { label: 'Next theme', hint: 'auto · light · dark · solarized', action: cycleTheme },
   { label: 'Toggle zen', hint: 'hide the shell and work', action: () => setZen(!zen) },
   { label: 'Keyboard shortcuts', hint: 'moving around without the mouse — or press ?',
     action: () => document.dispatchEvent(new CustomEvent('msr:shortcuts')) },
@@ -278,8 +362,10 @@ async function backdrop() {
   seed();
   window.addEventListener('resize', seed);
 
-  const ink = getComputedStyle(document.documentElement)
+  const readInk = () => getComputedStyle(document.documentElement)
     .getPropertyValue('--fg-dim').trim() || '#8b90a8';
+  let ink = readInk();
+  document.addEventListener('msr:theme', () => { ink = readInk(); });
 
   function frame() {
     raf = requestAnimationFrame(frame);

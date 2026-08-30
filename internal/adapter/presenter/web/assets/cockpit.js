@@ -75,17 +75,23 @@ async function start() {
   key.position.set(8, 14, 5);
   scene.add(key);
 
-  // Colours come from the stylesheet, so the field follows the light/dark theme
-  // and matches the legend printed beneath it.
-  const css = getComputedStyle(document.documentElement);
-  const colour = (name, fallback) =>
+  // Colours come from the stylesheet, so the field follows the theme and matches
+  // the legend printed beneath it. Read on every repaint rather than once: a
+  // canvas does not re-read a stylesheet when the theme changes, so reading at
+  // start-up left the field in whichever palette the page happened to load in.
+  const colour = (css, name, fallback) =>
     new THREE.Color(css.getPropertyValue(name).trim() || fallback);
-  const palette = {
-    add: colour('--add', '#a6e3a1'),
-    del: colour('--del', '#f38ba8'),
-    flag: colour('--inferred', '#f9e2af'),
-    ctx: colour('--accent', '#cba6f7'),
-  };
+  let palette;
+  function readPalette() {
+    const css = getComputedStyle(document.documentElement);
+    palette = {
+      add: colour(css, '--add', '#a6e3a1'),
+      del: colour(css, '--del', '#f38ba8'),
+      flag: colour(css, '--inferred', '#f9e2af'),
+      ctx: colour(css, '--accent', '#cba6f7'),
+    };
+  }
+  readPalette();
 
   const geometry = new THREE.BoxGeometry(1, 1, 1);
   let group = new THREE.Group();
@@ -155,6 +161,10 @@ async function start() {
 
   build();
   window.addEventListener('resize', resize);
+
+  // A new theme is a new palette, and the blocks hold their colour in a
+  // material rather than in CSS — so they have to be rebuilt to change.
+  document.addEventListener('msr:theme', () => { readPalette(); build(); });
 
   // Rebuild when live.js swaps the feed in: a change landing in the session is
   // exactly the moment the field should change shape.
