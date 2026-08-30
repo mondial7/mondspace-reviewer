@@ -13,23 +13,32 @@
 <body class="page page--cockpit" data-live="{{ .Stats.Live }}">
   <canvas class="backdrop" id="backdrop" aria-hidden="true"></canvas>
 
-  <nav class="storynav">
-    <a class="storynav__brand" href="/">msr</a>
-    <a class="storynav__link" href="/" aria-current="page">cockpit</a>
-    <a class="storynav__link" href="/branches">branches</a>
-    <a class="storynav__link" href="/search">search</a>
-    <a class="storynav__link" href="/activity">activity</a>
-    <a class="storynav__link" href="/settings">settings</a>
-    <a class="storynav__link" href="/tutorial">tour</a>
+  <nav class="sidenav" id="sidenav">
+    <a class="storynav__brand" href="/" title="mondspace-reviewer">
+      <span class="sidenav__mark" aria-hidden="true">&#9626;</span><span class="sidenav__word">msr</span>
+    </a>
+
+    <a class="storynav__link" href="/" aria-current="page" title="cockpit"><span class="sidenav__short" aria-hidden="true">co</span><span class="sidenav__word">cockpit</span></a>
+    <a class="storynav__link" href="/branches" title="branches"><span class="sidenav__short" aria-hidden="true">br</span><span class="sidenav__word">branches</span></a>
+    <a class="storynav__link" href="/search" title="search"><span class="sidenav__short" aria-hidden="true">se</span><span class="sidenav__word">search</span></a>
+    <a class="storynav__link" href="/activity" title="activity"><span class="sidenav__short" aria-hidden="true">ac</span><span class="sidenav__word">activity</span></a>
+    <a class="storynav__link" href="/settings" title="settings"><span class="sidenav__short" aria-hidden="true">st</span><span class="sidenav__word">settings</span></a>
+    <a class="storynav__link" href="/tutorial" title="tour"><span class="sidenav__short" aria-hidden="true">to</span><span class="sidenav__word">tour</span></a>
+
     <span class="storynav__spacer"></span>
     {{ if .Work }}{{ range .Work }}{{ if .Running }}
-    <span class="storynav__busy" title="{{ .Detail }}"><span class="ask__spinner" aria-hidden="true"></span>{{ .Kind }}</span>
+    <span class="sidenav__busy" title="{{ .Detail }}"><span class="ask__spinner" aria-hidden="true"></span>{{ .Kind }}</span>
     {{ end }}{{ end }}{{ end }}
-    <button class="storynav__zen" type="button" data-theme-toggle
+    <button class="sidenav__theme" type="button" data-theme-toggle
             title="Theme">auto</button>
-    <button class="storynav__zen" type="button" data-zen-toggle
-            aria-pressed="false" title="Zen mode (⌘Z) · palette (⌘K)">zen</button>
+    <!-- The rail itself folds to a strip of two-letter stops. ⌘Z hides it
+         altogether, along with the instrument panel on the cockpit. -->
+    <button class="sidenav__fold" type="button" data-sidenav-toggle
+            aria-controls="sidenav" aria-expanded="true"
+            title="Collapse the sidebar">&#8249;</button>
   </nav>
+
+  <div class="shell">
 
   <!-- Three columns: a fixed instrument panel, the session's story, and the
        changes themselves. Only the two right-hand columns scroll, and they
@@ -38,140 +47,6 @@
 
     <!-- Left: what this session is, what is happening, and the numbers.
          Never scrolls away. -->
-    <aside class="cockpit__panel">
-
-      <!-- The model's own reading of the session. Labelled inferred, because it
-           is: the numbers below it are not (ADR 0003). -->
-      <!-- Moving between sessions, and between repositories. A plain GET form,
-           so it works with no JavaScript. -->
-      <!-- What to review. Git supplies most of it — commits, tags, pull
-           requests, the working tree — and a recorded run is one kind among
-           them rather than the index (ADR 0017). -->
-      {{ if .Targets }}
-      <!-- One input, one vocabulary, searchable. Choosing what to review and
-           choosing the two ends of a comparison are the same question — "which
-           point in history" — and three different widgets made that unclear.
-           A native datalist, so it searches without any JavaScript. -->
-      <datalist id="refs">
-        {{ range .Targets }}
-        <!-- The tick is the whole point of recording a sign-off: what is left
-             to look at should be readable without opening anything. -->
-        <option value="{{ if .Ref }}{{ .Ref }}{{ else }}{{ .ID }}{{ end }}"
-                data-repo="{{ .Repo }}" data-reviewed="{{ .Reviewed }}"
-                label="{{ if .Reviewed }}✓ {{ end }}{{ .Kind }} · {{ .Title }} — {{ .Repo }}"></option>
-        {{ end }}
-      </datalist>
-
-      <form class="picker" method="get" action="/">
-        <label class="agentform__label" for="target-input">reviewing</label>
-        <input class="switcher__select" id="target-input" name="target" list="refs"
-               value="{{ if .Session.Target.Ref }}{{ .Session.Target.Ref }}{{ else }}{{ .Session.ID }}{{ end }}"
-               autocomplete="off" spellcheck="false"
-               aria-label="Choose what to review">
-        <!-- Enabled by default, because with no JavaScript it has to be. The
-             shell disables it while the box still names the review you are
-             already reading, which is the only state in which it does nothing. -->
-        <button class="switcher__go" type="submit" data-unless-changed="target-input">open</button>
-      </form>
-
-      {{ if .CanCompare }}
-      <details class="picker__compare">
-        <summary class="post__moresummary">compare two points</summary>
-        <form class="picker__compareform" method="get" action="/compare">
-          <input type="hidden" name="repo" value="{{ .Session.Repo }}">
-          <input class="switcher__select" name="from" list="refs" placeholder="from"
-                 autocomplete="off" spellcheck="false" aria-label="Compare from">
-          <input class="switcher__select" name="to" list="refs" placeholder="to (default: working tree)"
-                 autocomplete="off" spellcheck="false" aria-label="Compare to">
-          <button class="switcher__go" type="submit">compare</button>
-        </form>
-      </details>
-      {{ end }}
-      {{ end }}
-
-      <section class="brief">
-        {{ with .Session.Target.Kind }}<p class="brief__kind brief__kind--{{ . }}">{{ . }}</p>{{ end }}
-        <h1 class="brief__title">{{ .Narrative.Title }}</h1>
-        {{ with .Session.Target.Subtitle }}<p class="brief__sub">{{ . }}</p>{{ end }}
-        {{ with .Narrative.Intro }}<p class="brief__text">{{ . }}</p>{{ end }}
-        {{ with .Session.Prompt }}<p class="brief__task">{{ . }}</p>{{ end }}
-        <p class="brief__src brief__src--{{ .Narrative.Source }}">
-          {{ if eq .Narrative.Source "model" }}<span class="why why--inferred">inferred</span> by {{ .Narrative.Model }}
-          {{ else }}<span class="why why--inferred">mechanical</span> · no model has read this yet{{ end }}
-        </p>
-      </section>
-
-      <section class="cockpit__pulse">
-        <canvas class="cockpit__scene" id="cockpit-scene" aria-hidden="true"></canvas>
-        <p class="cockpit__status cockpit__status--{{ if .Stats.Live }}live{{ else }}idle{{ end }}">
-          {{ if .Stats.Live }}<span class="cockpit__dot"></span>working — more is coming
-          {{ else }}<span class="cockpit__dot"></span>idle — nothing for a while{{ end }}
-        </p>
-        <p class="cockpit__legend">
-          <span class="cockpit__key cockpit__key--add">growth</span>
-          <span class="cockpit__key cockpit__key--del">deletion</span>
-          <span class="cockpit__key cockpit__key--flag">flagged</span>
-        </p>
-      </section>
-
-      <!-- Where you are against everything that has landed, and what the rest
-           of the team has pushed (issue #18). Scrolls on its own so a long
-           history cannot push the numbers off the panel. -->
-      {{ if .HasLog }}
-      <section class="log" id="log">
-        <header class="log__head">
-          <span class="log__title">history</span>
-          {{ with .Log.Remote.Upstream }}
-          <a class="log__branch" href="/branches"
-             title="{{ $.Log.Remote.Branch }} tracks {{ . }} — see every branch">{{ . }}</a>
-          {{ end }}
-        </header>
-
-        {{ if or .Log.Remote.Behind .Log.Remote.Ahead }}
-        <p class="log__track">
-          {{ with .Log.Remote.Behind }}<span class="log__behind">{{ . }} behind</span>{{ end }}
-          {{ with .Log.Remote.Ahead }}<span class="log__ahead">{{ . }} ahead</span>{{ end }}
-        </p>
-        {{ end }}
-
-        <ol class="log__rows">
-          {{ range .Log.Entries }}
-          <li class="log__row
-                     {{ if .Reviewing }}log__row--here{{ end }}
-                     {{ if .SignedOff }}log__row--signed{{ end }}
-                     {{ if .Incoming }}log__row--incoming{{ end }}">
-            <a class="log__link" href="/?target={{ .Ref }}" title="{{ .Subject }}">
-              <span class="log__marks">
-                {{ if .Reviewing }}<span class="log__here" title="what you are reviewing">▸</span>{{ end }}
-                {{ if .SignedOff }}<span class="log__tick" title="you signed this off">✓</span>{{ end }}
-                {{ if .Incoming }}<span class="log__incoming" title="on the remote, not here yet">incoming</span>
-                {{ else if not .OnRemote }}<span class="log__local" title="not pushed yet">local</span>{{ end }}
-              </span>
-              <span class="log__subject">{{ .Subject }}</span>
-              <span class="log__meta">{{ .Author }} · {{ .Ago }}</span>
-            </a>
-          </li>
-          {{ end }}
-        </ol>
-      </section>
-      {{ end }}
-
-      <section class="cockpit__stats">
-        {{ range .Stats.Tiles }}
-        <div class="stat"{{ with .Hint }} title="{{ . }}"{{ end }}>
-          {{ if .IsLines }}
-          <span class="stat__value stat__value--lines">
-            <span class="unit__stat--add">+{{ .Added }}</span>
-            <span class="unit__stat--del">-{{ .Removed }}</span>
-          </span>
-          {{ else }}
-          <span class="stat__value{{ if .IsRef }} stat__value--ref{{ end }}">{{ .Value }}</span>
-          {{ end }}
-          <span class="stat__label">{{ .Label }}</span>
-        </div>
-        {{ end }}
-      </section>
-    </aside>
 
     <!-- Both of these are about the review as a whole rather than about the
          story or the changes separately, so they share the row above both
@@ -679,6 +554,152 @@
       </div>
     </div>
 
+
+    <!-- The instrument panel, last: it is on the right of the screen and it
+         is the last thing you need. Reading order follows, so a screen
+         reader and a keyboard reach the change before the instruments. -->
+    <aside class="cockpit__panel" id="cockpit-panel">
+      <!-- Folds away on its own, and with the sidebar under ⌘Z. What it holds —
+           which review, the field, the history, the totals — is what you glance
+           at, not what you read. -->
+      <button class="panel__fold" type="button" data-panel-toggle
+              aria-controls="cockpit-panel" aria-expanded="true"
+              title="Collapse the panel">&#8250;</button>
+
+      <!-- The model's own reading of the session. Labelled inferred, because it
+           is: the numbers below it are not (ADR 0003). -->
+      <!-- Moving between sessions, and between repositories. A plain GET form,
+           so it works with no JavaScript. -->
+      <!-- What to review. Git supplies most of it — commits, tags, pull
+           requests, the working tree — and a recorded run is one kind among
+           them rather than the index (ADR 0017). -->
+      {{ if .Targets }}
+      <!-- One input, one vocabulary, searchable. Choosing what to review and
+           choosing the two ends of a comparison are the same question — "which
+           point in history" — and three different widgets made that unclear.
+           A native datalist, so it searches without any JavaScript. -->
+      <datalist id="refs">
+        {{ range .Targets }}
+        <!-- The tick is the whole point of recording a sign-off: what is left
+             to look at should be readable without opening anything. -->
+        <option value="{{ if .Ref }}{{ .Ref }}{{ else }}{{ .ID }}{{ end }}"
+                data-repo="{{ .Repo }}" data-reviewed="{{ .Reviewed }}"
+                label="{{ if .Reviewed }}✓ {{ end }}{{ .Kind }} · {{ .Title }} — {{ .Repo }}"></option>
+        {{ end }}
+      </datalist>
+
+      <form class="picker" method="get" action="/">
+        <label class="agentform__label" for="target-input">reviewing</label>
+        <input class="switcher__select" id="target-input" name="target" list="refs"
+               value="{{ if .Session.Target.Ref }}{{ .Session.Target.Ref }}{{ else }}{{ .Session.ID }}{{ end }}"
+               autocomplete="off" spellcheck="false"
+               aria-label="Choose what to review">
+        <!-- Enabled by default, because with no JavaScript it has to be. The
+             shell disables it while the box still names the review you are
+             already reading, which is the only state in which it does nothing. -->
+        <button class="switcher__go" type="submit" data-unless-changed="target-input">open</button>
+      </form>
+
+      {{ if .CanCompare }}
+      <details class="picker__compare">
+        <summary class="post__moresummary">compare two points</summary>
+        <form class="picker__compareform" method="get" action="/compare">
+          <input type="hidden" name="repo" value="{{ .Session.Repo }}">
+          <input class="switcher__select" name="from" list="refs" placeholder="from"
+                 autocomplete="off" spellcheck="false" aria-label="Compare from">
+          <input class="switcher__select" name="to" list="refs" placeholder="to (default: working tree)"
+                 autocomplete="off" spellcheck="false" aria-label="Compare to">
+          <button class="switcher__go" type="submit">compare</button>
+        </form>
+      </details>
+      {{ end }}
+      {{ end }}
+
+      <section class="brief">
+        {{ with .Session.Target.Kind }}<p class="brief__kind brief__kind--{{ . }}">{{ . }}</p>{{ end }}
+        <h1 class="brief__title">{{ .Narrative.Title }}</h1>
+        {{ with .Session.Target.Subtitle }}<p class="brief__sub">{{ . }}</p>{{ end }}
+        {{ with .Narrative.Intro }}<p class="brief__text">{{ . }}</p>{{ end }}
+        {{ with .Session.Prompt }}<p class="brief__task">{{ . }}</p>{{ end }}
+        <p class="brief__src brief__src--{{ .Narrative.Source }}">
+          {{ if eq .Narrative.Source "model" }}<span class="why why--inferred">inferred</span> by {{ .Narrative.Model }}
+          {{ else }}<span class="why why--inferred">mechanical</span> · no model has read this yet{{ end }}
+        </p>
+      </section>
+
+      <section class="cockpit__pulse">
+        <canvas class="cockpit__scene" id="cockpit-scene" aria-hidden="true"></canvas>
+        <p class="cockpit__status cockpit__status--{{ if .Stats.Live }}live{{ else }}idle{{ end }}">
+          {{ if .Stats.Live }}<span class="cockpit__dot"></span>working — more is coming
+          {{ else }}<span class="cockpit__dot"></span>idle — nothing for a while{{ end }}
+        </p>
+        <p class="cockpit__legend">
+          <span class="cockpit__key cockpit__key--add">growth</span>
+          <span class="cockpit__key cockpit__key--del">deletion</span>
+          <span class="cockpit__key cockpit__key--flag">flagged</span>
+        </p>
+      </section>
+
+      <!-- Where you are against everything that has landed, and what the rest
+           of the team has pushed (issue #18). Scrolls on its own so a long
+           history cannot push the numbers off the panel. -->
+      {{ if .HasLog }}
+      <section class="log" id="log">
+        <header class="log__head">
+          <span class="log__title">history</span>
+          {{ with .Log.Remote.Upstream }}
+          <a class="log__branch" href="/branches"
+             title="{{ $.Log.Remote.Branch }} tracks {{ . }} — see every branch">{{ . }}</a>
+          {{ end }}
+        </header>
+
+        {{ if or .Log.Remote.Behind .Log.Remote.Ahead }}
+        <p class="log__track">
+          {{ with .Log.Remote.Behind }}<span class="log__behind">{{ . }} behind</span>{{ end }}
+          {{ with .Log.Remote.Ahead }}<span class="log__ahead">{{ . }} ahead</span>{{ end }}
+        </p>
+        {{ end }}
+
+        <ol class="log__rows">
+          {{ range .Log.Entries }}
+          <li class="log__row
+                     {{ if .Reviewing }}log__row--here{{ end }}
+                     {{ if .SignedOff }}log__row--signed{{ end }}
+                     {{ if .Incoming }}log__row--incoming{{ end }}">
+            <a class="log__link" href="/?target={{ .Ref }}" title="{{ .Subject }}">
+              <span class="log__marks">
+                {{ if .Reviewing }}<span class="log__here" title="what you are reviewing">▸</span>{{ end }}
+                {{ if .SignedOff }}<span class="log__tick" title="you signed this off">✓</span>{{ end }}
+                {{ if .Incoming }}<span class="log__incoming" title="on the remote, not here yet">incoming</span>
+                {{ else if not .OnRemote }}<span class="log__local" title="not pushed yet">local</span>{{ end }}
+              </span>
+              <span class="log__subject">{{ .Subject }}</span>
+              <span class="log__meta">{{ .Author }} · {{ .Ago }}</span>
+            </a>
+          </li>
+          {{ end }}
+        </ol>
+      </section>
+      {{ end }}
+
+      <section class="cockpit__stats">
+        {{ range .Stats.Tiles }}
+        <div class="stat"{{ with .Hint }} title="{{ . }}"{{ end }}>
+          {{ if .IsLines }}
+          <span class="stat__value stat__value--lines">
+            <span class="unit__stat--add">+{{ .Added }}</span>
+            <span class="unit__stat--del">-{{ .Removed }}</span>
+          </span>
+          {{ else }}
+          <span class="stat__value{{ if .IsRef }} stat__value--ref{{ end }}">{{ .Value }}</span>
+          {{ end }}
+          <span class="stat__label">{{ .Label }}</span>
+        </div>
+        {{ end }}
+      </section>
+    </aside>
+
   </main>
+  </div>
 </body>
 </html>

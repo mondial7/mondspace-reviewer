@@ -140,9 +140,11 @@ func TestCockpitReadsAsChaptersWithProse(t *testing.T) {
 	if !strings.Contains(body, `data-anchor="s-f001"`) {
 		t.Errorf("chapters should anchor to their units:\n%s", body)
 	}
-	// Zen mode is reachable from every page.
-	if !strings.Contains(body, "data-zen-toggle") {
-		t.Errorf("every page should offer zen mode:\n%s", body)
+	// The sidebar folds from every page. Zen — hiding it and the instrument
+	// panel together — is the keyboard shortcut over the top of that, and no
+	// longer a button of its own.
+	if !strings.Contains(body, "data-sidenav-toggle") {
+		t.Errorf("every page should offer to fold the sidebar:\n%s", body)
 	}
 }
 
@@ -481,9 +483,12 @@ func TestReviewContentIsInTheDOMNotOnlyTheCanvas(t *testing.T) {
 			t.Errorf("review content %q must be server-rendered, not canvas-only", want)
 		}
 	}
-	// Zen mode is reachable without JavaScript deciding it for us.
-	if !strings.Contains(body, "data-zen-toggle") {
-		t.Errorf("page should expose zen mode:\n%s", body)
+	// Both things that fold are in the markup, so what the shortcut hides is
+	// decided by the page rather than invented by a script.
+	for _, control := range []string{"data-sidenav-toggle", "data-panel-toggle"} {
+		if !strings.Contains(body, control) {
+			t.Errorf("page should expose %s:\n%s", control, body)
+		}
 	}
 	// The scene is progressive enhancement: a vendored module, not a CDN.
 	if strings.Contains(body, "//unpkg.com") || strings.Contains(body, "//cdn.") {

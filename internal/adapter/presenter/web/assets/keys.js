@@ -106,7 +106,7 @@ const KEYS = [
   ['a', 'ask about these changes'],
   ['r', 'mark this review done'],
   ['⌘K', 'go to anything'],
-  ['⌘Z', 'zen mode'],
+  ['⌘Z', 'hide the sidebar and the panel'],
   ['⌘J', 'theme'],
   ['?', 'this list'],
 ];

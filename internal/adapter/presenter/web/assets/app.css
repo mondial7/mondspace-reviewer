@@ -277,6 +277,9 @@
 .page {
   position: relative; z-index: 1;
   min-height: 100vh;
+  /* The sidebar, and the column that holds the rest. */
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
   /* Two very faint nebulae, far dimmer than before: at this depth they should
      be a suggestion of colour, not a gradient you can name. */
   background:
@@ -284,6 +287,10 @@
     radial-gradient(1000px 800px at 8% 112%, var(--nebula-b) 0%, transparent 58%),
     var(--bg);
 }
+
+/* Everything that is not the sidebar. */
+.shell { min-width: 0; display: flex; flex-direction: column; padding-top: var(--gutter); }
+.page--cockpit .shell { padding-top: 0; }   /* the cockpit pads its own grid */
 
 /* Content floats above the scene, with just enough backdrop to stay readable. */
 .masthead, .queue { position: relative; z-index: 1; }
@@ -403,18 +410,47 @@
 .page > *:not(.backdrop) { position: relative; z-index: 1; }
 
 /* Zen strips the shell — backdrop and rail — leaving only the work. */
-.page--zen .backdrop { display: none; }
-.page--zen .storynav { display: none; }
-.page--zen.page--cockpit .cockpit { padding-top: var(--gutter); }
+/* The instrument panel folds to a strip. What it holds is a glance, so losing
+   it costs the diff nothing and gains it 21rem. */
+.panel__fold {
+  align-self: flex-end;
+  font: inherit; font-size: 0.9rem; line-height: 1; cursor: pointer;
+  color: var(--fg-dim); background: transparent;
+  border: 1px solid var(--rule); border-radius: 6px;
+  padding: 0.1rem 0.45rem;
+}
+.panel__fold:hover { color: var(--accent); border-color: var(--accent); }
 
-.storynav__zen {
+.page--panelfolded .cockpit {
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr) 2.4rem;
+}
+.page--panelfolded .cockpit__panel > *:not(.panel__fold) { display: none; }
+.page--panelfolded .panel__fold { align-self: center; }
+.page--panelfolded .cockpit__panel { align-items: center; }
+
+@media (max-width: 1180px) {
+  .page--panelfolded .cockpit { grid-template-columns: minmax(0, 1fr) 2.4rem; }
+}
+
+/* Zen: the shell and nothing else. One shortcut over the top of the two things
+   that fold on their own, because "get out of my way" is one thought. */
+.page--zen .backdrop { display: none; }
+.page--zen .sidenav { display: none; }
+/* The shell has to take the whole grid back, or it collapses into the column
+   the sidebar was sized to. */
+.page--zen { grid-template-columns: minmax(0, 1fr); }
+.page--zen .cockpit__panel { display: none; }
+.page--zen.page--cockpit .cockpit { grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); }
+.page--zen.page--cockpit .cockpit__head { grid-column: 1 / span 2; }
+
+.sidenav__theme {
   font: inherit; font-size: 0.7rem; letter-spacing: 0.09em; text-transform: uppercase;
   color: var(--fg-dim); background: transparent; cursor: pointer;
   border: 1px solid var(--rule); border-radius: 999px;
   padding: 0.22rem 0.7rem;
 }
-.storynav__zen:hover,
-.storynav__zen[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
+.sidenav__theme:hover,
+.sidenav__theme[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
 
 /* The theme menu. Five themes is one too many to cycle through: four clicks to
    get back where you started is not a control, so the button opens a list. */
@@ -483,43 +519,93 @@
 .palette__hint { color: var(--fg-dim); font-size: 0.76rem; white-space: nowrap; }
 
 /* Nav rail — the cockpit's top instrument strip, on every page. */
-.storynav {
+/* ── The sidebar ────────────────────────────────────────────────────────────
+   The rail moved down the left edge. Six destinations across the top of every
+   page cost a whole row of vertical space on a screen whose whole job is
+   showing a diff, and vertical space is the one thing a review is short of. */
+.sidenav {
+  position: sticky; top: 0; align-self: start;
+  height: 100vh; min-height: 0;
+  width: 11rem;
+  box-sizing: border-box;
+  padding: 0.75rem 0.6rem;
   background: var(--hull);
-  border-bottom: 1px solid var(--rule);
-  padding: 0.55rem var(--gutter);
-  margin: 0 0 var(--gutter);
-  min-height: 2.6rem;
-  display: flex; align-items: center; gap: 1.25rem; flex-wrap: wrap;
-  font-size: 0.82rem; letter-spacing: 0.06em; text-transform: uppercase;
-  position: relative;
+  border-right: 1px solid var(--rule);
+  display: flex; flex-direction: column; gap: 0.1rem;
+  font-size: 0.8rem; letter-spacing: 0.05em; text-transform: uppercase;
+  transition: width 140ms ease;
 }
-/* Above the content, not merely before it: the rail carries a menu that opens
-   downward, and the first card on the page was painting over everything but
-   the menu's top row. Written against `.page >` because the blanket rule that
-   puts every child on layer 1 is written that way too, and a bare `.storynav`
-   loses to it on specificity however far down the file it sits. */
-.page > .storynav { z-index: 30; }
-/* A hairline of "power" along the bottom edge of the rail. */
-.storynav::after {
-  content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 1px;
-  background: linear-gradient(90deg, transparent, var(--accent), transparent);
-  opacity: 0.35;
-}
+/* Above the content, not merely before it: the rail carries a menu, and the
+   first card on the page painted over everything but its top row. Written
+   against `.page >` because the blanket rule that puts every child on layer 1
+   is written that way too, and a bare selector loses to it on specificity. */
+.page > .sidenav { z-index: 30; }
+
 .storynav__brand {
+  display: flex; align-items: center; gap: 0.5rem;
   color: var(--fg); font-weight: 700; text-decoration: none;
-  letter-spacing: 0.14em; margin-right: 0.5rem;
+  letter-spacing: 0.14em;
+  padding: 0.2rem 0.5rem 0.7rem;
 }
-.storynav__brand::before { content: "▚ "; color: var(--accent); }
-.storynav__link { position: relative; padding: 0.15rem 0; }
-.storynav__link[aria-current="page"] { color: var(--fg); }
-.storynav__link[aria-current="page"]::after {
-  content: ""; position: absolute; left: 0; right: 0; bottom: -0.5rem; height: 2px;
-  background: var(--accent);
+.sidenav__mark { color: var(--accent); }
+
+.storynav__link {
+  display: flex; align-items: center; gap: 0.55rem;
+  padding: 0.32rem 0.5rem; border-radius: 6px;
+  color: var(--fg-dim); text-decoration: none;
+  border-left: 2px solid transparent;
+}
+.storynav__link:hover {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+/* Marked, not merely highlighted: hover already owns the highlight. */
+.storynav__link[aria-current="page"] {
+  color: var(--fg);
+  border-left-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
 }
 .storynav__spacer { flex: 1 1 auto; }
 
-.storynav__link { color: var(--fg-dim); text-decoration: none; }
-.storynav__link:hover { color: var(--accent); }
+/* Two letters each, for when the rail is folded. Never both. */
+.sidenav__short { display: none; width: 2ch; color: var(--accent); }
+.sidenav__word { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+
+.sidenav__fold {
+  font: inherit; font-size: 0.9rem; line-height: 1; cursor: pointer;
+  align-self: flex-end;
+  color: var(--fg-dim); background: transparent;
+  border: 1px solid var(--rule); border-radius: 6px;
+  padding: 0.1rem 0.5rem; margin-top: 0.4rem;
+}
+.sidenav__fold:hover { color: var(--accent); border-color: var(--accent); }
+
+/* Folded: a strip of two-letter stops. Still navigable, which is the point of
+   folding rather than hiding — ⌘Z is for hiding. */
+.page--folded .sidenav { width: 3.5rem; }
+.page--folded .sidenav__word { display: none; }
+.page--folded .sidenav__short { display: inline-block; }
+.page--folded .storynav__link { justify-content: center; padding-inline: 0.2rem; }
+.page--folded .storynav__brand { justify-content: center; padding-inline: 0; }
+/* The theme is still reachable from the palette; its label does not fit here. */
+.page--folded .sidenav [data-theme-toggle],
+.page--folded .sidenav__busy { display: none; }
+.page--folded .sidenav__fold { align-self: center; }
+
+/* The menu opens beside the rail rather than below it. */
+.sidenav .thememenu { left: 100%; right: auto; top: 0; margin-left: 0.4rem; }
+
+/* On a narrow screen the words do not earn 11rem of a 22rem window, so the rail
+   is the folded strip whatever the reader last chose. Their choice is kept and
+   comes back on a wider screen. */
+@media (max-width: 760px) {
+  .sidenav { width: 3.5rem; }
+  .sidenav__word { display: none; }
+  .sidenav__short { display: inline-block; }
+  .storynav__link { justify-content: center; padding-inline: 0.2rem; }
+  .storynav__brand { justify-content: center; padding-inline: 0; }
+  .sidenav [data-theme-toggle], .sidenav__busy, .sidenav__fold { display: none; }
+}
 
 /* Hero */
 .hero {
@@ -657,13 +743,12 @@
 /* ── Cockpit ────────────────────────────────────────────────────────────────
    The landing page: a fixed instrument panel on the left, the feed beside it.
    Only the feed scrolls, so it can be left open on a second monitor. */
-.page--cockpit {
-  height: 100vh;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  padding: 0;
-  gap: 0;
+.page--cockpit { height: 100vh; overflow: hidden; }
+/* The cockpit is the one page that does not scroll: its columns do. The shell
+   is what holds that, now that the page itself is a two-column grid. */
+.page--cockpit .shell {
+  height: 100vh; min-height: 0; overflow: hidden;
+  padding: 0; gap: 0;
 }
 
 .cockpit {
@@ -671,8 +756,13 @@
   min-height: 0;                       /* lets the feed scroll, not the page */
   display: grid;
   gap: var(--gutter);
-  padding: 0 var(--gutter) var(--gutter);
-  grid-template-columns: minmax(260px, 21rem) minmax(0, 0.9fr) minmax(0, 1.1fr);
+  /* The rail used to supply the space above the first card. It is beside the
+     page now, so the page provides its own. */
+  padding: var(--gutter);
+  /* Story, changes, instruments — the panel last, because it is a thing you
+     glance at and the diff is the thing you read. Same widths as before, in
+     the order the eye wants them. */
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr) minmax(260px, 21rem);
   align-items: stretch;
 }
 
@@ -943,7 +1033,7 @@ button:disabled:hover, .btn:disabled:hover {
    what let a placement here be silently overridden by an unconditional rule
    written later in the file. */
 @media (max-width: 1180px) {
-  .cockpit { grid-template-columns: minmax(240px, 19rem) minmax(0, 1fr); }
+  .cockpit { grid-template-columns: minmax(0, 1fr) minmax(240px, 19rem); }
 }
 @media (max-width: 1000px) {
   .page--cockpit { height: auto; overflow: visible; }
@@ -1423,7 +1513,7 @@ button:disabled:hover, .btn:disabled:hover {
 .brief__sub { margin: 0.15rem 0 0; font-size: 0.72rem; color: var(--fg-dim); }
 
 /* What the assistant is doing, visible from every page. */
-.storynav__busy {
+.sidenav__busy {
   display: flex; align-items: center; gap: 0.4rem;
   color: var(--inferred); font-size: 0.68rem; letter-spacing: 0.06em;
 }
@@ -1459,9 +1549,9 @@ button:disabled:hover, .btn:disabled:hover {
 /* The review card spans both reading columns: it is about the whole review,
    not about the story or the changes separately. */
 .cockpit { grid-template-rows: auto minmax(0, 1fr); }
-.cockpit__panel { grid-row: 1 / span 2; }
+.cockpit__panel { grid-column: 3; grid-row: 1 / span 2; position: relative; }
 .cockpit__head {
-  grid-column: 2 / span 2;
+  grid-column: 1 / span 2;
   /* The whole header stack scrolls with nothing: it is short, and pushing the
      reading columns down by a row of cards is the point of putting them here. */
   grid-row: 1;
@@ -1471,8 +1561,8 @@ button:disabled:hover, .btn:disabled:hover {
   min-width: 0;
 }
 .reviewcard { min-width: 0; }
-.cockpit__story { grid-column: 2; grid-row: 2; }
-.cockpit__changes { grid-column: 3; grid-row: 2; }
+.cockpit__story { grid-column: 1; grid-row: 2; }
+.cockpit__changes { grid-column: 2; grid-row: 2; }
 
 .reviewcard { min-width: 0; }
 .reviewcard__inner {
@@ -1514,10 +1604,10 @@ button:disabled:hover, .btn:disabled:hover {
    scrolling on its own. */
 @media (max-width: 1180px) {
   .cockpit { grid-template-rows: auto minmax(0, 1fr) minmax(0, 1fr); }
-  .cockpit__panel { grid-row: 1 / span 3; }
-  .cockpit__head { grid-column: 2; grid-row: 1; }
-  .cockpit__story { grid-column: 2; grid-row: 2; }
-  .cockpit__changes { grid-column: 2; grid-row: 3; }
+  .cockpit__panel { grid-column: 2; grid-row: 1 / span 3; }
+  .cockpit__head { grid-column: 1; grid-row: 1; }
+  .cockpit__story { grid-column: 1; grid-row: 2; }
+  .cockpit__changes { grid-column: 1; grid-row: 3; }
 }
 
 /* Narrower than that, nothing sits beside anything: one column, page scrolls. */

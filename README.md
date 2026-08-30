@@ -316,11 +316,12 @@ something *different* about that file, which is a new claim nobody has ruled on
 | `?` | every shortcut | | |
 
 Plus the shell's three, on every page: `⌘K` a palette over every page and every
-changed file · `⌘Z` zen mode · `⌘J` dark, light, or follow the system. All of
+changed file · `⌘Z` hides the sidebar and the instrument panel · `⌘J` cycles
+the five themes. All of
 them are ignored while you are typing ([ADR 0022](ADR/0022-keyboard-navigation.md)).
 
 Every model call is slow on a local model, so the waiting is visible: a spinner
-on the rail from any page, and `/settings` showing what is running, what it cost,
+in the sidebar from any page, and `/settings` showing what is running, what it cost,
 and a button to run it again.
 
 ### Choosing the model

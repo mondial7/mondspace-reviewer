@@ -10,19 +10,29 @@
 <body class="page">
   <canvas class="backdrop" id="backdrop" aria-hidden="true"></canvas>
 
-  <nav class="storynav">
-    <a class="storynav__brand" href="/">msr</a>
-    <a class="storynav__link" href="/">cockpit</a>
-    <a class="storynav__link" href="/branches">branches</a>
-    <a class="storynav__link" href="/search">search</a>
-    <a class="storynav__link" href="/activity">activity</a>
-    <a class="storynav__link" href="/settings">settings</a>
-    <a class="storynav__link" href="/tutorial" aria-current="page">tour</a>
+  <nav class="sidenav" id="sidenav">
+    <a class="storynav__brand" href="/" title="mondspace-reviewer">
+      <span class="sidenav__mark" aria-hidden="true">&#9626;</span><span class="sidenav__word">msr</span>
+    </a>
+
+    <a class="storynav__link" href="/" title="cockpit"><span class="sidenav__short" aria-hidden="true">co</span><span class="sidenav__word">cockpit</span></a>
+    <a class="storynav__link" href="/branches" title="branches"><span class="sidenav__short" aria-hidden="true">br</span><span class="sidenav__word">branches</span></a>
+    <a class="storynav__link" href="/search" title="search"><span class="sidenav__short" aria-hidden="true">se</span><span class="sidenav__word">search</span></a>
+    <a class="storynav__link" href="/activity" title="activity"><span class="sidenav__short" aria-hidden="true">ac</span><span class="sidenav__word">activity</span></a>
+    <a class="storynav__link" href="/settings" title="settings"><span class="sidenav__short" aria-hidden="true">st</span><span class="sidenav__word">settings</span></a>
+    <a class="storynav__link" href="/tutorial" aria-current="page" title="tour"><span class="sidenav__short" aria-hidden="true">to</span><span class="sidenav__word">tour</span></a>
+
     <span class="storynav__spacer"></span>
-    <button class="storynav__zen" type="button" data-theme-toggle title="Theme">auto</button>
-    <button class="storynav__zen" type="button" data-zen-toggle
-            aria-pressed="false" title="Zen mode (⌘Z) · palette (⌘K)">zen</button>
+    <button class="sidenav__theme" type="button" data-theme-toggle
+            title="Theme">auto</button>
+    <!-- The rail itself folds to a strip of two-letter stops. ⌘Z hides it
+         altogether, along with the instrument panel on the cockpit. -->
+    <button class="sidenav__fold" type="button" data-sidenav-toggle
+            aria-controls="sidenav" aria-expanded="true"
+            title="Collapse the sidebar">&#8249;</button>
   </nav>
+
+  <div class="shell">
 
   <header class="masthead">
     <h1 class="masthead__title">How to use this</h1>
@@ -197,7 +207,7 @@
         <li class="keysheet__row"><kbd class="keysheet__key">a</kbd><span class="keysheet__what">ask about these changes</span></li>
         <li class="keysheet__row"><kbd class="keysheet__key">r</kbd><span class="keysheet__what">mark this review done</span></li>
         <li class="keysheet__row"><kbd class="keysheet__key">⌘K</kbd><span class="keysheet__what">go to anything</span></li>
-        <li class="keysheet__row"><kbd class="keysheet__key">⌘Z</kbd><span class="keysheet__what">zen mode</span></li>
+        <li class="keysheet__row"><kbd class="keysheet__key">⌘Z</kbd><span class="keysheet__what">hide the sidebar and the panel</span></li>
         <li class="keysheet__row"><kbd class="keysheet__key">⌘J</kbd><span class="keysheet__what">dark, light, or follow the system</span></li>
       </ul>
     </section>
@@ -222,5 +232,6 @@
     </p>
 
   </main>
+  </div>
 </body>
 </html>

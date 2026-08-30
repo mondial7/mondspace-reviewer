@@ -8,15 +8,15 @@ import (
 	"testing"
 )
 
-// navOf is the destinations one page's rail offers, and which one it marks as
-// the page you are on.
+// navOf is the destinations one page's sidebar offers, and which one it marks
+// as the page you are on.
 type navOf struct {
 	links   []string
 	current string
 }
 
 var (
-	railBlock  = regexp.MustCompile(`(?s)<nav class="storynav">(.*?)</nav>`)
+	railBlock  = regexp.MustCompile(`(?s)<nav class="sidenav"[^>]*>(.*?)</nav>`)
 	railLink   = regexp.MustCompile(`<a class="storynav__link" href="([^"]+)"([^>]*)>`)
 	railMarked = regexp.MustCompile(`aria-current="page"`)
 )
