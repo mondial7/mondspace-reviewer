@@ -279,3 +279,29 @@ func TestThePickerSaysWhenEachPointWas(t *testing.T) {
 		t.Errorf("the picker should date each point (%q):\n%s", stamp, firstLines(body, 6))
 	}
 }
+
+func TestTheBriefWearsTheModelsEmojiWhenThereAreAny(t *testing.T) {
+	sess := testSession()
+	sess.Narrative = domain.Narrative{
+		Title: "a change", Source: domain.NarrativeModel, Model: "m",
+		Emoji: []string{"🔒", "🧪", "🚀"},
+	}
+
+	body := get(t, web.NewServer(sess, nil), "/cockpit").Body.String()
+
+	for _, want := range []string{"🔒", "🧪", "🚀"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the brief should wear %q", want)
+		}
+	}
+}
+
+func TestNoEmojiIsNoRow(t *testing.T) {
+	// Filler on a card read at a glance is worse than an empty card.
+	sess := testSession()
+	sess.Narrative = domain.Narrative{Title: "a change", Source: domain.NarrativeModel}
+
+	if strings.Contains(get(t, web.NewServer(sess, nil), "/cockpit").Body.String(), "brief__emoji") {
+		t.Error("an empty list should render nothing at all")
+	}
+}

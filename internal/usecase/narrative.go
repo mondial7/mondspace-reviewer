@@ -47,6 +47,13 @@ func narrativeSchema(groups []domain.Chapter) port.JSONSchema {
 		Schema: object(map[string]any{
 			"title": map[string]any{"type": "string"},
 			"intro": map[string]any{"type": "string"},
+			// Asked for, never insisted on: the schema can say "an array of
+			// short strings" and cannot say "emoji". CleanEmoji decides.
+			"emoji": map[string]any{
+				"type":     "array",
+				"maxItems": maxEmoji,
+				"items":    map[string]any{"type": "string", "maxLength": 8},
+			},
 			"chapters": map[string]any{
 				"type": "array",
 				"items": object(map[string]any{
@@ -222,6 +229,7 @@ func NarrateProgressively(ctx context.Context, n Narrator, sess domain.Session, 
 		SessionID: sess.ID,
 		Title:     Brief(firstNonEmpty(parsed.Title, fallback.Title), briefTitleChars),
 		Intro:     Brief(firstNonEmpty(parsed.Intro, fallback.Intro), briefChars),
+		Emoji:     CleanEmoji(parsed.Emoji),
 		Chapters:  chapters,
 		Source:    domain.NarrativeModel,
 	}
@@ -370,6 +378,7 @@ func reconcileChapters(chapters []domain.Chapter, units []domain.Unit) (out []do
 type modelNarrative struct {
 	Title    string         `json:"title"`
 	Intro    string         `json:"intro"`
+	Emoji    []string       `json:"emoji"`
 	Chapters []modelChapter `json:"chapters"`
 }
 
@@ -447,8 +456,13 @@ Give the session a short title (under 70 characters) and a one-sentence
 description of under 200 characters. Then group these areas into 2-5 chapters
 and write 1-2 short sentences of prose for each. Use only the area names in
 brackets; do not invent names; cover every area.
+
+Also pick 3 to 5 emoji for the change as a whole — what it is about, not how you
+feel about it. Emoji characters only: no words, no :shortcodes:, no arrows. If
+nothing fits, give an empty list rather than filler.
+
 Answer with JSON only, no explanation:
-{"title":"..","intro":"..","chapters":[{"title":"..","prose":"..","groups":["area"]}]}`)
+{"title":"..","intro":"..","emoji":["..",".."],"chapters":[{"title":"..","prose":"..","groups":["area"]}]}`)
 	return b.String()
 }
 

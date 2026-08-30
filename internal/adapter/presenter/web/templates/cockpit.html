@@ -640,6 +640,14 @@
 
       <section class="brief">
         {{ with .Session.Target.Kind }}<p class="brief__kind brief__kind--{{ . }}">{{ . }}</p>{{ end }}
+        <!-- Three to five pictographs for what this change is about. Inferred
+             like everything else on this card, and absent whenever the model
+             gave nothing usable — filler here would be worse than nothing. -->
+        {{ with .Narrative.Emoji }}
+        <p class="brief__emoji" title="the model's shorthand for this change">
+          {{ range . }}<span class="brief__glyph">{{ . }}</span>{{ end }}
+        </p>
+        {{ end }}
         <h1 class="brief__title">{{ .Narrative.Title }}</h1>
         {{ with .Session.Target.Subtitle }}<p class="brief__sub">{{ . }}</p>{{ end }}
         {{ with .Narrative.Intro }}<p class="brief__text">{{ . }}</p>{{ end }}

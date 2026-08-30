@@ -16,6 +16,11 @@ type Narrative struct {
 	// Model names which model wrote the title and prose, so a reader can tell
 	// whose reading of the session they are looking at.
 	Model string `json:"model,omitempty"`
+	// Emoji is three to five pictographs a model chose for this change, for the
+	// card that answers "what even is this" at a glance. Inferred like the
+	// prose, and empty whenever nothing usable came back — a flourish is the
+	// last thing that should be filled in with a guess (ADR 0003).
+	Emoji []string `json:"emoji,omitempty"`
 	// Meanings is what each group of changes is for, keyed by group id. Written
 	// by a model and therefore inferred, like the prose.
 	Meanings map[string]string `json:"meanings,omitempty"`

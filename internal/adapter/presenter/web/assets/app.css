@@ -798,6 +798,15 @@ button .ico, a .ico, summary .ico { margin-right: 0.35em; }
   padding: 0.8rem 0.9rem;
   min-width: 0;
 }
+/* Big enough to read at a glance, which is the only reason they are here. The
+   font stack is the system's emoji font: the page is monospace, and monospace
+   renders half of these as tofu. */
+.brief__emoji {
+  margin: 0.15rem 0 0.35rem;
+  display: flex; gap: 0.3rem; flex-wrap: wrap;
+  font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
+  font-size: 1.15rem; line-height: 1;
+}
 .brief__title {
   margin: 0; font-size: 1rem; line-height: 1.3; color: var(--fg);
   overflow-wrap: anywhere;
