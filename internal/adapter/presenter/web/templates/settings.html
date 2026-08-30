@@ -179,7 +179,9 @@
                  value="{{ .Agent.Endpoint }}" placeholder="http://localhost:1234/v1"
                  autocomplete="off" spellcheck="false" aria-describedby="agent-endpoint-hint">
           <span class="field__hint" id="agent-endpoint-hint">
-            any OpenAI-compatible server — llama-server, LM Studio, Ollama
+            any OpenAI-compatible server — llama-server, LM Studio, Ollama — or
+            <code>claude://cli</code> to hand the question to the Claude Code CLI
+            on this machine
           </span>
         </div>
 
@@ -223,6 +225,9 @@
           <summary class="post__moresummary">send a workload to its own model</summary>
           <p class="setting__note">
             Leave a pair empty and that workload uses the endpoint and model above.
+            <code>claude://cli</code> works here too — the usual reason to be on
+            this page is to send the analyses to a bigger model and keep the
+            per-file descriptions local, since those are one call per file.
           </p>
           {{ range .WorkloadForm }}
           <div class="field">

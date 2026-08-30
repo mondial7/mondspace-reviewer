@@ -25,6 +25,7 @@ import (
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/source/opencode"
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/source/replay"
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/store/jsonl"
+	"github.com/mondial7/mondspace-reviewer/internal/adapter/summarizer/claudecli"
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/summarizer/null"
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/summarizer/openai"
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
@@ -427,6 +428,14 @@ func buildTUIModel(store port.Store, sessionID string) (tui.Model, error) {
 // opt-in because it trades prose quality for speed, and only a model whose chat
 // template reads enable_thinking honours it.
 func chooseSummarizer(baseURL, model string) port.Summarizer {
+	// A second engine behind the same port, chosen where the model is chosen:
+	// the endpoint field already answers "which thing answers this", and a
+	// scheme is enough to say "the Claude Code CLI on this machine" without a
+	// second setting to fall out of step with it (ADR 0035).
+	if strings.HasPrefix(strings.TrimSpace(baseURL), "claude:") {
+		return claudecli.New(os.Getenv("MSR_CLAUDE_BIN"), model)
+	}
+
 	apiKey := os.Getenv("MSR_API_KEY")
 	noThinking := os.Getenv("MSR_NO_THINKING") == "1"
 	client := &http.Client{Timeout: 1500 * time.Millisecond}

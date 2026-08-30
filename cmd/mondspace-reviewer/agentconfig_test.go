@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/mondial7/mondspace-reviewer/internal/adapter/summarizer/claudecli"
 	"testing"
 	"time"
 
@@ -198,5 +199,22 @@ func TestShowingEverythingOnlyRebuildsWhenItActuallyChanges(t *testing.T) {
 	setShowAllWith(false, rebuild)
 	if rebuilds != 2 {
 		t.Errorf("rebuilt %d times, want a rebuild when it changed back", rebuilds)
+	}
+}
+
+func TestTheClaudeSchemeChoosesTheCliRatherThanAnEndpoint(t *testing.T) {
+	// A reviewer picks the engine where they already pick the model, and the
+	// endpoint field is where "which thing answers this" is said. A scheme is
+	// enough to say it, and needs no second setting to fall out of step with.
+	got := chooseSummarizer("claude://cli", "")
+
+	if _, ok := got.(*claudecli.Summarizer); !ok {
+		t.Fatalf("got %T, want the claude cli adapter", got)
+	}
+}
+
+func TestAnOrdinaryEndpointIsUnaffected(t *testing.T) {
+	if _, ok := chooseSummarizer("http://127.0.0.1:1/v1", "m").(*claudecli.Summarizer); ok {
+		t.Error("an http endpoint should not reach the cli adapter")
 	}
 }
