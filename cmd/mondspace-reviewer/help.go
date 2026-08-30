@@ -161,17 +161,50 @@ func runVersion(stdout io.Writer) error {
 	return nil
 }
 
-// released is the version this binary claims to be. goreleaser stamps it; a
-// plain `go build` leaves it empty and the module's own build info answers.
+// released is the version this binary claims to be.
 func released() string {
-	v := version
-	if v == "" {
-		if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" {
-			v = info.Main.Version
-		}
+	info, _ := debug.ReadBuildInfo()
+	return describeVersion(version, info)
+}
+
+// describeVersion turns what the build knows about itself into something worth
+// reading.
+//
+// goreleaser stamps the tag, and that is the whole answer for a release. For a
+// local build Go offers its own version instead, and here that is a trap: the
+// module path carries no /v6, so Go reports a v1 pseudo-version — a v6 binary
+// announcing itself as 1.0.1-0.20260830083531-f2fafe9fda48+dirty, which names
+// the right commit in the least readable way available and the wrong major
+// version outright.
+//
+// The commit is the useful part, so that is what a development build says.
+func describeVersion(stamped string, info *debug.BuildInfo) string {
+	if stamped != "" {
+		return stamped
 	}
-	if v == "" || v == "(devel)" {
+	if info == nil {
 		return "dev"
 	}
-	return v
+
+	var revision string
+	var dirty bool
+	for _, s := range info.Settings {
+		switch s.Key {
+		case "vcs.revision":
+			revision = s.Value
+		case "vcs.modified":
+			dirty = s.Value == "true"
+		}
+	}
+	if revision == "" {
+		return "dev"
+	}
+	if len(revision) > 7 {
+		revision = revision[:7]
+	}
+	if dirty {
+		// Worth saying out loud: it is the commit plus whatever is not in it.
+		return "dev " + revision + " (dirty)"
+	}
+	return "dev " + revision
 }

@@ -45,8 +45,14 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout io.Writer) 
 	// No arguments is a request for help, not an error: someone typing `msr` is
 	// asking what it does.
 	if len(args) == 0 {
+		greet("help")
 		return runHelp(nil, stdout)
 	}
+
+	// On stderr, and only for the commands somebody is watching — stdout is
+	// whatever the next thing in the pipe is reading.
+	greet(args[0])
+
 	switch args[0] {
 	case "help", "--help", "-h":
 		return runHelp(args[1:], stdout)
