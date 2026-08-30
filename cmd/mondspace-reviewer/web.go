@@ -102,7 +102,11 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 		}
 	}
 
+	// Crawling every repository for commits, tags and recorded runs is the
+	// slowest thing between typing the command and seeing a page.
+	finish := terminalProgress().step(fmt.Sprintf("reading %s", strings.Join(repos, ", ")))
 	targets := discoverTargets(ctx, repos, *out)
+	finish(nil)
 	if len(targets) == 0 {
 		return fmt.Errorf("nothing to review: no git history found in %s",
 			strings.Join(repos, ", "))

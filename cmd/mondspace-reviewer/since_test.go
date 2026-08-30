@@ -144,3 +144,68 @@ func TestReviewSinceCommandUnknownRefErrors(t *testing.T) {
 		t.Error("an unresolvable --since ref should error, not crash silently")
 	}
 }
+
+func TestTheCommandLineHonoursMsrignoreToo(t *testing.T) {
+	// .msrignore keeps generated files out of a review (ADR 0027). It has been
+	// doing that in the app since v6 and not on the command line at all, so the
+	// same repository read two ways gave two different reviews.
+	repo := t.TempDir()
+	runGit(t, repo, "init", "-q")
+	write(t, repo, "a.go", "package a\n")
+	write(t, repo, ".msrignore", "*.pb.go\n")
+	runGit(t, repo, "add", ".")
+	runGit(t, repo, "commit", "-qm", "init")
+	runGit(t, repo, "tag", "before")
+
+	write(t, repo, "a.go", "package a\n\nfunc F() {}\n")
+	write(t, repo, "api.pb.go", "// generated\npackage a\n")
+
+	var out bytes.Buffer
+	args := []string{"review", "--plain", "--since=before", "--repo=" + repo, "--out=" + t.TempDir()}
+	if err := run(context.Background(), args, nil, &out); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	got := out.String()
+	if !strings.Contains(got, "a.go") {
+		t.Errorf("the real change should still be listed:\n%s", got)
+	}
+	// Not as a unit to review...
+	if strings.Contains(got, "added api.pb.go") {
+		t.Errorf("an ignored file should not be a unit in the review:\n%s", got)
+	}
+	// ...but never silently either: what is hidden is always named, with the
+	// rule that hid it. That is why .msrignore has no defaults.
+	for _, want := range []string{"1 file", "api.pb.go", "*.pb.go", "--all"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("it should say what it hid and why — missing %q:\n%s", want, got)
+		}
+	}
+}
+
+func TestShowingEverythingBypassesTheIgnoreRules(t *testing.T) {
+	repo := t.TempDir()
+	runGit(t, repo, "init", "-q")
+	write(t, repo, "a.go", "package a\n")
+	write(t, repo, ".msrignore", "*.pb.go\n")
+	runGit(t, repo, "add", ".")
+	runGit(t, repo, "commit", "-qm", "init")
+	runGit(t, repo, "tag", "before")
+	write(t, repo, "api.pb.go", "// generated\npackage a\n")
+
+	var out bytes.Buffer
+	args := []string{"review", "--plain", "--all", "--since=before", "--repo=" + repo, "--out=" + t.TempDir()}
+	if err := run(context.Background(), args, nil, &out); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if !strings.Contains(out.String(), "api.pb.go") {
+		t.Errorf("--all should show everything:\n%s", out.String())
+	}
+}
+
+func write(t *testing.T, dir, name, body string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}

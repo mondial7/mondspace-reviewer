@@ -92,6 +92,7 @@ func runReview(ctx context.Context, args []string, stdout io.Writer) error {
 	session := fs.String("session", "", "session id (hooks/tui)")
 	since := fs.String("since", "", "review the net change from this ref (commit/branch/tag), bypassing sessions entirely")
 	until := fs.String("until", "", "bound --since's far end at this ref (default: the current working tree)")
+	showAll := fs.Bool("all", false, "include files .msrignore would keep out")
 	summarizerURL := fs.String("summarizer-url", defaultSummarizerURL, "OpenAI-compatible summarizer endpoint")
 	model := fs.String("model", defaultModel, "summarizer model")
 	if err := fs.Parse(args[1:]); err != nil {
@@ -99,7 +100,7 @@ func runReview(ctx context.Context, args []string, stdout io.Writer) error {
 	}
 
 	if *since != "" {
-		return runSince(ctx, *usePlain, *useTUI, *verbose, *session, *repo, *out, *since, *until, *summarizerURL, *model, stdout)
+		return runSince(ctx, *usePlain, *useTUI, *verbose, *showAll, *session, *repo, *out, *since, *until, *summarizerURL, *model, stdout)
 	}
 
 	if *useTUI {
@@ -202,15 +203,17 @@ func runExport(args []string, stdout io.Writer) error {
 	fs := flag.NewFlagSet("export", flag.ContinueOnError)
 	format := fs.String("format", "md", "output format (md|json|slack)")
 	out := fs.String("out", ".mondspace-reviewer", "store root directory")
-	session := fs.String("session", "", "session id")
+	target := fs.String("target", "", "which review (a target id or session id; default: the one open in `msr web`)")
+	session := fs.String("session", "", "session id — an older name for --target")
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
 	}
-	if *session == "" {
-		return fmt.Errorf("--session is required")
+	reviewID, err := whichReview(*out, *target, *session)
+	if err != nil {
+		return err
 	}
 
-	sess, err := jsonl.New(*out).Load(*session)
+	sess, err := jsonl.New(*out).Load(reviewID)
 	if err != nil {
 		return err
 	}
@@ -316,7 +319,8 @@ func runAsk(ctx context.Context, args []string, stdout io.Writer) error {
 	fs := flag.NewFlagSet("ask", flag.ContinueOnError)
 	scope := fs.String("scope", "unit", "ask scope (unit|session)")
 	out := fs.String("out", ".mondspace-reviewer", "store root directory")
-	session := fs.String("session", "", "session id")
+	target := fs.String("target", "", "which review (a target id or session id; default: the one open in `msr web`)")
+	session := fs.String("session", "", "session id — an older name for --target")
 	unitID := fs.String("unit", "", "unit id (unit scope)")
 	repo := fs.String("repo", ".", "repository to diff (unit scope)")
 	summarizerURL := fs.String("summarizer-url", defaultSummarizerURL, "summarizer endpoint")
@@ -324,15 +328,17 @@ func runAsk(ctx context.Context, args []string, stdout io.Writer) error {
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
 	}
-	if *session == "" {
-		return fmt.Errorf("--session is required")
-	}
 	question := strings.TrimSpace(strings.Join(fs.Args(), " "))
 	if question == "" {
 		return fmt.Errorf("a question is required")
 	}
+	reviewID, err := whichReview(*out, *target, *session)
+	if err != nil {
+		return err
+	}
 
-	sess, err := jsonl.New(*out).Load(*session)
+	store := jsonl.New(*out)
+	sess, err := store.Load(reviewID)
 	if err != nil {
 		return err
 	}
@@ -342,18 +348,54 @@ func runAsk(ctx context.Context, args []string, stdout io.Writer) error {
 	var diff domain.Diff
 	if askScope == domain.AskUnit {
 		unit = findUnit(sess.Units, *unitID)
-		if d, err := gitsnap.New(*repo, *session).Diff(ctx, unit.From, unit.To, unit.Files); err == nil {
+		if d, err := gitsnap.New(*repo, reviewID).Diff(ctx, unit.From, unit.To, unit.Files); err == nil {
 			diff = d
 		}
 	}
 
 	askCtx := usecase.BuildAskContext(askScope, sess, unit, diff)
+
+	// A local model takes seconds to minutes to answer. Silence for that long
+	// reads as a hang.
+	finish := terminalProgress().step("asking " + *model)
 	answer, err := chooseSummarizer(*summarizerURL, *model).Answer(ctx, question, askCtx)
+	finish(err)
+
+	// Asked and answered is part of the review, whichever way it was asked. The
+	// app has kept these since v6, and /search and `msr mcp` both read them; a
+	// question typed into a terminal used to vanish the moment it was answered.
+	record := domain.Exchange{
+		ID: newULID(), SessionID: reviewID, TS: time.Now(),
+		Question: question, Answer: answer, Failed: err != nil,
+	}
+	if err != nil {
+		record.Answer = err.Error()
+	}
+	if keepErr := store.AppendExchange(record); keepErr != nil {
+		fmt.Fprintln(os.Stderr, "msr: could not store the exchange:", keepErr)
+	}
 	if err != nil {
 		return err
 	}
+
 	_, err = fmt.Fprintln(stdout, answer)
 	return err
+}
+
+// whichReview resolves which review a command is about.
+//
+// --target is the current name, --session the older one, and with neither it is
+// the review `msr web` last opened — which is the one you are looking at while
+// you type the command (ADR 0031).
+func whichReview(root, target, session string) (string, error) {
+	if id := firstNonEmpty(target, session); id != "" {
+		return id, nil
+	}
+	if open, ok := whatIsOpen(root); ok {
+		return open.TargetID, nil
+	}
+	return "", fmt.Errorf("which review? pass --target=<id>, or open one in `msr web` first "+
+		"(nothing has been reviewed under %s yet)", root)
 }
 
 func findUnit(units []domain.Unit, id string) domain.Unit {
@@ -517,7 +559,7 @@ func buildFileUnits(ctx context.Context, snap *gitsnap.Snapshotter, sessionID, r
 // runSince dispatches --since review to the plain or TUI presenter. It needs
 // no --session: with none given it synthesizes one from --since, so unit ids
 // stay stable and annotations still land under .mondspace-reviewer/.
-func runSince(ctx context.Context, usePlain, useTUI, verbose bool, session, repo, out, since, until, summarizerURL, model string, stdout io.Writer) error {
+func runSince(ctx context.Context, usePlain, useTUI, verbose, showAll bool, session, repo, out, since, until, summarizerURL, model string, stdout io.Writer) error {
 	sessionID := session
 	if sessionID == "" {
 		sessionID = "since-" + shortRef(since)
@@ -533,7 +575,7 @@ func runSince(ctx context.Context, usePlain, useTUI, verbose bool, session, repo
 		if verbose {
 			pres.Verbose()
 		}
-		return runSincePlain(ctx, snap, pres, sessionID, repo, out, since, until)
+		return runSincePlain(ctx, snap, pres, sessionID, repo, out, since, until, showAll, stdout)
 	default:
 		return fmt.Errorf("--plain or --tui is required")
 	}
@@ -542,17 +584,70 @@ func runSince(ctx context.Context, usePlain, useTUI, verbose bool, session, repo
 // runSincePlain presents a --since review through the plain presenter: the
 // same per-file units buildFileUnits produces for any other retroactive
 // review, with no TUI and no session required.
-func runSincePlain(ctx context.Context, snap *gitsnap.Snapshotter, pres port.Presenter, sessionID, repo, out, since, until string) error {
+func runSincePlain(ctx context.Context, snap *gitsnap.Snapshotter, pres port.Presenter,
+	sessionID, repo, out, since, until string, showAll bool, stdout io.Writer) error {
+
+	// Reading a wide range is a git process per file and a pass of the flag
+	// rules over each one. On a release-sized range that is long enough to
+	// look like nothing is happening.
+	finish := terminalProgress().step("reading " + since + "…")
 	units, _, err := sinceFileUnits(ctx, snap, sessionID, repo, out, since, until)
+	finish(err)
 	if err != nil {
 		return err
 	}
+
+	// The same .msrignore the app reads (ADR 0027). Without this the same
+	// repository gave two different reviews depending on how you opened it.
+	var hidden []usecase.Hidden
+	if !showAll {
+		rules, _ := snap.Ignored(ctx, filepath.Join(repo, gitsnap.IgnoreFile), unitPaths(units))
+		units, hidden = usecase.SplitIgnored(units, rules)
+	}
+
 	for _, u := range units {
 		if err := pres.Present(u, nil); err != nil {
 			return err
 		}
 	}
+	return reportHidden(stdout, hidden)
+}
+
+// unitPaths is every file the units cover, for the ignore check.
+func unitPaths(units []domain.Unit) []string {
+	var paths []string
+	for _, u := range units {
+		paths = append(paths, u.Files...)
+	}
+	return paths
+}
+
+// reportHidden names what was kept out and the rule that kept it.
+//
+// Never silently: a review tool that hides files without saying so is one you
+// cannot trust, which is the whole reason .msrignore has no defaults.
+func reportHidden(w io.Writer, hidden []usecase.Hidden) error {
+	if len(hidden) == 0 {
+		return nil
+	}
+	if _, err := fmt.Fprintf(w, "\n%s hidden by .msrignore (--all to see them):\n",
+		count(len(hidden), "file")); err != nil {
+		return err
+	}
+	for _, h := range hidden {
+		if _, err := fmt.Fprintf(w, "  %s  (%s)\n", h.Path, h.Pattern); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+// count renders "1 file" and "2 files".
+func count(n int, thing string) string {
+	if n == 1 {
+		return fmt.Sprintf("1 %s", thing)
+	}
+	return fmt.Sprintf("%d %ss", n, thing)
 }
 
 // runSinceReview is --since review in the interactive TUI. It loads whatever

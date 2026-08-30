@@ -43,18 +43,29 @@ var commands = []struct {
 			"--source=<src>   replay a file, tail Claude Code hooks, or tail OpenCode",
 			"--since=<ref>    review a commit range instead of a session",
 			"--until=<ref>    the far end of that range (default: the working tree)",
+			"--all            include files .msrignore would keep out",
 			"--verbose, -v    list each unit's member events and snapshot refs",
 		},
 	},
 	{
 		"ask", "Ask a question answered only from the log, diffs and your notes.",
-		`msr ask [--scope=session|unit] --session=<id> "did the retry have a stated reason?"`,
-		[]string{"--scope=<s>      session (default) or unit", "--unit=<id>      which unit, for --scope=unit"},
+		`msr ask [--scope=session|unit] [--target=<id>] "did the retry have a stated reason?"`,
+		[]string{
+			"--target=<id>    which review; default is the one open in `msr web`",
+			"--scope=<s>      session (default) or unit",
+			"--unit=<id>      which unit, for --scope=unit",
+			"",
+			"The question and the answer are kept with the review, so they turn up",
+			"in /search and in `msr mcp` like any asked in the app.",
+		},
 	},
 	{
 		"export", "Write the review up: markdown, JSON, or one Slack message.",
-		"msr export --format=md|json|slack --session=<id>",
-		[]string{"--format=<f>     md (default), json, or slack"},
+		"msr export [--format=md|json|slack] [--target=<id>]",
+		[]string{
+			"--format=<f>     md (default), json, or slack",
+			"--target=<id>    which review; default is the one open in `msr web`",
+		},
 	},
 	{
 		"ingest", "Append one agent event. Reads hook JSON on stdin and always exits 0.",
