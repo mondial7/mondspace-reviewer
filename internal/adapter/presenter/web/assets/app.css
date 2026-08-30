@@ -2425,6 +2425,23 @@ a.toast:hover { border-color: var(--kind, var(--accent)); }
    the field yields first. */
 .cockpit__panel > .log { flex: 1 1 auto; min-height: 6rem; }
 
+/* Picking one checkpoint is a link; picking two is a comparison. Both live in
+   the list that already shows them, rather than in boxes that asked you to type
+   a ref you were looking at. */
+.log__form { display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto; }
+.log__row { display: flex; align-items: flex-start; gap: 0.45rem; }
+.log__row .log__link { flex: 1 1 auto; min-width: 0; }
+.log__pick {
+  flex: 0 0 auto; margin-top: 0.45rem;
+  accent-color: var(--accent); cursor: pointer;
+}
+.log__compare {
+  display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;
+  padding-top: 0.5rem; margin-top: 0.4rem;
+  border-top: 1px solid var(--rule);
+}
+.log__hint { color: var(--fg-dim); font-size: 0.7rem; }
+
 /* Somebody else's work, on the remote and not here yet. The one row in the list
    that is about the team rather than about you (issue #18). */
 .log__row--incoming { border-left-color: var(--hunk); }

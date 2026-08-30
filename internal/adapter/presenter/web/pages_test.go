@@ -340,3 +340,50 @@ func TestOnePointPickedIsNotARange(t *testing.T) {
 		t.Errorf("GET /compare = %d, want it turned away", rec.Code)
 	}
 }
+
+func TestTheBriefNeverSaysTheSameThingTwice(t *testing.T) {
+	// A target's own name and the title of the story written about it are the
+	// same sentence far more often than not — always, for the live target,
+	// whose name *is* "Live · uncommitted work". Printing both is not a summary.
+	sess := testSession()
+	sess.Prompt = "Live · uncommitted work"
+	sess.Target = domain.Target{Kind: domain.TargetLive, Title: "Live · uncommitted work"}
+	sess.Narrative = domain.Narrative{
+		Title:  "Live · uncommitted work",
+		Intro:  "Live · uncommitted work",
+		Source: domain.NarrativeMechanical,
+	}
+
+	body := get(t, web.NewServer(sess, nil), "/cockpit").Body.String()
+
+	// Inside the card, not the whole page: the browser tab is entitled to say
+	// it as well.
+	card := body[strings.Index(body, `<section class="brief">`):]
+	card = card[:strings.Index(card, "</section>")]
+	if n := strings.Count(card, "Live · uncommitted work"); n != 1 {
+		t.Errorf("the card says it %d times, want once:\n%s", n, card)
+	}
+}
+
+func TestTheBriefKeepsWhatIsActuallyDifferent(t *testing.T) {
+	// The guard must not eat the commit subject, which is a different sentence
+	// from the title a model wrote about it and is the reason the line exists.
+	sess := testSession()
+	sess.Prompt = "Serve the review to an agent with msr mcp"
+	sess.Narrative = domain.Narrative{
+		Title: "msr mcp store review", Source: domain.NarrativeModel, Model: "m",
+		Intro: "The agent configured msr mcp to serve review output.",
+	}
+
+	body := get(t, web.NewServer(sess, nil), "/cockpit").Body.String()
+
+	for _, want := range []string{
+		"msr mcp store review",
+		"Serve the review to an agent with msr mcp",
+		"The agent configured msr mcp to serve review output.",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the card should still carry %q", want)
+		}
+	}
+}

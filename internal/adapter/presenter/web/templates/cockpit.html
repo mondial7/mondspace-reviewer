@@ -603,13 +603,19 @@
         {{ end }}
         <h1 class="brief__title">{{ .Narrative.Title }}</h1>
         {{ with .Session.Target.Subtitle }}<p class="brief__sub">{{ . }}</p>{{ end }}
-        <!-- Only when it says something the title did not. A model handed the
-             same sentence twice is the commonest thing on this card, and two
+        <!-- Each line only when it says something the ones above it did not.
+             A target's own name and the title of the story written about it are
+             the same sentence far more often than not — always, for the live
+             target, whose name *is* "Live · uncommitted work" — and three
              copies of one sentence is not a summary. -->
         {{ if and .Narrative.Intro (ne .Narrative.Intro .Narrative.Title) }}
         <p class="brief__text">{{ .Narrative.Intro }}</p>
         {{ end }}
-        {{ with .Session.Prompt }}<p class="brief__task">{{ . }}</p>{{ end }}
+        {{ if and .Session.Prompt
+                  (ne .Session.Prompt .Narrative.Title)
+                  (ne .Session.Prompt .Narrative.Intro) }}
+        <p class="brief__task">{{ .Session.Prompt }}</p>
+        {{ end }}
         <p class="brief__src brief__src--{{ .Narrative.Source }}">
           <!-- Quiet here. The stated/inferred distinction is load-bearing on a
                headline the model wrote about somebody's code; on a line saying
@@ -657,12 +663,19 @@
         </p>
         {{ end }}
 
+        <!-- One place to choose a checkpoint, and the same place to choose two.
+             Comparing used to be two free-text boxes elsewhere on the page,
+             which asked you to type refs you were already looking at here. -->
+        <form class="log__form" method="get" action="/compare">
+          <input type="hidden" name="repo" value="{{ .Session.Repo }}">
         <ol class="log__rows">
           {{ range .Log.Entries }}
           <li class="log__row
                      {{ if .Reviewing }}log__row--here{{ end }}
                      {{ if .SignedOff }}log__row--signed{{ end }}
                      {{ if .Incoming }}log__row--incoming{{ end }}">
+            <input class="log__pick" type="checkbox" name="pick" value="{{ .Ref }}"
+                   aria-label="Pick {{ .Subject }} to compare">
             <a class="log__link" href="/?target={{ .Ref }}" title="{{ .Subject }}">
               <span class="log__marks">
                 {{ if .Reviewing }}<span class="log__here" title="what you are reviewing">▸</span>{{ end }}
@@ -676,6 +689,15 @@
           </li>
           {{ end }}
         </ol>
+
+          <div class="log__compare">
+            <button class="btn" type="submit" data-compare-picks disabled>
+              <svg class="ico" aria-hidden="true"><use href="#i-compare"/></svg>
+              compare two
+            </button>
+            <span class="log__hint">tick two checkpoints</span>
+          </div>
+        </form>
       </section>
       {{ end }}
 
