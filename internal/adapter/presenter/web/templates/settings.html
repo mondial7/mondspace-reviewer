@@ -130,8 +130,20 @@
         <span class="board__key">last checked</span>
         <span class="board__val">{{ .Checked }}</span>
       </div>
-      <!-- The model and the endpoint are not repeated here: they are in the
-           boxes below, which say the same thing and can be edited. -->
+
+      <!-- Only when there is no form. With one, the boxes below say the same
+           thing and can be edited; without one, this is the only place the page
+           says which model is answering at all. -->
+      {{ if not .CanConfigure }}
+      <div class="board__row">
+        <span class="board__key">model</span>
+        <span class="board__val">{{ if .Agent.Model }}{{ .Agent.Model }}{{ else }}—{{ end }}</span>
+      </div>
+      <div class="board__row">
+        <span class="board__key">endpoint</span>
+        <span class="board__val">{{ if .Agent.Endpoint }}{{ .Agent.Endpoint }}{{ else }}—{{ end }}</span>
+      </div>
+      {{ end }}
 
       {{ with .Agent.Workloads }}
       <!-- With two models answering, "the model" is no longer a single fact,
