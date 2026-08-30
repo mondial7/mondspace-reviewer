@@ -631,14 +631,32 @@
       {{ if not .Empty }}
       <section class="cockpit__pulse">
         <canvas class="cockpit__scene" id="cockpit-scene" aria-hidden="true"></canvas>
+
+        <!-- What the colours mean is a thing you read once. It sat under the
+             field permanently, taking a third of a card whose whole point is
+             the picture. -->
+        <details class="pulseinfo">
+          <summary class="pulseinfo__open" title="what the colours mean"
+                   aria-label="What the colours mean">
+            <svg class="ico" aria-hidden="true"><use href="#i-info"/></svg>
+          </summary>
+          <div class="pulseinfo__panel">
+            <p class="pulseinfo__title">what you are looking at</p>
+            <p class="cockpit__legend">
+              <span class="cockpit__key cockpit__key--add">growth</span>
+              <span class="cockpit__key cockpit__key--del">deletion</span>
+              <span class="cockpit__key cockpit__key--flag">flagged</span>
+            </p>
+            <p class="pulseinfo__note">
+              One block per changed file, tallest where the most changed.
+              {{ if .Stats.Live }}It turns faster while work is landing.
+              {{ else }}Nothing has landed for a while.{{ end }}
+            </p>
+          </div>
+        </details>
+
         <p class="cockpit__status cockpit__status--{{ if .Stats.Live }}live{{ else }}idle{{ end }}">
-          {{ if .Stats.Live }}<span class="cockpit__dot"></span>working — more is coming
-          {{ else }}<span class="cockpit__dot"></span>idle — nothing for a while{{ end }}
-        </p>
-        <p class="cockpit__legend">
-          <span class="cockpit__key cockpit__key--add">growth</span>
-          <span class="cockpit__key cockpit__key--del">deletion</span>
-          <span class="cockpit__key cockpit__key--flag">flagged</span>
+          <span class="cockpit__dot"></span>{{ if .Stats.Live }}working{{ else }}idle{{ end }}
         </p>
       </section>
       {{ end }}

@@ -900,10 +900,12 @@ button .ico, a .ico, summary .ico { margin-right: 0.35em; }
   padding: 0.8rem 0.9rem;
 }
 .cockpit__scene { position: absolute; inset: 0; width: 100%; height: 100%; }
+/* One word. The sentence explaining it moved into the info panel, where you
+   read it once rather than every time you glance at the picture. */
 .cockpit__status {
   position: relative; z-index: 1;
-  margin: 0; display: flex; align-items: center; gap: 0.5rem;
-  font-size: 0.85rem; letter-spacing: 0.02em;
+  margin: 0; display: flex; align-items: center; gap: 0.4rem;
+  font-size: 0.68rem; letter-spacing: 0.08em; text-transform: uppercase;
 }
 .cockpit__status--live { color: var(--add); }
 .cockpit__status--idle { color: var(--fg-dim); }
@@ -921,6 +923,33 @@ button .ico, a .ico, summary .ico { margin-right: 0.35em; }
 }
 
 /* The legend is what turns the field from decoration into an instrument. */
+/* The legend behind an ⓘ in the corner: read once, not read again. */
+.pulseinfo { position: absolute; top: 0.5rem; right: 0.55rem; z-index: 2; }
+.pulseinfo__open {
+  list-style: none; cursor: pointer; line-height: 1;
+  display: inline-flex; padding: 0.2rem;
+  border-radius: 6px; color: var(--fg-dim);
+}
+.pulseinfo__open::-webkit-details-marker { display: none; }
+.pulseinfo__open:hover { color: var(--accent); }
+.pulseinfo__open .ico { margin: 0; width: 0.95rem; height: 0.95rem; }
+.pulseinfo[open] .pulseinfo__open { color: var(--accent); }
+.pulseinfo__panel {
+  position: absolute; right: 0; top: calc(100% + 0.35rem);
+  width: 15rem;
+  padding: 0.6rem 0.7rem;
+  background: var(--panel);
+  border: 1px solid var(--rule); border-radius: 8px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+}
+.pulseinfo__title {
+  margin: 0 0 0.35rem;
+  font-size: 0.64rem; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--fg-dim);
+}
+.pulseinfo__note { margin: 0.45rem 0 0; font-size: 0.7rem; color: var(--fg-dim); line-height: 1.5; }
+.pulseinfo__panel .cockpit__legend { position: static; margin: 0; }
+
 .cockpit__legend {
   position: relative; z-index: 1;
   margin: 0.5rem 0 0; display: flex; flex-wrap: wrap; gap: 0.5rem 0.8rem;
