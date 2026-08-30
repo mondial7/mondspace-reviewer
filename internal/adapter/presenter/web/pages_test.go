@@ -220,3 +220,44 @@ func firstLines(s string, n int) string {
 	}
 	return strings.Join(lines, "\n")
 }
+
+func TestAReviewWithNothingInItSaysSoAndOffersNothing(t *testing.T) {
+	// Opening the live target with a clean tree is the common way to land here,
+	// and the card offered to read a change that does not exist, to export a log
+	// with nothing in it, and to mark as reviewed something nobody could review.
+	empty := testSession()
+	empty.Units, empty.Diffs = nil, nil
+
+	body := get(t, web.NewServer(empty, nil).
+		WithAgent(web.AgentStatus{Model: "m", Online: true}).
+		WithNarrate(func(context.Context, string) {}).
+		WithAnalyses(
+			func(context.Context, string, domain.AnalysisKind) error { return nil },
+			func(string, domain.AnalysisKind) domain.Analysis { return domain.Analysis{} }),
+		"/cockpit").Body.String()
+
+	if !strings.Contains(strings.ToLower(body), "nothing to review") {
+		t.Errorf("the card should say there is nothing here:\n%s", firstLines(body, 8))
+	}
+	for _, offered := range []string{
+		"ask it to read this", // there is nothing to read
+		"MARK THIS REVIEWED",  // nobody can review nothing
+		"take the log",        // an empty log is not worth exporting
+		`action="/analysis/`,  // and an audit of nothing is a wasted model call
+	} {
+		if strings.Contains(body, offered) {
+			t.Errorf("an empty review should not offer %q:\n%s", offered, firstLines(body, 8))
+		}
+	}
+}
+
+func TestAReviewWithSomethingInItStillOffersEverything(t *testing.T) {
+	// The guard above must not switch the page off for a real review.
+	body := get(t, wiredServer(t).WithNarrate(func(context.Context, string) {}), "/cockpit").Body.String()
+
+	for _, want := range []string{"mark this reviewed", "take the log", `action="/analysis/`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("a review with changes in it should still offer %q", want)
+		}
+	}
+}

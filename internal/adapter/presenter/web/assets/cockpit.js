@@ -446,17 +446,27 @@ if (storyCol) new MutationObserver(linkColumns).observe(storyCol, { childList: t
   const clear = document.getElementById('ask-clear');
   const story = document.getElementById('story-col');
 
+  const send = document.getElementById('ask-send');
   const focus = (on) => story?.classList.toggle('cockpit__story--asking', on);
 
+  // An empty box has nothing to ask and nothing to clear.
+  const sync = () => {
+    const typed = input.value.trim() !== '';
+    if (send) send.disabled = !typed;
+    if (clear) clear.disabled = !typed;
+  };
+  sync();
+
   input.addEventListener('focus', () => focus(true));
-  input.addEventListener('input', () => focus(input.value.trim() !== ''));
+  input.addEventListener('input', () => { focus(input.value.trim() !== ''); sync(); });
   clear?.addEventListener('click', () => {
     input.value = '';
     focus(false);
+    sync();
     input.focus();
   });
   input.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') { input.value = ''; focus(false); input.blur(); }
+    if (e.key === 'Escape') { input.value = ''; focus(false); sync(); input.blur(); }
     // A textarea takes Enter for a newline, so sending needs the modifier.
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) form.requestSubmit();
   });

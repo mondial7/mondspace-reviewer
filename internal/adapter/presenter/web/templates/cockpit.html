@@ -122,6 +122,23 @@
          how far it got, and how to ask. Switching target is exactly when a
          reviewer needs all four at once. -->
     <section class="reviewcard" id="reviewcard">
+      {{ if .Empty }}
+      <!-- Nothing changed, so there is nothing to read, nothing to export and
+           nothing to sign off. One sentence beats four controls you cannot
+           use. -->
+      <div class="reviewcard__inner reviewcard--empty">
+        <div class="reviewcard__state">
+          <strong>nothing to review</strong>
+          <span class="reviewcard__when">
+            {{ if .Hidden }}every changed file is kept out by
+              <code>{{ .IgnoreFile }}</code> —
+              <a href="?target={{ .Session.ID }}&amp;all=1">show them</a>
+            {{ else if eq (printf "%s" .Session.Target.Kind) "live" }}the working tree matches HEAD
+            {{ else }}nothing changed in this {{ .Session.Target.Kind }}{{ end }}
+          </span>
+        </div>
+      </div>
+      {{ else }}
       <div class="reviewcard__inner reviewcard--{{ .Review.State }}">
       <div class="reviewcard__state">
         {{ if eq .Review.State "reading" }}
@@ -194,13 +211,14 @@
       </div>
       {{ end }}
       </div>
+      {{ end }}
     </section>
 
     <!-- Three readings of the same change, each run when the reviewer asks and
          never before (ADR 0024). They share no context: what one found is never
          shown to another, because two independent readings are worth more than
          one reading twice. -->
-    {{ if .CanAnalyse }}
+    {{ if and .CanAnalyse (not .Empty) }}
     <section class="analyses" id="analyses">
 
       <!-- The story is an analysis too. It is listed first because it is the
@@ -342,10 +360,10 @@
         <form class="ask__form" method="post" action="/ask?target={{ .Session.ID }}" id="ask-form">
           <textarea class="ask__input" name="question" rows="2" id="ask-input"
                     placeholder="ask about these changes"></textarea>
+          <p class="ask__hint">⌘⏎ to send · answered only from this review</p>
           <div class="ask__actions">
-            <span class="ask__hint">⌘⏎ to send · answered only from this review</span>
-            <button class="ask__cancel" type="button" id="ask-clear">clear</button>
-            <button class="ask__btn" type="submit">ask</button>
+            <button class="ask__cancel" type="button" id="ask-clear" disabled>clear</button>
+            <button class="ask__btn" type="submit" id="ask-send" disabled>ask</button>
           </div>
           <p class="ask__working" id="ask-working" hidden>
             <span class="ask__spinner" aria-hidden="true"></span>

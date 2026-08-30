@@ -2610,6 +2610,11 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 		HasLog          bool
 		Hidden          []usecase.Hidden
 		IgnoreFile      string
+		// Empty is a review with no changed files in it — the live target on a
+		// clean tree, most often. It is not a degenerate case to render
+		// carefully around: it is a state with one honest thing to say, and
+		// everything the card normally offers is a thing you cannot do.
+		Empty bool
 	}{
 		Session: sess, Workspace: workspace, Targets: targets,
 		Repos: repos, CanCompare: canCompare,
@@ -2618,6 +2623,7 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 		Analyses: analyses, CanAnalyse: canAnalyse, CanRunAnalysis: canRunAnalysis,
 		Log: gitlog, HasLog: logOf != nil && len(gitlog.Entries) > 0,
 		Hidden: sess.Hidden, IgnoreFile: gitsnapIgnoreFile,
+		Empty:     len(sess.Units) == 0,
 		HasThread: len(thread) > 0,
 		Review:    describeReview(narrative, groupIDs(groups), narrating, s.narrate != nil, s.now()),
 		Stats:     statsFor(sess.Target.Kind, stats, sess.Target.Subtitle),
