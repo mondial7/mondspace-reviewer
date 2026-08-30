@@ -11,6 +11,7 @@
   <script type="module" src="/assets/live.js" defer></script>
 </head>
 <body class="page page--cockpit" data-live="{{ .Stats.Live }}">
+  {{ template "icons.html" }}
   <canvas class="backdrop" id="backdrop" aria-hidden="true"></canvas>
 
   <nav class="sidenav" id="sidenav">
@@ -18,12 +19,12 @@
       <span class="sidenav__mark" aria-hidden="true">&#9626;</span><span class="sidenav__word">msr</span>
     </a>
 
-    <a class="storynav__link" href="/" aria-current="page" title="cockpit"><span class="sidenav__short" aria-hidden="true">co</span><span class="sidenav__word">cockpit</span></a>
-    <a class="storynav__link" href="/branches" title="branches"><span class="sidenav__short" aria-hidden="true">br</span><span class="sidenav__word">branches</span></a>
-    <a class="storynav__link" href="/search" title="search"><span class="sidenav__short" aria-hidden="true">se</span><span class="sidenav__word">search</span></a>
-    <a class="storynav__link" href="/activity" title="activity"><span class="sidenav__short" aria-hidden="true">ac</span><span class="sidenav__word">activity</span></a>
-    <a class="storynav__link" href="/settings" title="settings"><span class="sidenav__short" aria-hidden="true">st</span><span class="sidenav__word">settings</span></a>
-    <a class="storynav__link" href="/tutorial" title="tour"><span class="sidenav__short" aria-hidden="true">to</span><span class="sidenav__word">tour</span></a>
+    <a class="storynav__link" href="/" aria-current="page" title="cockpit"><svg class="ico sidenav__ico" aria-hidden="true"><use href="#i-cockpit"/></svg><span class="sidenav__word">cockpit</span></a>
+    <a class="storynav__link" href="/branches" title="branches"><svg class="ico sidenav__ico" aria-hidden="true"><use href="#i-branches"/></svg><span class="sidenav__word">branches</span></a>
+    <a class="storynav__link" href="/search" title="search"><svg class="ico sidenav__ico" aria-hidden="true"><use href="#i-search"/></svg><span class="sidenav__word">search</span></a>
+    <a class="storynav__link" href="/activity" title="activity"><svg class="ico sidenav__ico" aria-hidden="true"><use href="#i-activity"/></svg><span class="sidenav__word">activity</span></a>
+    <a class="storynav__link" href="/settings" title="settings"><svg class="ico sidenav__ico" aria-hidden="true"><use href="#i-settings"/></svg><span class="sidenav__word">settings</span></a>
+    <a class="storynav__link" href="/tutorial" title="tour"><svg class="ico sidenav__ico" aria-hidden="true"><use href="#i-tour"/></svg><span class="sidenav__word">tour</span></a>
 
     <span class="storynav__spacer"></span>
     {{ if .Work }}{{ range .Work }}{{ if .Running }}
@@ -168,11 +169,15 @@
       {{ if .Review.CanRead }}
       <form class="reviewcard__go" method="post" action="/story/narrate?target={{ .Session.ID }}">
         <!-- Nothing to press while it is already reading. -->
+        <!-- "start review", not "ask it to read this": it is the button that
+             begins the thing this page is for, and the sentence describing what
+             happens underneath belongs in the card, not on the control. -->
         <button class="hero__retrybtn" type="submit"
                 {{ if eq .Review.State "reading" }}disabled{{ end }}>
+          <svg class="ico" aria-hidden="true"><use href="#i-read"/></svg>
           {{ if eq .Review.State "reading" }}reading…
-          {{ else if eq .Review.State "read" }}read again
-          {{ else }}ask it to read this{{ end }}
+          {{ else if eq .Review.State "read" }}review again
+          {{ else }}start review{{ end }}
         </button>
       </form>
       {{ end }}
@@ -184,7 +189,7 @@
       <!-- The review log is the product, so there is a way to leave with it
            from where it was made (issue #19). -->
       <p class="exports">
-        take the log:
+        <svg class="ico" aria-hidden="true"><use href="#i-export"/></svg> take the log:
         <a href="/export?target={{ .Session.ID }}&amp;format=md">markdown</a>
         <a href="/export?target={{ .Session.ID }}&amp;format=json">json</a>
         <a href="/export?target={{ .Session.ID }}&amp;format=slack">slack</a>
@@ -204,7 +209,7 @@
             <input type="hidden" name="target" value="{{ .Session.ID }}">
             <textarea class="signoff__input" name="comment" rows="2"
                       placeholder="anything to say about this change as a whole (optional)"></textarea>
-            <button class="pending__btn pending__btn--go" type="submit">done reviewing</button>
+            <button class="pending__btn pending__btn--go" type="submit"><svg class="ico" aria-hidden="true"><use href="#i-done"/></svg> done reviewing</button>
           </form>
         </details>
         {{ end }}
@@ -237,7 +242,7 @@
         <form method="post" action="/story/narrate?target={{ .Session.ID }}">
           <button class="acard__run" type="submit"
                   {{ if eq .Review.State "reading" }}disabled{{ end }}>
-            {{ if eq .Review.State "reading" }}running
+            <svg class="ico" aria-hidden="true"><use href="#i-run"/></svg> {{ if eq .Review.State "reading" }}running
             {{ else if eq .Review.State "read" }}run again
             {{ else }}run{{ end }}
           </button>
@@ -312,7 +317,7 @@
         <form method="post" action="/analysis/{{ .Kind }}?target={{ $.Session.ID }}">
           <input type="hidden" name="target" value="{{ $.Session.ID }}">
           <button class="acard__run" type="submit" {{ if eq .State "running" }}disabled{{ end }}>
-            {{ if eq .State "idle" }}run{{ else if eq .State "running" }}running{{ else }}run again{{ end }}
+            <svg class="ico" aria-hidden="true"><use href="#i-run"/></svg> {{ if eq .State "idle" }}run{{ else if eq .State "running" }}running{{ else }}run again{{ end }}
           </button>
         </form>
         {{ end }}
@@ -342,7 +347,7 @@
            needs an assistant. -->
       {{ if or .HasAsk .HasThread }}
       <section class="ask" id="ask">
-        <h2 class="ask__title">reviewer assistant</h2>
+        <h2 class="ask__title"><svg class="ico" aria-hidden="true"><use href="#i-ask"/></svg> reviewer assistant</h2>
         {{ range .Thread }}
         <div class="ask__exchange">
           <p class="ask__q">{{ .Question }}</p>
@@ -363,7 +368,7 @@
           <p class="ask__hint">⌘⏎ to send · answered only from this review</p>
           <div class="ask__actions">
             <button class="ask__cancel" type="button" id="ask-clear" disabled>clear</button>
-            <button class="ask__btn" type="submit" id="ask-send" disabled>ask</button>
+            <button class="ask__btn" type="submit" id="ask-send" disabled><svg class="ico" aria-hidden="true"><use href="#i-ask"/></svg> ask</button>
           </div>
           <p class="ask__working" id="ask-working" hidden>
             <span class="ask__spinner" aria-hidden="true"></span>
@@ -497,7 +502,7 @@
             {{ if .Hidden }}
             <p class="post__more">
               <a class="post__expand" href="/units/{{ .ID }}/diff?target={{ $.Session.ID }}"
-                 data-expand="{{ .ID }}">show the other {{ .Hidden }} lines</a>
+                 data-expand="{{ .ID }}"><svg class="ico" aria-hidden="true"><use href="#i-expand"/></svg> show the other {{ .Hidden }} lines</a>
               {{ if .HiddenNotes }}
               <span class="post__morenotes">
                 {{ .HiddenNotes }} of your notes are on lines not shown here
@@ -596,7 +601,7 @@
              to look at should be readable without opening anything. -->
         <option value="{{ if .Ref }}{{ .Ref }}{{ else }}{{ .ID }}{{ end }}"
                 data-repo="{{ .Repo }}" data-reviewed="{{ .Reviewed }}"
-                label="{{ if .Reviewed }}✓ {{ end }}{{ .Kind }} · {{ .Title }} — {{ .Repo }}"></option>
+                label="{{ if .Reviewed }}✓ {{ end }}{{ .Kind }}{{ with stamp .TS }} · {{ . }}{{ end }} · {{ .Title }} — {{ .Repo }}"></option>
         {{ end }}
       </datalist>
 
@@ -618,10 +623,16 @@
         <form class="picker__compareform" method="get" action="/compare">
           <input type="hidden" name="repo" value="{{ .Session.Repo }}">
           <input class="switcher__select" name="from" list="refs" placeholder="from"
-                 autocomplete="off" spellcheck="false" aria-label="Compare from">
+                 id="compare-from" autocomplete="off" spellcheck="false" aria-label="Compare from">
           <input class="switcher__select" name="to" list="refs" placeholder="to (default: working tree)"
-                 autocomplete="off" spellcheck="false" aria-label="Compare to">
-          <button class="switcher__go" type="submit">compare</button>
+                 id="compare-to" autocomplete="off" spellcheck="false" aria-label="Compare to">
+          <!-- There is nothing to compare until a point is named, and nothing
+               to learn from comparing a point with itself or with the review
+               already on screen. -->
+          <button class="switcher__go" type="submit" disabled
+                  data-compare-guard="{{ if .Session.Target.Ref }}{{ .Session.Target.Ref }}{{ else }}{{ .Session.ID }}{{ end }}">
+            <svg class="ico" aria-hidden="true"><use href="#i-diff"/></svg> compare
+          </button>
         </form>
       </details>
       {{ end }}

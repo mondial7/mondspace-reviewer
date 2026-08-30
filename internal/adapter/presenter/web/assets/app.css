@@ -545,9 +545,30 @@
 }
 .storynav__spacer { flex: 1 1 auto; }
 
-/* Two letters each, for when the rail is folded. Never both. */
-.sidenav__short { display: none; width: 2ch; color: var(--accent); }
+/* An icon and a word. Folded, the word goes and the icon stays — which is what
+   makes a folded rail readable at a glance rather than a column of initials. */
+.ico {
+  width: 1em; height: 1em; flex: 0 0 auto;
+  vertical-align: -0.13em;
+}
+.sidenav__ico { width: 1.05rem; height: 1.05rem; opacity: 0.85; }
+.storynav__link:hover .sidenav__ico,
+.storynav__link[aria-current="page"] .sidenav__ico { opacity: 1; }
 .sidenav__word { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* The sprite itself draws nothing, and must not be laid out: the page is a
+   two-column grid, and an in-flow first child took a column and pushed the
+   whole shell onto a second row below the fold. Written against `.page >`
+   because the blanket rule that puts every child in flow is written that way
+   too, and a bare `.sprite` loses to it. */
+.page > .sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+
+/* An icon inside a control sits on the text baseline and keeps its distance;
+   inside a heading it is a size bigger and a shade quieter, so it labels the
+   page without competing with the word next to it. */
+button .ico, a .ico, summary .ico { margin-right: 0.35em; }
+.masthead__title { display: flex; align-items: center; gap: 0.55rem; }
+.masthead__ico { width: 1.1em; height: 1.1em; color: var(--accent); opacity: 0.9; }
+.ask__title .ico { color: var(--accent); }
 
 .sidenav__fold {
   font: inherit; font-size: 0.9rem; line-height: 1; cursor: pointer;
@@ -562,7 +583,6 @@
    folding rather than hiding — ⌘Z is for hiding. */
 .page--folded .sidenav { width: 3.5rem; }
 .page--folded .sidenav__word { display: none; }
-.page--folded .sidenav__short { display: inline-block; }
 .page--folded .storynav__link { justify-content: center; padding-inline: 0.2rem; }
 .page--folded .storynav__brand { justify-content: center; padding-inline: 0; }
 /* The theme is still reachable from the palette; its label does not fit here. */
@@ -579,7 +599,6 @@
 @media (max-width: 760px) {
   .sidenav { width: 3.5rem; }
   .sidenav__word { display: none; }
-  .sidenav__short { display: inline-block; }
   .storynav__link { justify-content: center; padding-inline: 0.2rem; }
   .storynav__brand { justify-content: center; padding-inline: 0; }
   .sidenav [data-theme-toggle], .sidenav__busy, .sidenav__fold { display: none; }

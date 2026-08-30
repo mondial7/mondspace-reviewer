@@ -240,10 +240,10 @@ func TestAReviewWithNothingInItSaysSoAndOffersNothing(t *testing.T) {
 		t.Errorf("the card should say there is nothing here:\n%s", firstLines(body, 8))
 	}
 	for _, offered := range []string{
-		"ask it to read this", // there is nothing to read
-		"MARK THIS REVIEWED",  // nobody can review nothing
-		"take the log",        // an empty log is not worth exporting
-		`action="/analysis/`,  // and an audit of nothing is a wasted model call
+		"start review",       // there is nothing to read
+		"MARK THIS REVIEWED", // nobody can review nothing
+		"take the log",       // an empty log is not worth exporting
+		`action="/analysis/`, // and an audit of nothing is a wasted model call
 	} {
 		if strings.Contains(body, offered) {
 			t.Errorf("an empty review should not offer %q:\n%s", offered, firstLines(body, 8))
@@ -259,5 +259,23 @@ func TestAReviewWithSomethingInItStillOffersEverything(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Errorf("a review with changes in it should still offer %q", want)
 		}
+	}
+}
+
+func TestThePickerSaysWhenEachPointWas(t *testing.T) {
+	// Choosing two points to compare is a question about time — "what changed
+	// since this morning" — and the list gave a hash, a kind and a subject with
+	// nothing to place any of them in.
+	when := time.Date(2026, 8, 30, 9, 41, 0, 0, time.UTC)
+	h := web.NewServer(testSession(), nil).WithTargets([]web.TargetSummary{
+		{ID: "t1", Ref: "abc12345", Kind: domain.TargetCommit, Title: "a commit",
+			Repo: "demo", TS: when},
+	})
+
+	body := get(t, h, "/cockpit").Body.String()
+
+	stamp := when.Local().Format("2 Jan 15:04")
+	if !strings.Contains(body, stamp) {
+		t.Errorf("the picker should date each point (%q):\n%s", stamp, firstLines(body, 6))
 	}
 }

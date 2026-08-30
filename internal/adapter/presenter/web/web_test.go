@@ -2064,7 +2064,7 @@ func TestTheTutorialExplainsThePageToSomeoneNew(t *testing.T) {
 	// The four things someone has to do, in order.
 	for _, want := range []string{
 		"Pick what to review",
-		"ask it to read",
+		"start review",
 		"security pass",
 		"then annotate",
 		"Mark it reviewed",

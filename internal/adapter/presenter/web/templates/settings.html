@@ -9,6 +9,7 @@
   <script type="module" src="/assets/live.js" defer></script>
 </head>
 <body class="page">
+  {{ template "icons.html" }}
   <canvas class="backdrop" id="backdrop" aria-hidden="true"></canvas>
 
   <nav class="sidenav" id="sidenav">
@@ -16,12 +17,12 @@
       <span class="sidenav__mark" aria-hidden="true">&#9626;</span><span class="sidenav__word">msr</span>
     </a>
 
-    <a class="storynav__link" href="/" title="cockpit"><span class="sidenav__short" aria-hidden="true">co</span><span class="sidenav__word">cockpit</span></a>
-    <a class="storynav__link" href="/branches" title="branches"><span class="sidenav__short" aria-hidden="true">br</span><span class="sidenav__word">branches</span></a>
-    <a class="storynav__link" href="/search" title="search"><span class="sidenav__short" aria-hidden="true">se</span><span class="sidenav__word">search</span></a>
-    <a class="storynav__link" href="/activity" title="activity"><span class="sidenav__short" aria-hidden="true">ac</span><span class="sidenav__word">activity</span></a>
-    <a class="storynav__link" href="/settings" aria-current="page" title="settings"><span class="sidenav__short" aria-hidden="true">st</span><span class="sidenav__word">settings</span></a>
-    <a class="storynav__link" href="/tutorial" title="tour"><span class="sidenav__short" aria-hidden="true">to</span><span class="sidenav__word">tour</span></a>
+    <a class="storynav__link" href="/" title="cockpit"><svg class="ico sidenav__ico" aria-hidden="true"><use href="#i-cockpit"/></svg><span class="sidenav__word">cockpit</span></a>
+    <a class="storynav__link" href="/branches" title="branches"><svg class="ico sidenav__ico" aria-hidden="true"><use href="#i-branches"/></svg><span class="sidenav__word">branches</span></a>
+    <a class="storynav__link" href="/search" title="search"><svg class="ico sidenav__ico" aria-hidden="true"><use href="#i-search"/></svg><span class="sidenav__word">search</span></a>
+    <a class="storynav__link" href="/activity" title="activity"><svg class="ico sidenav__ico" aria-hidden="true"><use href="#i-activity"/></svg><span class="sidenav__word">activity</span></a>
+    <a class="storynav__link" href="/settings" aria-current="page" title="settings"><svg class="ico sidenav__ico" aria-hidden="true"><use href="#i-settings"/></svg><span class="sidenav__word">settings</span></a>
+    <a class="storynav__link" href="/tutorial" title="tour"><svg class="ico sidenav__ico" aria-hidden="true"><use href="#i-tour"/></svg><span class="sidenav__word">tour</span></a>
 
     <span class="storynav__spacer"></span>
     {{ if .Work }}{{ range .Work }}{{ if .Running }}
@@ -303,7 +304,7 @@
         {{ end }}
       </div>
 
-      <p class="agentform__note"><a href="/branches">See every branch &rarr;</a></p>
+      <p class="agentform__note"><a href="/branches"><svg class="ico" aria-hidden="true"><use href="#i-branches"/></svg> See every branch &rarr;</a></p>
       {{ else }}
       <p class="queue__empty">
         This workspace has no remote to watch — msr is reading a repository with
@@ -351,7 +352,7 @@
         <label class="field__label" for="add-repo">open another repository</label>
         <input class="field__input" id="add-repo" name="path" type="text" autocomplete="off"
                placeholder="/path/to/a/checkout">
-        <button class="btn btn--go" type="submit">watch</button>
+        <button class="btn btn--go" type="submit"><svg class="ico" aria-hidden="true"><use href="#i-repo"/></svg> watch</button>
       </form>
       {{ with .RepoErr }}<p class="addrepo__err">{{ . }}</p>{{ end }}
       {{ end }}

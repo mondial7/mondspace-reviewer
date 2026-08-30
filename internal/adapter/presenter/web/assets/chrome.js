@@ -427,3 +427,30 @@ for (const button of document.querySelectorAll('[data-unless-changed]')) {
   input.addEventListener('input', sync);
   input.addEventListener('change', sync);
 }
+
+// The compare form asks for two points. Until one is named there is nothing to
+// compare, and comparing a point with itself — or with the review already on
+// screen — is a page you are already looking at.
+
+for (const button of document.querySelectorAll('[data-compare-guard]')) {
+  const form = button.closest('form');
+  const from = form?.querySelector('[name="from"]');
+  const to = form?.querySelector('[name="to"]');
+  if (!from || !to) continue;
+
+  const current = button.dataset.compareGuard.trim();
+  const sync = () => {
+    const a = from.value.trim();
+    const b = to.value.trim();
+    const pointless = a === '' || a === b || (b === '' && a === current);
+    button.disabled = pointless;
+    button.title = pointless
+      ? 'name a point to compare from, and one that is not where you already are'
+      : `compare ${a} with ${b || 'the working tree'}`;
+  };
+  sync();
+  for (const box of [from, to]) {
+    box.addEventListener('input', sync);
+    box.addEventListener('change', sync);
+  }
+}

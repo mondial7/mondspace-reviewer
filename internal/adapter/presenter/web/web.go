@@ -3246,6 +3246,15 @@ func funcs() template.FuncMap {
 		// not trusted: the text is escaped before any markup is added.
 		"markdown": renderMarkdown,
 		"clock":    func(t time.Time) string { return t.Local().Format("15:04") },
+		// Choosing two points to compare is a question about time — "what
+		// changed since this morning" — so the picker dates each one. Day and
+		// month as well as the clock: a list that spans a week needs both.
+		"stamp": func(t time.Time) string {
+			if t.IsZero() {
+				return ""
+			}
+			return t.Local().Format("2 Jan 15:04")
+		},
 	}
 }
 
