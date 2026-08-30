@@ -26,6 +26,15 @@
   --stated: #4fdc95;
   --inferred: #ffcc70;
 
+  /* The isometric field is solid geometry, not type. On a dark ground the two
+     wants coincide, so these repeat the signal colours; on a light one they
+     part company, because a colour dark enough to read as a word is mud as a
+     200px block. Anything painted rather than written uses these. */
+  --solid-add: #4fdc95;
+  --solid-del: #ff6b83;
+  --solid-flag: #ffcc70;
+  --solid-ctx: #a78bfa;
+
   /* Two faint nebulae behind the whole page. They are tokens rather than
      literals because a colour written into a rule belongs to no theme, so no
      theme can override it — which is how these two stayed dark on the light
@@ -60,6 +69,10 @@
   --accent: #6d3fb5;
   --stated: #1d7a45;
   --inferred: #7a5c00;
+  --solid-add: #35b06f;
+  --solid-del: #ef5f76;
+  --solid-flag: #e0a52e;
+  --solid-ctx: #8e6ae8;
   --nebula-a: #efeaff;
   --nebula-b: #e6f0f8;
   --panel-glow: 0 1px 2px rgba(20, 20, 45, 0.07);
@@ -80,6 +93,10 @@
   --accent: #6d3fb5;
   --stated: #1d7a45;
   --inferred: #7a5c00;
+  --solid-add: #35b06f;
+  --solid-del: #ef5f76;
+  --solid-flag: #e0a52e;
+  --solid-ctx: #8e6ae8;
   --nebula-a: #efeaff;
   --nebula-b: #e6f0f8;
   --panel-glow: 0 1px 2px rgba(20, 20, 45, 0.07);
@@ -106,6 +123,10 @@
   --accent: #8287cd;     /* violet */
   --stated: #859900;
   --inferred: #b58900;   /* yellow */
+  --solid-add: #859900;   /* the canonical accents, unpulled: they were never */
+  --solid-del: #dc322f;   /* meant to be read as words, and as material they   */
+  --solid-flag: #b58900;  /* are what Solarized actually looks like            */
+  --solid-ctx: #6c71c4;
   --nebula-a: #06323d;
   --nebula-b: #052a33;
   --panel-glow: inset 0 1px 0 rgba(130, 135, 205, 0.08);
@@ -125,6 +146,10 @@
   --accent: #6369c1;
   --stated: #697800;
   --inferred: #8f6c00;
+  --solid-add: #859900;
+  --solid-del: #dc322f;
+  --solid-flag: #b58900;
+  --solid-ctx: #6c71c4;
   --nebula-a: #f7edd6;
   --nebula-b: #f2efdd;
   --panel-glow: 0 1px 2px rgba(88, 110, 117, 0.10);
@@ -783,12 +808,15 @@
   font-size: 0.7rem; color: var(--fg-dim);
 }
 .cockpit__key { display: flex; align-items: center; gap: 0.3rem; }
+/* The swatch is painted and the word beside it is read, so they take their
+   colour from different places — otherwise the legend stops matching the field
+   it is a legend for. */
 .cockpit__key::before {
-  content: ""; width: 8px; height: 8px; border-radius: 2px; background: currentColor;
+  content: ""; width: 8px; height: 8px; border-radius: 2px; background: var(--swatch);
 }
-.cockpit__key--add { color: var(--add); }
-.cockpit__key--del { color: var(--del); }
-.cockpit__key--flag { color: var(--inferred); }
+.cockpit__key--add { color: var(--add); --swatch: var(--solid-add); }
+.cockpit__key--del { color: var(--del); --swatch: var(--solid-del); }
+.cockpit__key--flag { color: var(--inferred); --swatch: var(--solid-flag); }
 .cockpit__keynote { color: var(--fg-dim); opacity: 0.8; }
 
 .cockpit__stats {

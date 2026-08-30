@@ -70,10 +70,31 @@ async function start() {
   const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 200);
   camera.position.set(14, 11, 14);
 
-  scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+  // Lighting follows the ground the field sits on. A key light strong enough to
+  // model blocks against near-black drags every face well below its own colour,
+  // which on a pale theme is the difference between amber and mud. On a light
+  // ground the ambient carries it and the key only shapes it.
+  const ambient = new THREE.AmbientLight(0xffffff, 0.6);
   const key = new THREE.DirectionalLight(0xffffff, 0.85);
   key.position.set(8, 14, 5);
-  scene.add(key);
+  scene.add(ambient, key);
+
+  // pale reports whether the page is light, from the background it actually
+  // has rather than from the name of the theme — a theme msr has never heard
+  // of still gets lit correctly.
+  function pale(css) {
+    const bg = css.getPropertyValue('--bg').trim();
+    const hex = bg.replace('#', '');
+    if (hex.length !== 6) return false;
+    const [r, g, b] = [0, 2, 4].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.5;
+  }
+
+  function relight(css) {
+    const light = pale(css);
+    ambient.intensity = light ? 2.2 : 0.6;
+    key.intensity = light ? 0.9 : 0.85;
+  }
 
   // Colours come from the stylesheet, so the field follows the theme and matches
   // the legend printed beneath it. Read on every repaint rather than once: a
@@ -84,11 +105,15 @@ async function start() {
   let palette;
   function readPalette() {
     const css = getComputedStyle(document.documentElement);
+    relight(css);
+    // The solid tokens, not the text ones: a colour dark enough to read as a
+    // word is mud as a block this size, and on a light theme the two part
+    // company entirely.
     palette = {
-      add: colour(css, '--add', '#a6e3a1'),
-      del: colour(css, '--del', '#f38ba8'),
-      flag: colour(css, '--inferred', '#f9e2af'),
-      ctx: colour(css, '--accent', '#cba6f7'),
+      add: colour(css, '--solid-add', '#a6e3a1'),
+      del: colour(css, '--solid-del', '#f38ba8'),
+      flag: colour(css, '--solid-flag', '#f9e2af'),
+      ctx: colour(css, '--solid-ctx', '#cba6f7'),
     };
   }
   readPalette();
