@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Status — mondspace-reviewer</title>
+  <title>Settings — mondspace-reviewer</title>
   <link rel="stylesheet" href="/assets/app.css">
   <script type="module" src="/assets/chrome.js" defer></script>
   <script type="module" src="/assets/live.js" defer></script>
@@ -17,7 +17,7 @@
     <a class="storynav__link" href="/branches">branches</a>
     <a class="storynav__link" href="/search">search</a>
     <a class="storynav__link" href="/activity">activity</a>
-    <a class="storynav__link" href="/status" aria-current="page">status</a>
+    <a class="storynav__link" href="/settings" aria-current="page">settings</a>
     <a class="storynav__link" href="/tutorial">tour</a>
     <span class="storynav__spacer"></span>
     {{ if .Work }}{{ range .Work }}{{ if .Running }}
@@ -29,9 +29,94 @@
             aria-pressed="false" title="Zen mode (⌘Z) · palette (⌘K)">zen</button>
   </nav>
 
-  <main class="board">
-    <div class="board__col">
+  <main class="settings">
 
+    <!-- One pane is rendered at a time, and the ones you are not looking at are
+         not built. Half of this page is settled configuration you set once —
+         putting it in a column beside a live usage counter meant scrolling past
+         it every time you wanted to know whether the model was answering. -->
+    <nav class="subnav" aria-label="Settings sections">
+      <p class="subnav__title">Settings</p>
+      {{ range .Sections }}
+      <a class="subnav__link" href="/settings?s={{ .Slug }}"
+         {{ if .Current }}aria-current="page"{{ end }}>
+        <span class="subnav__name">{{ .Name }}</span>
+        <span class="subnav__hint">{{ .Hint }}</span>
+      </a>
+      {{ end }}
+    </nav>
+
+    <div class="settings__pane">
+
+    {{ if eq .Section "overview" }}
+    <!-- Everything you would check before trusting a review, on one screen,
+         each line linking to the pane that changes it. -->
+    <section class="board__panel">
+      <h2 class="board__title">overview</h2>
+
+      <div class="board__row">
+        <span class="board__key">reviewer model</span>
+        <span class="board__val {{ if .Agent.Online }}board__val--up{{ else }}board__val--down{{ end }}">
+          {{ if .Agent.Online }}online{{ else }}offline{{ end }}
+        </span>
+      </div>
+      <div class="board__row">
+        <span class="board__key">model</span>
+        <span class="board__val">{{ if .Agent.Model }}{{ .Agent.Model }}{{ else }}none set{{ end }}</span>
+      </div>
+      <div class="board__row">
+        <span class="board__key">endpoint</span>
+        <span class="board__val">{{ if .Agent.Endpoint }}{{ .Agent.Endpoint }}{{ else }}none set{{ end }}</span>
+      </div>
+      {{ with .Agent.Workloads }}{{ range . }}
+      <div class="board__row">
+        <span class="board__key">{{ .Workload }}</span>
+        <span class="board__val">{{ .Model }} <span class="board__hint">{{ .Endpoint }}</span></span>
+      </div>
+      {{ end }}{{ end }}
+      <p class="agentform__note"><a href="/settings?s=model">Point it somewhere else →</a></p>
+
+      {{ if or .HasWatch .CanWatch }}
+      <div class="board__row">
+        <span class="board__key">the remote</span>
+        <span class="board__val {{ if not .Watching }}board__val--down{{ end }}">
+          {{ if .Watching }}fetching every {{ .WatchEvery }}{{ else }}not fetching{{ end }}
+        </span>
+      </div>
+      <p class="agentform__note"><a href="/settings?s=remote">Change what it watches →</a></p>
+      {{ end }}
+
+      <div class="board__row">
+        <span class="board__key">repositories</span>
+        <span class="board__val">{{ len .Repos }} open{{ with .Candidates }} · {{ len . }} found nearby{{ end }}</span>
+      </div>
+      <div class="board__row">
+        <span class="board__key">reviews</span>
+        <span class="board__val">{{ len .Sessions }} in this workspace</span>
+      </div>
+      <div class="board__row">
+        <span class="board__key">spent so far</span>
+        <span class="board__val">{{ .Calls }} call(s) · {{ .Total }} tokens</span>
+      </div>
+
+      <!-- What is happening right now, because it is the one thing on this
+           page that changes while you are reading it. -->
+      <h2 class="board__title" style="margin-top:1.1rem">right now</h2>
+      {{ range .Work }}{{ if .Running }}
+      <div class="work work--running">
+        <span class="work__kind">{{ .Kind }}</span>
+        <span class="work__detail">{{ .Detail }}</span>
+        <span class="ask__spinner" aria-hidden="true"></span><span class="work__state">thinking…</span>
+      </div>
+      {{ end }}{{ end }}
+      <p class="queue__empty">
+        {{ if .Busy }}<a href="/settings?s=usage">Everything the assistant has done →</a>
+        {{ else }}Nothing running. <a href="/settings?s=usage">What it has done →</a>{{ end }}
+      </p>
+    </section>
+    {{ end }}
+
+    {{ if eq .Section "model" }}
     <!-- The reviewer's own model: the one thing no other page reports. -->
     <section class="board__panel">
       <h2 class="board__title">reviewer agent</h2>
@@ -82,15 +167,17 @@
         <label class="agentform__check">
           <input type="checkbox" name="no_thinking" {{ if .Agent.NoThinking }}checked{{ end }}>
           ask the model to skip its reasoning phase
-          <span class="agentform__note">
+        </label>
+        <details class="picker__compare">
+          <summary class="post__moresummary">why this may do nothing</summary>
+          <p class="agentform__note">
             msr always sends the request; whether it does anything is decided by
             the model's chat template. Measured as doing nothing on Qwen3.5-9B,
             under both LM Studio and llama-server — the real switch there is
             <code>--reasoning-budget 0</code> on the server, and that did not
             work either. A model with no thinking mode needs none of this.
-          </span>
-        </label>
-
+          </p>
+        </details>
 
         <!-- Sending one job to its own model. Both boxes empty means it uses
              the settings above, which is how two servers collapse into one. -->
@@ -112,13 +199,15 @@
       {{ with .AgentErr }}<p class="addrepo__err">{{ . }}</p>{{ end }}
       {{ end }}
     </section>
+    {{ end }}
 
+    {{ if eq .Section "remote" }}
     <!-- Fetching is the one thing msr does that talks to the network and
          writes to the repository, so what it is doing has to be on the page
          rather than only in how it was started (ADR 0025, ADR 0026). -->
-    {{ if or .HasWatch .CanWatch }}
     <section class="board__panel">
       <h2 class="board__title">watching the remote</h2>
+      {{ if or .HasWatch .CanWatch }}
       <div class="board__row">
         <span class="board__key">state</span>
         <span class="board__val {{ if not .Watching }}board__val--down{{ end }}">
@@ -147,9 +236,93 @@
       {{ end }}
 
       <p class="agentform__note"><a href="/branches">See every branch →</a></p>
+      {{ else }}
+      <p class="queue__empty">
+        This workspace has no remote to watch — msr is reading a repository with
+        no upstream, or was started without the ability to fetch.
+      </p>
+      {{ end }}
     </section>
     {{ end }}
 
+    {{ if eq .Section "repositories" }}
+    <!-- The repositories this workspace holds, and a way to open another. -->
+    <section class="board__panel">
+      <h2 class="board__title">repositories</h2>
+      {{ range .Repos }}
+      <div class="board__row">
+        <span class="board__key">{{ .Name }}</span>
+        <span class="board__val" title="{{ .Path }}">{{ .Path }}</span>
+        <span class="board__val">{{ .Sessions }} review(s)</span>
+        {{ if $.CanRemoveRepo }}
+        <!-- Closes the window on it; nothing on disk is touched. -->
+        <form class="describe" method="post" action="/repos/remove">
+          <input type="hidden" name="path" value="{{ .Path }}">
+          <button class="describe__btn" type="submit" title="Stop watching — nothing is deleted">unwatch</button>
+        </form>
+        {{ end }}
+      </div>
+      {{ else }}
+      <p class="queue__empty">No repositories open.</p>
+      {{ end }}
+
+      {{ with .Candidates }}
+      <h2 class="board__title" style="margin-top:1.1rem">found nearby</h2>
+      {{ range . }}
+      <form class="addrepo" method="post" action="/repos">
+        <input type="hidden" name="path" value="{{ .Path }}">
+        <span class="board__key">{{ .Name }}</span>
+        <span class="board__val">{{ .Path }}</span>
+        <button class="addrepo__btn" type="submit">watch</button>
+      </form>
+      {{ end }}
+      {{ end }}
+
+      {{ if .CanAddRepo }}
+      <form class="addrepo" method="post" action="/repos">
+        <input class="addrepo__input" name="path" type="text" autocomplete="off"
+               placeholder="path to another repository…">
+        <button class="addrepo__btn" type="submit">watch</button>
+      </form>
+      {{ with .RepoErr }}<p class="addrepo__err">{{ . }}</p>{{ end }}
+      {{ end }}
+    </section>
+    {{ end }}
+
+    {{ if eq .Section "reviews" }}
+    <!-- Every recorded run in the workspace. A table, because these were six
+         values run together on one line with nothing saying which was which. -->
+    <section class="board__panel">
+      <h2 class="board__title">reviews</h2>
+      {{ if .Sessions }}
+      <div class="scroller">
+        <table class="tbl">
+          <thead>
+            <tr><th>review</th><th>repository</th><th>agent</th><th>what it was asked</th>
+                <th>files</th><th>outstanding</th></tr>
+          </thead>
+          <tbody>
+          {{ range .Sessions }}
+          <tr>
+            <td class="tbl__id"><a class="board__id" href="/?session={{ .ID }}"
+                   title="{{ .ID }}">{{ .ID }}</a></td>
+            <td>{{ .Repo }}</td>
+            <td>{{ .Agent }}</td>
+            <td class="board__prompt">{{ if .Prompt }}{{ .Prompt }}{{ else }}—{{ end }}</td>
+            <td>{{ .Files }}</td>
+            <td>{{ if .Open }}<span class="flag">{{ .Open }}</span>{{ else }}—{{ end }}</td>
+          </tr>
+          {{ end }}
+          </tbody>
+        </table>
+      </div>
+      {{ else }}
+      <p class="queue__empty">No reviews recorded for this project yet.</p>
+      {{ end }}
+    </section>
+    {{ end }}
+
+    {{ if eq .Section "usage" }}
     <!-- What it has spent. Reasoning is broken out because on a thinking model
          it is most of the bill, and it is what exhausts a context window. -->
     <section class="board__panel">
@@ -186,9 +359,6 @@
       {{ end }}
     </section>
 
-    </div>
-
-    <div class="board__col">
     <!-- What the reviewer's model is doing, and what it was just asked. Every
          call takes seconds to minutes locally, so this is where the waiting
          becomes visible rather than a page that looks idle. -->
@@ -210,66 +380,10 @@
       {{ else }}
       <p class="queue__empty">The assistant has not been asked anything yet.</p>
       {{ end }}
+      <p class="agentform__note"><a href="/activity">Every call it has ever made →</a></p>
     </section>
+    {{ end }}
 
-    <!-- The repositories this workspace holds, and a way to open another. -->
-    <section class="board__panel">
-      <h2 class="board__title">repositories</h2>
-      {{ range .Repos }}
-      <div class="board__row">
-        <span class="board__key">{{ .Name }}</span>
-        <span class="board__val" title="{{ .Path }}">{{ .Path }}</span>
-        <span class="board__val">{{ .Sessions }}</span>
-        {{ if $.CanRemoveRepo }}
-        <!-- Closes the window on it; nothing on disk is touched. -->
-        <form class="describe" method="post" action="/repos/remove">
-          <input type="hidden" name="path" value="{{ .Path }}">
-          <button class="describe__btn" type="submit" title="Stop watching — nothing is deleted">unwatch</button>
-        </form>
-        {{ end }}
-      </div>
-      {{ else }}
-      <p class="queue__empty">No repositories open.</p>
-      {{ end }}
-
-      {{ with .Candidates }}
-      <p class="board__title" style="margin-top:0.9rem">found nearby</p>
-      {{ range . }}
-      <form class="addrepo" method="post" action="/repos">
-        <input type="hidden" name="path" value="{{ .Path }}">
-        <span class="board__key">{{ .Name }}</span>
-        <span class="board__val">{{ .Path }}</span>
-        <button class="addrepo__btn" type="submit">watch</button>
-      </form>
-      {{ end }}
-      {{ end }}
-
-      {{ if .CanAddRepo }}
-      <form class="addrepo" method="post" action="/repos">
-        <input class="addrepo__input" name="path" type="text" autocomplete="off"
-               placeholder="path to another repository…">
-        <button class="addrepo__btn" type="submit">watch</button>
-      </form>
-      {{ with .RepoErr }}<p class="addrepo__err">{{ . }}</p>{{ end }}
-      {{ end }}
-    </section>
-
-    <!-- Every session in the workspace. -->
-    <section class="board__panel">
-      <h2 class="board__title">sessions</h2>
-      {{ range .Sessions }}
-      <div class="board__session">
-        <a class="board__id" href="/?session={{ .ID }}">{{ .ID }}</a>
-        <span class="board__key">{{ .Repo }}</span>
-        <span class="board__key">{{ .Agent }}</span>
-        <span class="board__prompt">{{ .Prompt }}</span>
-        <span class="board__val">{{ .Files }}f</span>
-        {{ if .Open }}<span class="flag">{{ .Open }} open</span>{{ end }}
-      </div>
-      {{ else }}
-      <p class="queue__empty">No sessions recorded for this project yet.</p>
-      {{ end }}
-    </section>
     </div>
   </main>
 </body>

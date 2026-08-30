@@ -439,7 +439,7 @@ func TestAskSurfacesErrorWithoutCrashing(t *testing.T) {
 	}
 }
 
-func TestStatusListsSessionsAcrossReposAndAgents(t *testing.T) {
+func TestSettingsListReviewsAcrossReposAndAgents(t *testing.T) {
 	sessions := []web.SessionSummary{
 		{ID: "s1", Repo: "mondspace-reviewer", Agent: "claude-code", Prompt: "add token validation",
 			Files: 12, Flags: 3, Open: 1, Started: time.Date(2026, 8, 22, 9, 0, 0, 0, time.UTC)},
@@ -448,10 +448,10 @@ func TestStatusListsSessionsAcrossReposAndAgents(t *testing.T) {
 	}
 	h := web.NewServer(testSession(), nil).WithWorkspace(sessions)
 
-	rec := get(t, h, "/status")
+	rec := get(t, h, "/settings?s=reviews")
 
 	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200", rec.Code)
+		t.Fatalf("reviews = %d, want 200", rec.Code)
 	}
 	body := rec.Body.String()
 	for _, want := range []string{
@@ -704,7 +704,7 @@ func TestAnnotatingReturnsToTheReviewQueueNotTheCockpit(t *testing.T) {
 	}
 }
 
-func TestStatusPageReportsTheReviewerAgentAndOpenSessions(t *testing.T) {
+func TestSettingsReportTheReviewerAgentAndItsReviews(t *testing.T) {
 	h := web.NewServer(testSession(), nil).
 		WithWorkspace([]web.SessionSummary{
 			{ID: "s", Repo: "mondspace-reviewer", Agent: "claude-code", Prompt: "add token validation", Files: 2},
@@ -715,36 +715,38 @@ func TestStatusPageReportsTheReviewerAgentAndOpenSessions(t *testing.T) {
 			Usage: port.TokenUsage{Calls: 12, Failures: 1, Prompt: 4000, Completion: 900, Reasoning: 700, Millis: 36000},
 		})
 
-	rec := get(t, h, "/status")
+	rec := get(t, h, "/settings?s=model")
 	if rec.Code != http.StatusOK {
-		t.Fatalf("GET /status = %d, want 200", rec.Code)
+		t.Fatalf("GET the model pane = %d, want 200", rec.Code)
 	}
-	body := rec.Body.String()
 
 	// The reviewer's own agent: which model, where, and is it up right now.
 	for _, want := range []string{"qwen/qwen3.5-9b", "http://localhost:1234/v1", "online"} {
-		if !strings.Contains(body, want) {
-			t.Errorf("status page is missing %q", want)
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Errorf("the model pane is missing %q", want)
 		}
 	}
-	// What it has spent. Reasoning is broken out: on a thinking model it is the
-	// number that decides whether the context window is big enough.
+	// What it has spent, which is its own pane. Reasoning is broken out: on a
+	// thinking model it is the number that decides whether the context window
+	// is big enough.
+	spend := get(t, h, "/settings?s=usage").Body.String()
 	for _, want := range []string{"12", "4,000", "700"} {
-		if !strings.Contains(body, want) {
-			t.Errorf("status page is missing the usage figure %q", want)
+		if !strings.Contains(spend, want) {
+			t.Errorf("the usage pane is missing the figure %q", want)
 		}
 	}
-	// Every session known for this project.
-	if !strings.Contains(body, "claude-code") || !strings.Contains(body, "fix the retry") {
-		t.Errorf("status page should list the project's sessions:\n%s", body)
+	// Every review known for this project, likewise.
+	reviews := get(t, h, "/settings?s=reviews").Body.String()
+	if !strings.Contains(reviews, "claude-code") || !strings.Contains(reviews, "fix the retry") {
+		t.Errorf("the reviews pane should list the project's reviews:\n%s", reviews)
 	}
 }
 
-func TestStatusPageSaysWhenTheModelIsOffline(t *testing.T) {
+func TestSettingsSayWhenTheModelIsOffline(t *testing.T) {
 	h := web.NewServer(testSession(), nil).
 		WithAgent(web.AgentStatus{Model: "m", Endpoint: "http://127.0.0.1:1/v1", Online: false})
 
-	body := get(t, h, "/status").Body.String()
+	body := get(t, h, "/settings?s=model").Body.String()
 
 	if !strings.Contains(body, "offline") {
 		t.Errorf("an unreachable endpoint must be reported as offline:\n%s", body)
@@ -833,7 +835,7 @@ func TestCockpitOffersATargetPicker(t *testing.T) {
 	}
 }
 
-func TestStatusListsOpenRepositoriesAndAbsorbsTheSessionsPage(t *testing.T) {
+func TestSettingsListOpenRepositoriesAndAbsorbTheSessionsPage(t *testing.T) {
 	h := web.NewServer(testSession(), nil).
 		WithWorkspace([]web.SessionSummary{
 			{ID: "s", Repo: "api", Prompt: "add token validation"},
@@ -844,17 +846,17 @@ func TestStatusListsOpenRepositoriesAndAbsorbsTheSessionsPage(t *testing.T) {
 			{Name: "web", Path: "/w/web", Sessions: 1},
 		}, nil)
 
-	body := get(t, h, "/status").Body.String()
+	body := get(t, h, "/settings?s=repositories").Body.String()
 
 	// Repositories, with where they are and how much they hold.
 	for _, want := range []string{"/w/api", "/w/web", "api", "web"} {
 		if !strings.Contains(body, want) {
-			t.Errorf("status is missing %q", want)
+			t.Errorf("the repositories pane is missing %q", want)
 		}
 	}
-	// The sessions page folded in here, so its content must be present.
-	if !strings.Contains(body, "port the parser") {
-		t.Errorf("status should list the workspace's sessions:\n%s", body)
+	// The old sessions page folded into settings, so its content must be there.
+	if !strings.Contains(get(t, h, "/settings?s=reviews").Body.String(), "port the parser") {
+		t.Errorf("the reviews pane should list the workspace's reviews")
 	}
 	// And the old address still resolves.
 	if rec := get(t, h, "/sessions"); rec.Code != http.StatusMovedPermanently {
@@ -900,7 +902,7 @@ func TestAddingARepositoryReportsWhyItFailed(t *testing.T) {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	h.ServeHTTP(httptest.NewRecorder(), req)
 
-	if !strings.Contains(get(t, h, "/status").Body.String(), "not a git repository") {
+	if !strings.Contains(get(t, h, "/settings?s=repositories").Body.String(), "not a git repository") {
 		t.Error("the failure should be shown on the page")
 	}
 }
@@ -973,8 +975,8 @@ func TestWorkInFlightIsVisibleWhileItRuns(t *testing.T) {
 		t.Errorf("InFlight = %d, want 0 once it finished", h.InFlight())
 	}
 	// Finished work stays on the record, so a reviewer can see what was asked.
-	if !strings.Contains(get(t, h, "/status").Body.String(), "reading v3.1.0") {
-		t.Error("finished work should still be listed on the status page")
+	if !strings.Contains(get(t, h, "/settings?s=usage").Body.String(), "reading v3.1.0") {
+		t.Error("finished work should still be listed under usage")
 	}
 }
 
@@ -985,7 +987,7 @@ func TestFailedWorkSaysSoAndOffersARetry(t *testing.T) {
 	done := h.BeginWork("narrate", "t1", "reading v3.1.0")
 	done(errors.New("the model spent its whole budget on reasoning"))
 
-	body := get(t, h, "/status").Body.String()
+	body := get(t, h, "/settings?s=usage").Body.String()
 	if !strings.Contains(body, "budget on reasoning") {
 		t.Errorf("a failure should say why:\n%s", body)
 	}
@@ -1138,7 +1140,7 @@ func TestConfiguringTheModelFromTheStatusPage(t *testing.T) {
 			return nil
 		})
 
-	if !strings.Contains(get(t, h, "/status").Body.String(), `action="/agent"`) {
+	if !strings.Contains(get(t, h, "/settings?s=model").Body.String(), `action="/agent"`) {
 		t.Fatal("the status page should offer the model settings")
 	}
 
@@ -1155,7 +1157,7 @@ func TestConfiguringTheModelFromTheStatusPage(t *testing.T) {
 		t.Errorf("configured %+v, want the submitted settings", got)
 	}
 	// And the page reflects it at once, rather than after a restart.
-	if !strings.Contains(get(t, h, "/status").Body.String(), "llama-3") {
+	if !strings.Contains(get(t, h, "/settings?s=model").Body.String(), "llama-3") {
 		t.Error("the new model should show immediately")
 	}
 }
@@ -1169,13 +1171,13 @@ func TestARejectedConfigurationSaysWhy(t *testing.T) {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	h.ServeHTTP(httptest.NewRecorder(), req)
 
-	if !strings.Contains(get(t, h, "/status").Body.String(), "did not answer") {
+	if !strings.Contains(get(t, h, "/settings?s=model").Body.String(), "did not answer") {
 		t.Error("a rejected change should be explained on the page")
 	}
 }
 
 func TestSettingsAreNotOfferedWithoutSomewhereToPutThem(t *testing.T) {
-	if strings.Contains(get(t, web.NewServer(testSession(), nil), "/status").Body.String(), `action="/agent"`) {
+	if strings.Contains(get(t, web.NewServer(testSession(), nil), "/settings?s=model").Body.String(), `action="/agent"`) {
 		t.Error("without a configure hook there is nothing behind the form")
 	}
 }
@@ -1266,7 +1268,7 @@ func TestStatusReportsWhetherSkippingReasoningActuallyWorked(t *testing.T) {
 		Usage: port.TokenUsage{Calls: 4, Completion: 400, Reasoning: 380},
 	})
 
-	body := get(t, h, "/status").Body.String()
+	body := get(t, h, "/settings?s=usage").Body.String()
 
 	if !strings.Contains(body, "ignoring") {
 		t.Errorf("a model still reasoning with the setting on should say so:\n%s", body)
@@ -1277,13 +1279,13 @@ func TestStatusReportsWhetherSkippingReasoningActuallyWorked(t *testing.T) {
 	}
 }
 
-func TestStatusSaysNothingWhenSkippingIsWorking(t *testing.T) {
+func TestSettingsSayNothingWhenSkippingIsWorking(t *testing.T) {
 	h := web.NewServer(testSession(), nil).WithAgent(web.AgentStatus{
 		Model: "some/model", NoThinking: true,
 		Usage: port.TokenUsage{Calls: 4, Completion: 400, Reasoning: 0},
 	})
 
-	if strings.Contains(get(t, h, "/status").Body.String(), "ignoring") {
+	if strings.Contains(get(t, h, "/settings?s=usage").Body.String(), "ignoring") {
 		t.Error("a model that stopped reasoning should not be accused of ignoring the setting")
 	}
 }
@@ -1295,7 +1297,7 @@ func TestStatusDoesNotAccuseAModelBeforeItHasBeenAsked(t *testing.T) {
 		Model: "some/model", NoThinking: true,
 	})
 
-	if strings.Contains(get(t, h, "/status").Body.String(), "ignoring") {
+	if strings.Contains(get(t, h, "/settings?s=usage").Body.String(), "ignoring") {
 		t.Error("nothing has been asked yet, so nothing can be concluded")
 	}
 }
@@ -1307,7 +1309,7 @@ func TestReasoningShareIsShownEvenWhenNotSkipping(t *testing.T) {
 		Usage: port.TokenUsage{Calls: 2, Completion: 200, Reasoning: 50},
 	})
 
-	if !strings.Contains(get(t, h, "/status").Body.String(), "25%") {
+	if !strings.Contains(get(t, h, "/settings?s=usage").Body.String(), "25%") {
 		t.Error("the reasoning share should be shown regardless of the setting")
 	}
 }
@@ -1660,7 +1662,7 @@ func TestTheStatusPageShowsWhichModelAnswersWhat(t *testing.T) {
 		},
 	})
 
-	body := get(t, h, "/status").Body.String()
+	body := get(t, h, "/settings?s=model").Body.String()
 	for _, want := range []string{"narration", "big", "describe", "8082"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the status page should name %q:\n%s", want, body)
@@ -2075,7 +2077,7 @@ func TestTheTutorialExplainsThePageToSomeoneNew(t *testing.T) {
 func TestEveryPageOffersTheTour(t *testing.T) {
 	// A tour nobody can find is not a tour.
 	h := web.NewServer(testSession(), nil)
-	for _, page := range []string{"/", "/status", "/activity"} {
+	for _, page := range []string{"/", "/settings", "/activity"} {
 		if !strings.Contains(get(t, h, page).Body.String(), "/tutorial") {
 			t.Errorf("%s should link to the tour", page)
 		}
@@ -2502,7 +2504,7 @@ func TestWatchingTheRemoteIsToggledFromTheStatusPage(t *testing.T) {
 				return nil
 			})
 
-	if !strings.Contains(get(t, h, "/status").Body.String(), `action="/remote"`) {
+	if !strings.Contains(get(t, h, "/settings?s=remote").Body.String(), `action="/remote"`) {
 		t.Fatal("the status page should offer the remote watch")
 	}
 
@@ -2544,7 +2546,7 @@ func TestTheStatusPageSaysWhetherItIsFetching(t *testing.T) {
 	h := web.NewServer(testSession(), nil).
 		WithRemoteWatch(func() (bool, time.Duration) { return true, 90 * time.Second }, nil)
 
-	body := get(t, h, "/status").Body.String()
+	body := get(t, h, "/settings?s=remote").Body.String()
 	if !strings.Contains(body, "every 1m 30s") && !strings.Contains(body, "1m30s") {
 		t.Errorf("the page should say how often it fetches:\n%s", body)
 	}

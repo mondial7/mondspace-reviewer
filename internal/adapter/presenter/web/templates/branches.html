@@ -17,7 +17,7 @@
     <a class="storynav__link" href="/branches" aria-current="page">branches</a>
     <a class="storynav__link" href="/search">search</a>
     <a class="storynav__link" href="/activity">activity</a>
-    <a class="storynav__link" href="/status">status</a>
+    <a class="storynav__link" href="/settings">settings</a>
     <a class="storynav__link" href="/tutorial">tour</a>
     <span class="storynav__spacer"></span>
     {{ range .Work }}{{ if .Running }}
@@ -36,7 +36,7 @@
         what everyone is working on, and how far each has drifted from
         {{ with .Base }}<code>{{ . }}</code>{{ else }}the mainline{{ end }} —
         {{ if .Watching }}refreshed every {{ .Every }}{{ else }}as of your last
-        <code>git fetch</code>. <a href="/status">Turn on watching</a> to have msr
+        <code>git fetch</code>. <a href="/settings?s=remote">Turn on watching</a> to have msr
         keep it current.{{ end }}
       </span>
     </p>

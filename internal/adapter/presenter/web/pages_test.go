@@ -77,7 +77,7 @@ func TestEveryPageRendersWhateverIsWired(t *testing.T) {
 	// A template referring to a field that is not there is a 500 on that page
 	// alone, which is exactly the kind of thing nobody notices until they open
 	// it. Both configurations, because most of these are conditional on wiring.
-	pages := []string{"/", "/status", "/activity", "/tutorial", "/branches"}
+	pages := []string{"/", "/settings", "/activity", "/tutorial", "/branches"}
 
 	for _, name := range []string{"bare", "wired"} {
 		h := web.NewServer(testSession(), nil)

@@ -178,10 +178,10 @@ applyTheme();
 const DESTINATIONS = [
   { label: 'Cockpit', hint: 'story, changes and the live panel', href: '/' },
   { label: 'Activity', hint: 'every model call, with what it cost', href: '/activity' },
-  { label: 'Status', hint: 'is the reviewer model online', href: '/status' },
+  { label: 'Settings', hint: 'model, remote, repositories, usage', href: '/settings' },
   { label: 'How to use this', hint: 'the four things, in order', href: '/tutorial' },
   { label: 'Search the review log', hint: 'every note, question and finding', href: '/search' },
-  { label: 'Sessions', hint: 'every review, across repositories', href: '/status' },
+  { label: 'Reviews', hint: 'every review, across repositories', href: '/settings?s=reviews' },
   { label: 'Next theme', hint: 'auto · light · dark · solarized', action: cycleTheme },
   { label: 'Toggle zen', hint: 'hide the shell and work', action: () => setZen(!zen) },
   { label: 'Keyboard shortcuts', hint: 'moving around without the mouse — or press ?',

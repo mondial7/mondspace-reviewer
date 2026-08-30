@@ -422,7 +422,7 @@ func (s *Server) handleConfigure(w http.ResponseWriter, r *http.Request) {
 			Detail: want.Model + " at " + want.Endpoint, Model: want.Model})
 	}
 	s.broadcast("agent")
-	http.Redirect(w, r, "/status", http.StatusSeeOther)
+	http.Redirect(w, r, "/settings?s=model", http.StatusSeeOther)
 }
 
 // WithRemoveRepo wires closing a repository, which stops watching it without
@@ -467,7 +467,7 @@ func (s *Server) handleAddRepo(w http.ResponseWriter, r *http.Request) {
 		s.Record(AuditEntry{Action: "repo-opened", Detail: r.FormValue("path")})
 	}
 	s.broadcast("repos")
-	http.Redirect(w, r, "/status", http.StatusSeeOther)
+	http.Redirect(w, r, "/settings?s=repositories", http.StatusSeeOther)
 }
 
 // WithExchanges persists the review conversation, and seeds the thread with
@@ -690,7 +690,7 @@ func (s *Server) handleRemoveRepo(w http.ResponseWriter, r *http.Request) {
 		s.Record(AuditEntry{Action: "repo-closed", Detail: path})
 	}
 	s.broadcast("repos")
-	http.Redirect(w, r, "/status", http.StatusSeeOther)
+	http.Redirect(w, r, "/settings?s=repositories", http.StatusSeeOther)
 }
 
 // CompareFunc reviews an arbitrary range the reviewer chose, returning the id it
@@ -1079,7 +1079,10 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /compare", s.handleCompare)
 	s.mux.HandleFunc("GET /cockpit", s.handleCockpit)
 	s.mux.HandleFunc("GET /activity", s.handleActivity)
-	s.mux.HandleFunc("GET /status", s.handleStatus)
+	s.mux.HandleFunc("GET /settings", s.handleSettings)
+	// Renaming a page is not a reason to break a link: /status is in the
+	// tutorial, in the README, on the branches page and in bookmarks.
+	s.mux.HandleFunc("GET /status", redirectSettings)
 	s.mux.HandleFunc("GET /tutorial", s.handleTutorial)
 	s.mux.HandleFunc("GET /branches", s.handleBranches)
 	s.mux.HandleFunc("GET /search", s.handleSearch)
@@ -1087,7 +1090,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /remote", s.handleRemoteWatch)
 	s.mux.HandleFunc("POST /repos", s.handleAddRepo)
 	// The workspace list folded into the status page.
-	s.mux.HandleFunc("GET /sessions", redirectStatus)
+	s.mux.HandleFunc("GET /sessions", redirectReviews)
 	s.mux.HandleFunc("POST /story/narrate", s.handleNarrate)
 	s.mux.HandleFunc("POST /review/signoff", s.handleSignoff)
 	s.mux.HandleFunc("POST /analysis/{kind}", s.handleAnalysis)
@@ -1202,8 +1205,14 @@ func short(hash string) string {
 	return hash[:8]
 }
 
-func redirectStatus(w http.ResponseWriter, r *http.Request) {
-	http.Redirect(w, r, "/status", http.StatusMovedPermanently)
+// redirectReviews sends the old /sessions address to the pane that now holds
+// them, rather than to the top of a page they are no longer on.
+func redirectReviews(w http.ResponseWriter, r *http.Request) {
+	http.Redirect(w, r, "/settings?s=reviews", http.StatusMovedPermanently)
+}
+
+func redirectSettings(w http.ResponseWriter, r *http.Request) {
+	http.Redirect(w, r, "/settings", http.StatusMovedPermanently)
 }
 
 func redirectHome(w http.ResponseWriter, r *http.Request) {
@@ -1391,7 +1400,7 @@ func (s *Server) handleRemoteWatch(w http.ResponseWriter, r *http.Request) {
 		s.Record(AuditEntry{Action: "remote-watch",
 			Detail: fmt.Sprintf("fetching %s (every %s)", onOff(on), every)})
 	}
-	http.Redirect(w, r, "/status", http.StatusSeeOther)
+	http.Redirect(w, r, "/settings?s=remote", http.StatusSeeOther)
 }
 
 func onOff(on bool) string {
@@ -2610,9 +2619,45 @@ func (s *Server) handleTutorial(w http.ResponseWriter, r *http.Request) {
 	s.render(w, "tutorial.html", nil)
 }
 
-// handleStatus answers "is everything working": the reviewer's own model, what
-// it has cost, and every session known for this project.
-func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
+// settingsSection is one pane of the settings page.
+type settingsSection struct {
+	Slug, Name, Hint string
+	Current          bool
+}
+
+// settingsPanes is the sidebar, in order. Overview first because it is the one
+// you open without a reason; the rest are settled configuration you set once,
+// and putting them in a column beside a live counter meant scrolling past them
+// every time you wanted to know whether the model was answering.
+var settingsPanes = []settingsSection{
+	{Slug: "overview", Name: "overview", Hint: "is this working"},
+	{Slug: "model", Name: "model", Hint: "which one answers, and where"},
+	{Slug: "remote", Name: "remote", Hint: "what the team is pushing"},
+	{Slug: "repositories", Name: "repositories", Hint: "what this workspace holds"},
+	{Slug: "reviews", Name: "reviews", Hint: "every recorded run"},
+	{Slug: "usage", Name: "usage", Hint: "calls, tokens, what is running"},
+}
+
+// sectionsFor marks the pane being shown, and reports the slug actually used.
+// An unknown slug lands on the overview: a stale bookmark or a typo is not an
+// error worth a page of its own.
+func sectionsFor(want string) ([]settingsSection, string) {
+	out := append([]settingsSection(nil), settingsPanes...)
+	for i := range out {
+		if out[i].Slug == want {
+			out[i].Current = true
+			return out, want
+		}
+	}
+	out[0].Current = true
+	return out, out[0].Slug
+}
+
+// handleSettings answers "is everything working, and how is it set up": the
+// reviewer's own model, what it has cost, and every review known for this
+// project — one pane at a time, so a pane you are not looking at is neither
+// built nor kept current.
+func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	s.mu.RLock()
 	agent := s.agent
 	repos := s.repos
@@ -2663,7 +2708,19 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		checked = agent.Checked.Local().Format("15:04:05")
 	}
 
+	sections, section := sectionsFor(r.URL.Query().Get("s"))
+	busy := false
+	for _, item := range work {
+		if item.Running() {
+			busy = true
+			break
+		}
+	}
+
 	data := struct {
+		Sections           []settingsSection
+		Section            string
+		Busy               bool
 		SessionID          string
 		Repo               string
 		Agent              AgentStatus
@@ -2688,6 +2745,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		CanWatch           bool
 		HasWatch           bool
 	}{
+		Sections: sections, Section: section, Busy: busy,
 		SessionID: sessionID, Repo: repo, Agent: agent,
 		Calls: thousands(u.Calls), Failures: thousands(u.Failures),
 		Prompt: thousands(u.Prompt), Completion: thousands(u.Completion),
@@ -2702,7 +2760,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		CanWatch: canWatch, HasWatch: hasWatch,
 	}
 
-	s.render(w, "status.html", data)
+	s.render(w, "settings.html", data)
 }
 
 // analysisCard is one audit as the page needs it: what it is, whether it has

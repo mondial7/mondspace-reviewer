@@ -426,7 +426,7 @@ footer p { margin: 0.3rem 0; }
       </div>
       <p>
         That is the whole setup — msr looks for it at <code>127.0.0.1:8081</code> by default.
-        Any OpenAI-compatible server works instead; point msr at it on the status page, or with
+        Any OpenAI-compatible server works instead; point msr at it on the settings page, or with
         <code>--summarizer-url</code>.
       </p>
     </article>
@@ -620,11 +620,11 @@ footer p { margin: 0.3rem 0; }
 <section id="status">
   <h2>The model is yours</h2>
   <p class="sub">
-    It runs on your machine, on a port you started. The status page says whether it is
+    It runs on your machine, on a port you started. The settings page says whether it is
     answering, what it has cost, and lets you point msr somewhere else without a restart.
   </p>
   <figure class="shot">
-    <img src="img/cockpit-status.png" alt="The msr status page: the reviewer model, whether it is online, what it has spent, and the repositories being watched." loading="lazy" width="1600" height="1000">
+    <img src="img/cockpit-status.png" alt="msr settings: the reviewer model, whether it is online, what it has spent, and the repositories being watched." loading="lazy" width="1600" height="1000">
     <figcaption>If the model is unreachable, msr degrades to mechanical headlines and carries on — <b>the review never waits on it.</b></figcaption>
   </figure>
 </section>

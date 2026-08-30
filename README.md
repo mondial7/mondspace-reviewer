@@ -39,7 +39,7 @@ llama-server -hf bartowski/Qwen_Qwen3-4B-Instruct-2507-GGUF:Q6_K \
 
 About 3.3 GB, downloaded once. Leave it running — `msr` looks for it at
 `127.0.0.1:8081`. Any OpenAI-compatible server works instead: point `msr` at it
-on `/status`, or with `--summarizer-url`.
+on `/settings`, or with `--summarizer-url`.
 
 **3. Open a repository**
 
@@ -214,7 +214,7 @@ Merged branches stay listed but dimmed, since there is nothing left on them.
 
 By default msr reads whatever your own last `git fetch` or `git pull` brought
 in. To have it watch the remote itself, either start it with the flag or flip it
-on `/status` while it runs:
+on `/settings` while it runs:
 
 ```sh
 msr web --fetch --fetch-every=2m
@@ -320,12 +320,12 @@ changed file · `⌘Z` zen mode · `⌘J` dark, light, or follow the system. All
 them are ignored while you are typing ([ADR 0022](ADR/0022-keyboard-navigation.md)).
 
 Every model call is slow on a local model, so the waiting is visible: a spinner
-on the rail from any page, and `/status` showing what is running, what it cost,
+on the rail from any page, and `/settings` showing what is running, what it cost,
 and a button to run it again.
 
 ### Choosing the model
 
-The endpoint and model are set on `/status` — type them, press apply, and it
+The endpoint and model are set on `/settings` — type them, press apply, and it
 takes effect at once. No restart, no file to find. Settings that cannot be
 reached are refused with the reason rather than saved and left to fail quietly
 later.
@@ -344,7 +344,9 @@ A flag left at its default does **not** override what you configured — passing
 
 - **`/activity`** — every model call and every change to the review, across the
   whole workspace.
-- **`/status`** — is your model online, what it has spent (split into prompt,
+- **`/settings`** — one pane at a time: an **overview** of whether this is
+  working at all, then the model, the remote, the repositories, every review,
+  and usage. Is your model online, what it has spent (split into prompt,
   completion and *of which reasoning*), what the assistant is doing right now,
   and the repositories you are watching — one click to add another or stop
   watching one. Unwatching closes a window; nothing on disk is touched.
@@ -356,7 +358,7 @@ msr web --repo=. --repo=../api --repo=../web
 ```
 
 With no `--repo`, `msr` opens the checkout you are in — or, if you are in a
-directory *of* checkouts, the first few of them. The rest appear on `/status`
+directory *of* checkouts, the first few of them. The rest appear on `/settings`
 under *found nearby*, one click from being watched. Nothing is asked at launch:
 choosing belongs where it can change without a restart.
 
@@ -510,13 +512,13 @@ The small instruct model wins outright, so it answers everything. Running the 9B
 alongside it made the 4B four times slower (6.8s → 28s) from memory pressure
 alone — on 24 GB a second model has to earn a lot to be worth loading.
 
-![The status page: which model answers, whether it is online, and what it has cost](docs/img/cockpit-status.png)
+![Settings: which model answers, whether it is online, and what it has cost](docs/img/cockpit-status.png)
 
 ### A model per workload
 
 If you do want to split — a bigger model for narration, a fast one for the rest
 — every workload can be pointed somewhere else, from the flags, the environment,
-or the settings on `/status`:
+or the settings on `/settings`:
 
 ```sh
 msr web --narration-url=http://127.0.0.1:8082/v1 --narration-model=big
@@ -526,7 +528,7 @@ msr web --narration-url=http://127.0.0.1:8082/v1 --narration-model=big
 `MSR_DESCRIBE_MODEL` and so on. Anything left empty falls back to the shared
 endpoint and model, field by field, so two models behind one server is just a
 model name. Distinct models are connected to once and their usage is added up:
-`/status` shows which model answers what, and reports online only when *all* of
+`/settings` shows which model answers what, and reports online only when *all* of
 them do.
 
 ### Structured output
@@ -648,12 +650,12 @@ MSR_SUMMARIZER_URL=http://127.0.0.1:8081/v1 MSR_MODEL=qwen3-4b-instruct-2507 \
   workspace search and finding triage
   ([ADR 0027](ADR/0027-ignoring-generated-files.md)–[0030](ADR/0030-searching-judging-and-who-can-reach-it.md)).
 - **A history card** and a **branches page**, with an opt-in watch on the remote
-  so you see what the rest of the team pushes — toggled from `/status` without a
+  so you see what the rest of the team pushes — toggled from `/settings` without a
   restart ([ADR 0025](ADR/0025-watching-the-remote.md),
   [ADR 0026](ADR/0026-the-wider-view.md)).
 - **Schema-enforced model output**, on-demand descriptions, persisted
   conversations, and full accounting of every call and token at `/activity` and
-  `/status`.
+  `/settings`.
 - **MCP server** (`msr mcp`) — your coding agent pulls the review when it wants
   it, never interrupted. What a human wrote and what a model inferred arrive
   through separate calls ([ADR 0031](ADR/0031-an-agent-pulls-the-review.md)).
