@@ -1,2 +1,1 @@
-{{ if . }}<pre class="diff"><code>{{ range . }}<span class="diff__line diff__line--{{ .Kind }}">{{ .Text }}</span>
-{{ end }}</code></pre>{{ else }}<p class="diff diff--empty">No textual changes.</p>{{ end }}
+{{ if .Lines }}<pre class="post__diff"><code>{{ range .Lines }}<span class="diff__line diff__line--{{ .Kind }}{{ if .Notes }} diff__line--noted{{ end }}"{{ if or (eq .Kind "add") (eq .Kind "del") }} data-anchor="{{ .Text }}" data-nth="{{ .Nth }}" tabindex="0" role="button" title="note this line"{{ end }}>{{ .Text }}</span>{{ range .Notes }}<span class="diff__note diff__note--{{ .Kind }}"><span class="diff__notekind">{{ .Kind }}</span>{{ .Text }}</span>{{ end }}{{ end }}</code></pre>{{ else }}<p class="diff diff--empty">No textual changes.</p>{{ end }}

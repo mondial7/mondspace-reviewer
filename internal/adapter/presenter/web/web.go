@@ -1120,10 +1120,41 @@ func (s *Server) handleUnitDiff(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The same markup the feed renders, notes and anchors and all: the expanded
+	// diff is where a reviewer reads the parts that did not fit, so it is the
+	// last place that should be read-only.
+	// Without git's plumbing, exactly as the compacted view drops it: the page
+	// already says which file this is.
+	lines, _ := splitDiffWithNotes(usecase.WithoutGitNoise(diff).Text, notesFor(sess.Notes, id))
+
+	view := struct {
+		Lines []diffLine
+		File  string
+		Back  string
+	}{Lines: lines, File: fileOfUnit(sess, id), Back: backTo(r, "#unit-"+id)}
+
+	// Two shapes, one diff. The page swaps the fragment in where the compacted
+	// diff was; a browser following the link with no JavaScript gets a page it
+	// can read, rather than unstyled markup meant for something else.
+	page := "fulldiff.html"
+	if r.Header.Get("X-Msr-Fragment") != "" {
+		page = "diff.html"
+	}
+
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := s.tmpl.ExecuteTemplate(w, "diff.html", splitDiff(diff.Text)); err != nil {
+	if err := s.tmpl.ExecuteTemplate(w, page, view); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
+}
+
+// fileOfUnit names a unit, for a page that is only about that one file.
+func fileOfUnit(sess Session, id string) string {
+	for _, u := range sess.Units {
+		if u.ID == id && len(u.Files) > 0 {
+			return u.Files[0]
+		}
+	}
+	return id
 }
 
 // handleVersions serves a file's history as the overlay's navigation: the
@@ -2372,7 +2403,15 @@ func statsFor(kind domain.TargetKind, st domain.SessionStats, subtitle string) c
 // the diff compacted when it would otherwise swamp everything else.
 type feedItem struct {
 	unitView
-	Compacted bool
+	// Hidden is how many lines the compacted diff left out. Zero means the
+	// whole change is on the page; anything else is a number the reviewer is
+	// offered rather than told about, because a review that cannot show you the
+	// whole diff is not a review.
+	Hidden int
+	// HiddenNotes counts notes anchored to lines the compaction dropped. They
+	// are not orphaned — the line is still in the file — so they must not be
+	// reported as though the code had moved under them.
+	HiddenNotes int
 }
 
 // groupView is a set of files that changed together, with one model-written
@@ -2520,13 +2559,21 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 			v := viewByID[u.ID]
 			v.Meaning = narrative.Meanings[usecase.FileKey(u)]
 			v.Highlights = narrative.Highlights[usecase.FileKey(u)]
-			compact, wasCompacted := usecase.CompactDiff(sess.Diffs[u.ID], cockpitDiffLines)
-			if wasCompacted {
-				// Compacting drops lines, which can take an anchored note with
-				// them — so it is reported as orphaned rather than lost.
-				v.Diff, v.Orphaned = splitDiffWithNotes(compact.Text, notesFor(sess.Notes, u.ID))
+			// Whether a note is orphaned is decided against the *whole* diff,
+			// which is the truth. Deciding it against the compacted one told a
+			// reviewer their note was written on a line that had changed, when
+			// all that had happened was that the page did not show it.
+			notes := notesFor(sess.Notes, u.ID)
+			compact, hidden := usecase.CompactDiff(sess.Diffs[u.ID], cockpitDiffLines)
+			if hidden > 0 {
+				_, orphaned := splitDiffWithNotes(sess.Diffs[u.ID].Text, notes)
+				shown, _ := splitDiffWithNotes(compact.Text, notes)
+				v.Diff, v.Orphaned = shown, orphaned
 			}
-			gv.Files = append(gv.Files, feedItem{unitView: v, Compacted: wasCompacted})
+			gv.Files = append(gv.Files, feedItem{
+				unitView: v, Hidden: hidden,
+				HiddenNotes: notesOffScreen(v.Diff, notes, v.Orphaned),
+			})
 		}
 		groups = append(groups, gv)
 	}
@@ -2590,6 +2637,33 @@ func tokenTotal(u port.TokenUsage) string {
 		return ""
 	}
 	return thousands(u.Prompt + u.Completion)
+}
+
+// notesOffScreen counts the notes that are neither shown on a line nor orphaned
+// — the ones the compaction hid. They are the reason to offer the rest.
+func notesOffScreen(shown []diffLine, all, orphaned []domain.Note) int {
+	if len(all) == 0 {
+		return 0
+	}
+	visible := map[string]bool{}
+	for _, line := range shown {
+		for _, n := range line.Notes {
+			visible[n.ID] = true
+		}
+	}
+	for _, n := range orphaned {
+		visible[n.ID] = true
+	}
+
+	off := 0
+	for _, n := range all {
+		// Only line notes can be hidden by compaction; a note about the file as
+		// a whole is not anchored to anything that could scroll away.
+		if n.Anchor != "" && !visible[n.ID] {
+			off++
+		}
+	}
+	return off
 }
 
 // cockpitDiffLines is how much of one diff the feed shows before compacting. It

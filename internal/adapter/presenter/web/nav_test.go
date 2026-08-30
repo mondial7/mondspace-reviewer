@@ -75,12 +75,25 @@ func TestEveryPageOffersTheSameWayOut(t *testing.T) {
 	}
 }
 
-func TestEachPageSaysWhichOneYouAreOn(t *testing.T) {
+// destinations are the templates the rail itself leads to. A page reached from
+// inside one of them — one file's whole diff — offers the same way out and
+// marks nothing, because it is not somewhere the rail can take you.
+var destinations = map[string]bool{
+	"cockpit.html": true, "branches.html": true, "search.html": true,
+	"activity.html": true, "settings.html": true, "tutorial.html": true,
+}
+
+func TestEachDestinationSaysWhichOneYouAreOn(t *testing.T) {
 	// Without it the rail is six identical links and the reader has to
 	// remember where they clicked.
-	for _, name := range names(rails(t)) {
-		if rails(t)[name].current == "" {
+	all := rails(t)
+	for _, name := range names(all) {
+		switch {
+		case destinations[name] && all[name].current == "":
 			t.Errorf("%s marks no link as the current page", name)
+		case !destinations[name] && all[name].current != "":
+			t.Errorf("%s marks %q as current, but the rail cannot take you there",
+				name, all[name].current)
 		}
 	}
 }

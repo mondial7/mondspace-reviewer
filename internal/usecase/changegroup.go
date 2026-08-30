@@ -321,9 +321,13 @@ func filePrompt(sess domain.Session, u domain.Unit, d domain.Diff) string {
 	}
 	b.WriteString("\nFile: " + strings.Join(u.Files, ", ") + "\n")
 
-	compact, _ := CompactDiff(d, fileDescribeLines)
+	compact, hidden := CompactDiff(d, fileDescribeLines)
 	if strings.TrimSpace(compact.Text) != "" {
 		b.WriteString("\nWhat changed:\n" + compact.Text + "\n")
+		if hidden > 0 {
+			b.WriteString(fmt.Sprintf("(%d more %s of this file are not shown.)\n",
+				hidden, plural("line", hidden)))
+		}
 	}
 	b.WriteString(`
 Answer two things about this change. JSON only:

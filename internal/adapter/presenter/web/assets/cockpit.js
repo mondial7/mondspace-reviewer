@@ -510,3 +510,57 @@ if (storyCol) new MutationObserver(linkColumns).observe(storyCol, { childList: t
     targets.selectedIndex = 0;
   });
 })();
+
+// ── The rest of a diff ──────────────────────────────────────────────────────
+//
+// The feed shows a compacted diff, because 600 files with every line inlined is
+// megabytes of HTML nobody reads. What was left out is offered as a link, and
+// this turns that link into an expansion in place: the reviewer stays where they
+// were, in the file they were reading, with the note box still under it.
+//
+// Without this the link still works — it opens the same diff as its own page.
+
+async function expandDiff(link) {
+  const box = link.closest('.post__diffbox');
+  const pre = box?.querySelector('.post__diff');
+  if (!box || !pre) return;
+
+  link.textContent = 'loading…';
+  link.setAttribute('aria-busy', 'true');
+
+  let markup;
+  try {
+    const res = await fetch(link.href, { headers: { 'X-Msr-Fragment': '1' } });
+    if (!res.ok) throw new Error(String(res.status));
+    markup = await res.text();
+  } catch {
+    // Leave the link exactly as it was: it still goes somewhere that works.
+    link.textContent = 'show the whole diff on its own page';
+    link.removeAttribute('aria-busy');
+    return;
+  }
+
+  const holder = document.createElement('div');
+  holder.innerHTML = markup;
+  const full = holder.querySelector('pre');
+  if (!full) return;
+
+  full.classList.add('post__diff', 'post__diff--full');
+  pre.replaceWith(full);
+  box.querySelector('.post__more')?.remove();
+
+  // Said out loud, because the page just grew under the reader.
+  const done = document.createElement('p');
+  done.className = 'post__more post__more--done';
+  done.textContent = 'the whole diff';
+  box.append(done);
+}
+
+document.addEventListener('click', (e) => {
+  const link = e.target.closest?.('[data-expand]');
+  if (!link) return;
+  // Cmd/ctrl-click still opens the page, which is what those mean everywhere.
+  if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+  e.preventDefault();
+  expandDiff(link);
+});

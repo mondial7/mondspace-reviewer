@@ -126,23 +126,23 @@ func gitFileHeader(line string) bool {
 //
 // It reports whether it compacted anything; a diff already short enough is
 // returned untouched.
-func CompactDiff(d domain.Diff, maxLines int) (domain.Diff, bool) {
+// It returns how many lines it left out, and writes nothing into the text to
+// say so. A "… 30 more lines" fabricated as a diff line is something a reviewer
+// cannot click, cannot annotate and cannot tell from code — the count belongs to
+// whoever is rendering it, who can offer to show the rest.
+func CompactDiff(d domain.Diff, maxLines int) (domain.Diff, int) {
 	if maxLines <= 0 {
 		maxLines = 12
 	}
 	all := strings.Split(strings.TrimRight(d.Text, "\n"), "\n")
-
-	lines := make([]string, 0, len(all))
-	for _, line := range all {
-		if !gitFileHeader(line) {
-			lines = append(lines, line)
-		}
-	}
+	lines := withoutGitNoise(all)
 	if len(lines) <= maxLines {
 		if len(lines) == len(all) {
-			return d, false
+			return d, 0
 		}
-		return domain.Diff{Text: strings.Join(lines, "\n") + "\n"}, true
+		// Only git's file plumbing came off, and that is noise rather than a
+		// line anybody wanted to read.
+		return domain.Diff{Text: strings.Join(lines, "\n") + "\n"}, 0
 	}
 
 	// Hunk headers first: they are the map of the change. Then fill the rest of
@@ -160,11 +160,31 @@ func CompactDiff(d domain.Diff, maxLines int) (domain.Diff, bool) {
 		}
 	}
 
-	dropped := len(lines) - len(kept)
-	if dropped > 0 {
-		kept = append(kept, fmt.Sprintf("… %d more %s", dropped, plural("line", dropped)))
+	return domain.Diff{Text: strings.Join(kept, "\n") + "\n"}, len(lines) - len(kept)
+}
+
+// withoutGitNoise drops git's file plumbing. A reviewer is shown the filename
+// above the diff, so "diff --git", the index line and the /dev/null markers say
+// nothing they do not already know — and in a 14-line budget they were eating
+// five of them.
+func withoutGitNoise(all []string) []string {
+	lines := make([]string, 0, len(all))
+	for _, line := range all {
+		if !gitFileHeader(line) {
+			lines = append(lines, line)
+		}
 	}
-	return domain.Diff{Text: strings.Join(kept, "\n") + "\n"}, true
+	return lines
+}
+
+// WithoutGitNoise is the same filter over a whole diff, for the views that show
+// every line and should still not show the plumbing.
+func WithoutGitNoise(d domain.Diff) domain.Diff {
+	lines := withoutGitNoise(strings.Split(strings.TrimRight(d.Text, "\n"), "\n"))
+	if len(lines) == 0 {
+		return domain.Diff{}
+	}
+	return domain.Diff{Text: strings.Join(lines, "\n") + "\n"}
 }
 
 func countHunks(lines []string) int {
@@ -221,8 +241,15 @@ func WithChanges(ctx domain.AskContext, units []domain.Unit, diffs map[string]do
 		}
 		// A slice each, so one enormous file cannot consume the whole budget and
 		// hide every other change.
-		compact, _ := CompactDiff(d, perFileDigestLines)
+		compact, hidden := CompactDiff(d, perFileDigestLines)
 		b.WriteString("--- " + strings.Join(u.Files, ", ") + "\n" + compact.Text)
+		if hidden > 0 {
+			// Said in prose to the model, not written into the diff: a model
+			// asserting a change is complete when it was shown a slice of it is
+			// the failure this prevents.
+			b.WriteString(fmt.Sprintf("… %d more %s in this file, not shown\n",
+				hidden, plural("line", hidden)))
+		}
 		used += strings.Count(compact.Text, "\n") + 1
 		covered++
 	}

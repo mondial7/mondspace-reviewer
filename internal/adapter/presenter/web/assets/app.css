@@ -893,12 +893,45 @@
 .post__diff {
   margin: 0; padding: 0.5rem 0.7rem;
   background: var(--bg); border: 1px solid var(--rule); border-radius: 4px;
-  max-height: 16rem;
+  max-height: 22rem;
   overflow: auto;                      /* wide or tall diffs scroll themselves */
-  font-size: 0.78rem; line-height: 1.5;
+  font-size: 0.78rem; line-height: 1.45;
 }
 .post__diff code { display: block; min-width: 0; }
+/* Every line is a block, so the newlines that used to sit between them in the
+   <pre> were a second line break each: the whole diff was double-spaced, which
+   is the one thing a diff must not be. */
+.post__diff .diff__line { display: block; white-space: pre; }
 .post__diff--compact { border-left: 2px solid var(--inferred); }
+/* Asked for in full, it gets the room. Still bounded and still scrolling: a
+   4,000-line file should not push the note box off the bottom of the world. */
+.post__diff--full { max-height: 70vh; border-left: 2px solid var(--stated); }
+
+.post__more {
+  margin: 0.35rem 0 0;
+  display: flex; align-items: baseline; gap: 0.6rem; flex-wrap: wrap;
+  font-size: 0.74rem;
+}
+.post__expand { color: var(--accent); }
+.post__morenotes { color: var(--inferred); }
+.post__more--done { color: var(--fg-dim); }
+
+/* A control with nothing to do says so. One rule for every button on the page:
+   a lit button that does nothing teaches you to distrust the lit ones. */
+button:disabled, .btn:disabled, a[aria-disabled="true"] {
+  opacity: 0.45;
+  cursor: not-allowed;
+  filter: grayscale(0.6);
+}
+button:disabled:hover, .btn:disabled:hover {
+  border-color: var(--rule); color: inherit; filter: grayscale(0.6);
+}
+
+/* One file's whole diff, on its own. It is the only thing on the page, so it
+   gets the page: full width, and as tall as the window rather than the 22rem a
+   diff is given when it is one of forty in a column. */
+.fulldiff { padding: 0 var(--gutter) var(--gutter); }
+.fulldiff .post__diff { max-height: calc(100vh - 12rem); }
 
 /* Hiding the panel gives the feed the whole screen. */
 .page--focus .cockpit__scene { display: none; }
@@ -2023,6 +2056,14 @@ a.toast:hover { border-color: var(--kind, var(--accent)); }
 .acard__finding > .acard__where { grid-column: 1; }
 .acard__finding > .acard__note { grid-column: 1 / -1; }
 .acard__finding > .acard__judge { grid-column: 2; grid-row: 1; justify-self: end; }
+
+/* In a narrow card there is no room for both on one line, and squeezing the
+   first column broke file paths across three lines to make space for a control.
+   Below this, the judgement goes underneath. */
+@media (max-width: 1400px) {
+  .acard__finding { grid-template-columns: minmax(0, 1fr); }
+  .acard__finding > .acard__judge { grid-column: 1; grid-row: auto; justify-self: start; }
+}
 
 .acard__file {
   color: var(--hunk);

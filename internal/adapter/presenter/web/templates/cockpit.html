@@ -68,7 +68,10 @@
                value="{{ if .Session.Target.Ref }}{{ .Session.Target.Ref }}{{ else }}{{ .Session.ID }}{{ end }}"
                autocomplete="off" spellcheck="false"
                aria-label="Choose what to review">
-        <button class="switcher__go" type="submit">open</button>
+        <!-- Enabled by default, because with no JavaScript it has to be. The
+             shell disables it while the box still names the review you are
+             already reading, which is the only state in which it does nothing. -->
+        <button class="switcher__go" type="submit" data-unless-changed="target-input">open</button>
       </form>
 
       {{ if .CanCompare }}
@@ -272,8 +275,12 @@
 
       {{ if .Review.CanRead }}
       <form class="reviewcard__go" method="post" action="/story/narrate?target={{ .Session.ID }}">
-        <button class="hero__retrybtn" type="submit">
-          {{ if eq .Review.State "read" }}read again{{ else }}ask it to read this{{ end }}
+        <!-- Nothing to press while it is already reading. -->
+        <button class="hero__retrybtn" type="submit"
+                {{ if eq .Review.State "reading" }}disabled{{ end }}>
+          {{ if eq .Review.State "reading" }}reading…
+          {{ else if eq .Review.State "read" }}read again
+          {{ else }}ask it to read this{{ end }}
         </button>
       </form>
       {{ end }}
@@ -335,8 +342,11 @@
         <p class="acard__purpose">what changed here, and why — as chapters</p>
         {{ if .Review.CanRead }}
         <form method="post" action="/story/narrate?target={{ .Session.ID }}">
-          <button class="acard__run" type="submit">
-            {{ if eq .Review.State "read" }}run again{{ else }}run{{ end }}
+          <button class="acard__run" type="submit"
+                  {{ if eq .Review.State "reading" }}disabled{{ end }}>
+            {{ if eq .Review.State "reading" }}running
+            {{ else if eq .Review.State "read" }}run again
+            {{ else }}run{{ end }}
           </button>
         </form>
         {{ end }}
@@ -584,11 +594,25 @@
           <!-- Every added or removed line can be annotated: real review happens
                on lines (ADR 0028). The anchor is the line's text, so the note
                survives the diff growing above it. -->
-          <pre class="post__diff{{ if .Compacted }} post__diff--compact{{ end }}"><code>{{ range .Diff }}<span
-              class="diff__line diff__line--{{ .Kind }}{{ if .Notes }} diff__line--noted{{ end }}"
-              {{ if or (eq .Kind "add") (eq .Kind "del") }}data-anchor="{{ .Text }}" data-nth="{{ .Nth }}" tabindex="0" role="button" title="note this line"{{ end }}>{{ .Text }}</span>
-{{ range .Notes }}<span class="diff__note diff__note--{{ .Kind }}"><span class="diff__notekind">{{ .Kind }}</span>{{ .Text }}</span>
-{{ end }}{{ end }}</code></pre>
+          <div class="post__diffbox" data-diff-for="{{ .ID }}">
+            <pre class="post__diff{{ if .Hidden }} post__diff--compact{{ end }}"><code>{{ range .Diff }}<span class="diff__line diff__line--{{ .Kind }}{{ if .Notes }} diff__line--noted{{ end }}"{{ if or (eq .Kind "add") (eq .Kind "del") }} data-anchor="{{ .Text }}" data-nth="{{ .Nth }}" tabindex="0" role="button" title="note this line"{{ end }}>{{ .Text }}</span>{{ range .Notes }}<span class="diff__note diff__note--{{ .Kind }}"><span class="diff__notekind">{{ .Kind }}</span>{{ .Text }}</span>{{ end }}{{ end }}</code></pre>
+
+            <!-- Not a sentence dressed as a diff line. A review that cannot
+                 show you the whole change is not a review, so this is a
+                 control: it fetches the rest and puts it here, and without
+                 JavaScript it is a link to the same diff on its own. -->
+            {{ if .Hidden }}
+            <p class="post__more">
+              <a class="post__expand" href="/units/{{ .ID }}/diff?target={{ $.Session.ID }}"
+                 data-expand="{{ .ID }}">show the other {{ .Hidden }} lines</a>
+              {{ if .HiddenNotes }}
+              <span class="post__morenotes">
+                {{ .HiddenNotes }} of your notes are on lines not shown here
+              </span>
+              {{ end }}
+            </p>
+            {{ end }}
+          </div>
 
           {{ with .Orphaned }}
           <!-- The line these were written on is no longer in the diff. Neither

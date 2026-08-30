@@ -107,22 +107,32 @@ func TestCompactDiffKeepsTheShapeAndElidesTheBulk(t *testing.T) {
 	}
 	b.WriteString("@@ -400,3 +400,3 @@\n-gone\n+here\n")
 
-	got, compacted := usecase.CompactDiff(domain.Diff{Text: b.String()}, 12)
+	got, dropped := usecase.CompactDiff(domain.Diff{Text: b.String()}, 12)
 
-	if !compacted {
-		t.Fatal("a 200-line diff should be reported as compacted")
+	if dropped == 0 {
+		t.Fatal("a 200-line diff should report what it left out")
 	}
 	lines := strings.Split(strings.TrimRight(got.Text, "\n"), "\n")
-	if len(lines) > 14 { // the cap, plus the elision marker
-		t.Errorf("compacted diff has %d lines, want at most ~12", len(lines))
+	if len(lines) > 12 {
+		t.Errorf("compacted diff has %d lines, want at most 12", len(lines))
 	}
 	// Hunk headers are the map of the change: losing them loses the shape.
 	if !strings.Contains(got.Text, "@@ -1,200 +1,200 @@") {
 		t.Errorf("the first hunk header must survive:\n%s", got.Text)
 	}
-	// The reader must be told something was left out, never silently.
-	if !strings.Contains(got.Text, "…") && !strings.Contains(got.Text, "more line") {
-		t.Errorf("an elision must be visible:\n%s", got.Text)
+	// Every line that comes back is a line of the diff. The count of what was
+	// left out is returned, not written into the text: a sentence pretending to
+	// be a diff line is something a reviewer cannot click, cannot annotate and
+	// cannot tell from code.
+	for _, line := range lines {
+		if strings.HasPrefix(line, "…") {
+			t.Errorf("the elision was fabricated as a diff line: %q", line)
+		}
+	}
+	// The count has to be the truth: it is the number the page offers to show.
+	total := len(strings.Split(strings.TrimRight(b.String(), "\n"), "\n"))
+	if want := total - len(lines); dropped != want {
+		t.Errorf("dropped = %d, want %d (%d in, %d shown)", dropped, want, total, len(lines))
 	}
 }
 
@@ -154,10 +164,10 @@ func TestCompactDiffDropsGitFileHeaders(t *testing.T) {
 func TestCompactDiffLeavesAShortDiffAlone(t *testing.T) {
 	d := domain.Diff{Text: "@@ -1 +1 @@\n-old\n+new\n"}
 
-	got, compacted := usecase.CompactDiff(d, 12)
+	got, dropped := usecase.CompactDiff(d, 12)
 
-	if compacted {
-		t.Error("a short diff should not be reported as compacted")
+	if dropped != 0 {
+		t.Errorf("a short diff dropped %d lines, want none", dropped)
 	}
 	if got.Text != d.Text {
 		t.Errorf("a short diff must be returned unchanged, got %q", got.Text)

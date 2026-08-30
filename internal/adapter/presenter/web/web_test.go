@@ -650,9 +650,14 @@ func TestCockpitCompactsAnEnormousDiff(t *testing.T) {
 	if strings.Count(body, "generated") > 40 {
 		t.Errorf("the feed should compact a huge diff, found %d lines of it", strings.Count(body, "generated"))
 	}
-	// And say that it did, rather than truncating in silence.
-	if !strings.Contains(body, "more line") {
-		t.Errorf("a compacted diff must say how much it left out:\n%s", body)
+	// And say how much it left out — as something you can act on, not as a
+	// sentence dressed up as a diff line. A review that cannot show you the
+	// whole change is not a review.
+	if !strings.Contains(body, "show the other") {
+		t.Errorf("a compacted diff must offer the rest:\n%s", body)
+	}
+	if !strings.Contains(body, `/units/s-f001/diff?target=`) {
+		t.Errorf("and the offer has to lead somewhere:\n%s", body)
 	}
 }
 

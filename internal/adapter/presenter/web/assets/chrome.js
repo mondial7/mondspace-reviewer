@@ -389,3 +389,25 @@ async function backdrop() {
 }
 
 backdrop();
+
+// ── Controls with nothing to do ─────────────────────────────────────────────
+//
+// A button that is lit and does nothing teaches you to distrust the lit ones.
+// The review picker submits the review you are already reading until you change
+// it, so it is disabled until you do — from here rather than from the server,
+// because with no JavaScript it must stay pressable.
+
+for (const button of document.querySelectorAll('[data-unless-changed]')) {
+  const input = document.getElementById(button.dataset.unlessChanged);
+  if (!input) continue;
+
+  const initial = input.value;
+  const sync = () => {
+    const same = input.value.trim() === initial.trim();
+    button.disabled = same;
+    button.title = same ? 'this is the review you are reading' : 'open ' + input.value;
+  };
+  sync();
+  input.addEventListener('input', sync);
+  input.addEventListener('change', sync);
+}
