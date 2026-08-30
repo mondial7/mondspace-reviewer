@@ -2417,14 +2417,17 @@ func TestACardIsColouredByItsWorstFinding(t *testing.T) {
 	if !strings.Contains(body, "1 high · 1 low") {
 		t.Errorf("the card should tally by severity:\n%s", body)
 	}
-	// And the severity is labelled as inferred like everything else the model
-	// says, or three tidy labels read as a judgement nobody made — on the card
-	// briefly, and in full where the findings are actually read.
-	if !strings.Contains(body, "worth a look, not a verdict") {
-		t.Error("the card should mark its findings inferred")
+	// The severity is labelled as inferred where the findings are read, or
+	// three tidy labels read as a judgement nobody made. The card carries the
+	// tally and the door; the sentence belongs beside the things it qualifies,
+	// and repeating it under a one-line summary was a caveat about nothing on
+	// screen.
+	report := get(t, h, "/analysis/security?target=s").Body.String()
+	if !strings.Contains(report, "including how bad") {
+		t.Error("the report should say the severity is inferred")
 	}
-	if !strings.Contains(get(t, h, "/analysis/security?target=s").Body.String(), "including how bad") {
-		t.Error("the report should say the severity is inferred too")
+	if !strings.Contains(report, "worth a look, not a verdict") {
+		t.Error("the report should say a finding is not a verdict")
 	}
 }
 

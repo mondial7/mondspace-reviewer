@@ -387,3 +387,46 @@ func TestTheBriefKeepsWhatIsActuallyDifferent(t *testing.T) {
 		}
 	}
 }
+
+func TestALongPathKeepsBothItsEnds(t *testing.T) {
+	// A chapter is often a directory, and a directory is often long. Cutting
+	// the end off loses the filename, which is the half you were looking for;
+	// the middle is the part nobody reads.
+	sess := testSession()
+	sess.Narrative = domain.Narrative{
+		Source: domain.NarrativeModel, Model: "m", Title: "a change",
+		Chapters: []domain.Chapter{{
+			Title:   "internal/adapter/presenter/web/assets/app.css",
+			Prose:   "styles",
+			UnitIDs: []string{"s-f001"},
+		}},
+	}
+
+	body := get(t, web.NewServer(sess, nil), "/cockpit").Body.String()
+
+	// Split into a head that may be trimmed and a tail that may not, so the
+	// last segment survives whatever the column width turns out to be.
+	if !strings.Contains(body, `<span class="path__head">internal/adapter/presenter/web/assets/</span>`) {
+		t.Errorf("the head should be the part that can be trimmed:\n%s", firstLines(body, 6))
+	}
+	if !strings.Contains(body, `<span class="path__tail">app.css</span>`) {
+		t.Error("the last segment should be kept whole")
+	}
+}
+
+func TestATitleThatIsNotAPathIsLeftAlone(t *testing.T) {
+	sess := testSession()
+	sess.Narrative = domain.Narrative{
+		Source: domain.NarrativeModel, Model: "m", Title: "a change",
+		Chapters: []domain.Chapter{{Title: "the retry loop", UnitIDs: []string{"s-f001"}}},
+	}
+
+	body := get(t, web.NewServer(sess, nil), "/cockpit").Body.String()
+
+	if strings.Contains(body, "path__head") {
+		t.Error("a sentence is not a path and should not be split like one")
+	}
+	if !strings.Contains(body, "the retry loop") {
+		t.Error("and it should still be shown")
+	}
+}

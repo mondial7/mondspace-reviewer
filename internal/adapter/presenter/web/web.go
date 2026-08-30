@@ -3329,6 +3329,21 @@ func funcs() template.FuncMap {
 		// not trusted: the text is escaped before any markup is added.
 		"markdown": renderMarkdown,
 		"clock":    func(t time.Time) string { return t.Local().Format("15:04") },
+		// A path in two halves, so the browser can trim the middle. Cutting the
+		// end off a path loses the filename, which is the half anybody was
+		// looking for; the directories in the middle are what nobody reads.
+		"pathHead": func(s string) string {
+			if i := strings.LastIndex(s, "/"); i >= 0 {
+				return s[:i+1]
+			}
+			return ""
+		},
+		"pathTail": func(s string) string {
+			if i := strings.LastIndex(s, "/"); i >= 0 {
+				return s[i+1:]
+			}
+			return s
+		},
 		// Choosing two points to compare is a question about time — "what
 		// changed since this morning" — so the picker dates each one. Day and
 		// month as well as the clock: a list that spans a week needs both.

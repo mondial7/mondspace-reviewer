@@ -267,33 +267,39 @@
             {{ else }}not run yet{{ end }}
           </span>
         </header>
-        <p class="acard__purpose">{{ .Purpose }}</p>
+        <!-- The purpose says what the card *would* answer. Once it has
+             answered, it is a line explaining a question nobody is asking any
+             more. -->
+        {{ if not .Verdict }}<p class="acard__purpose">{{ .Purpose }}</p>{{ end }}
 
         {{ with .Err }}<p class="acard__err">{{ . }}</p>{{ end }}
         {{ with .Verdict }}<p class="acard__verdict">{{ . }}</p>{{ end }}
 
-        <!-- The verdict and the tally, and a way to read the rest. Five
-             findings with a paragraph each do not fit in a card in a column:
-             they push the two readings beside them off the screen, so the card
-             that found the most became the one you could read the least of. -->
-        {{ if .Findings }}
-        <p class="acard__more">
-          <a class="acard__report" href="/analysis/{{ .Kind }}?target={{ $.Session.ID }}">
-            <svg class="ico" aria-hidden="true"><use href="#i-expand"/></svg>
-            read the report
-          </a>
-          <span class="acard__caveat"><span class="why why--inferred">inferred</span> — worth a look, not a verdict</span>
-        </p>
-        {{ end }}
+        <!-- One row of actions at the foot of every card. Reading the report
+             is a thing you do, like running the audit again, so it is a button
+             beside it rather than a link floating in the prose.
 
-        {{ if $.CanRunAnalysis }}
-        <form method="post" action="/analysis/{{ .Kind }}?target={{ $.Session.ID }}">
-          <input type="hidden" name="target" value="{{ $.Session.ID }}">
-          <button class="acard__run" type="submit" {{ if eq .State "running" }}disabled{{ end }}>
-            <svg class="ico" aria-hidden="true"><use href="#i-run"/></svg> {{ if eq .State "idle" }}run{{ else if eq .State "running" }}running{{ else }}run again{{ end }}
-          </button>
-        </form>
-        {{ end }}
+             Five findings with a paragraph each do not fit in a card in a
+             column: they push the two readings beside them off the screen, so
+             the card that found the most became the one you could read the
+             least of. The report is where they are read, and it carries the
+             note about what a model's severity is worth. -->
+        <div class="acard__actions">
+          {{ if $.CanRunAnalysis }}
+          <form method="post" action="/analysis/{{ .Kind }}?target={{ $.Session.ID }}">
+            <input type="hidden" name="target" value="{{ $.Session.ID }}">
+            <button class="acard__run" type="submit" {{ if eq .State "running" }}disabled{{ end }}>
+              <svg class="ico" aria-hidden="true"><use href="#i-run"/></svg> {{ if eq .State "idle" }}run{{ else if eq .State "running" }}running{{ else }}run again{{ end }}
+            </button>
+          </form>
+          {{ end }}
+
+          {{ if .Findings }}
+          <a class="acard__run acard__run--report" href="/analysis/{{ .Kind }}?target={{ $.Session.ID }}">
+            <svg class="ico" aria-hidden="true"><use href="#i-expand"/></svg> read the report
+          </a>
+          {{ end }}
+        </div>
       </article>
       {{ end }}
 
@@ -307,7 +313,14 @@
       {{ range $i, $c := .Chapters }}
       <article class="chron__chapter" data-anchor="{{ $c.Anchor }}">
         <div class="chron__index" aria-hidden="true">{{ printf "%02d" (add $i 1) }}</div>
-        <h2 class="chron__chaptertitle">{{ $c.Title }}</h2>
+        <!-- A chapter is often a directory, and a directory is often long.
+             Split so the browser trims the middle: the last segment is the half
+             you were looking for and it is kept whole. -->
+        <h2 class="chron__chaptertitle" title="{{ $c.Title }}">
+          {{ with pathHead $c.Title }}<span class="path">
+            <span class="path__head">{{ . }}</span><span class="path__tail">{{ pathTail $c.Title }}</span>
+          </span>{{ else }}{{ $c.Title }}{{ end }}
+        </h2>
         <p class="chron__prose">{{ $c.Prose }}</p>
         <p class="chron__files">{{ len $c.Units }} file(s)</p>
       </article>

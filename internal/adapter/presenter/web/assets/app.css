@@ -858,6 +858,16 @@ button .ico, a .ico, summary .ico { margin-right: 0.35em; }
    own feedback; marking one as well only worked when the scroll landed exactly,
    so most clicks lit nothing and read as a broken button. */
 .chron__index { font-size: 0.68rem; color: var(--accent); letter-spacing: 0.15em; }
+/* A path with the middle trimmed rather than the end. The head shrinks and
+   ellipsises; the tail never does, so the filename survives whatever width the
+   column turns out to be. */
+.path { display: flex; min-width: 0; align-items: baseline; }
+.path__head {
+  min-width: 0; flex: 0 1 auto;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.path__tail { flex: 0 0 auto; white-space: nowrap; }
+
 .chron__chaptertitle { margin: 0.15rem 0 0.35rem; font-size: 0.98rem; color: var(--fg); }
 .chron__prose { margin: 0; color: var(--fg-dim); font-size: 0.87rem; line-height: 1.6; }
 .chron__files { margin: 0.35rem 0 0; font-size: 0.7rem; color: var(--fg-dim); opacity: 0.75; }
@@ -2809,9 +2819,14 @@ a.log__branch:hover { text-decoration: underline; }
 
 .acard__judge { margin-top: 0.1rem; }
 
-/* The card is a summary with a door in it. */
-.acard__more { margin: 0.3rem 0 0; display: flex; flex-direction: column; gap: 0.25rem; }
-.acard__report { color: var(--accent); font-size: 0.8rem; }
+/* One row of actions at the foot of the card: run it, and read what it found.
+   The second was a link in the prose, which is not what it is — it is the same
+   kind of thing as the first. */
+.acard__actions { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-top: 0.2rem; }
+.acard__run--report {
+  display: inline-flex; align-items: center;
+  text-decoration: none;
+}
 
 .report { display: flex; flex-direction: column; gap: var(--gutter); max-width: 62rem; }
 .report__context .brief__kind { margin-top: 0; }
