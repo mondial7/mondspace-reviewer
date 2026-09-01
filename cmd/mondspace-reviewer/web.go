@@ -1125,20 +1125,7 @@ func targetLoader() web.Loader {
 		}
 
 		snap := gitsnap.New(entry.repo, targetID)
-
-		// The target list was built once; HEAD has moved every time the agent
-		// committed since. Only the live target follows it.
-		if t.Kind == domain.TargetLive {
-			head, _ := currentHead(ctx, snap)
-			if head != "" {
-				t = usecase.ResolveLive(t, domain.SnapshotRef{Commit: head, Label: "HEAD"})
-			}
-			// ...and it stops at a pin rather than at the working tree, so the
-			// page holds still while it is being read (ADR 0020).
-			if p, err := pinFor(ctx, snap, targetID, head); err == nil {
-				t.To = p.ref
-			}
-		}
+		t = targetNow(ctx, entry)
 
 		storeRel := storeRelativeTo(entry.repo, entry.out)
 		units, diffs, err := usecase.BuildFileUnits(ctx, snap, targetID, t.From, t.To,
@@ -1441,25 +1428,44 @@ func narrateTarget(ctx context.Context, handler *web.Server, sum port.Summarizer
 	_ = jsonl.New(entry.out).SaveNarrative(narrative)
 }
 
+// targetNow is a target's two refs as they are at this moment.
+//
+// It matters for exactly one kind. The target list is built once; HEAD moves
+// every time the agent commits, and only the live target follows it — and it
+// stops at a pin rather than at the working tree, so the page holds still while
+// it is being read (ADR 0020).
+//
+// It is a function rather than two lines inside the loader because *everything*
+// that reads a review has to agree with the page about what the review is. It
+// did not: the loader resolved and pinned, and every model reading built its
+// units from the unresolved entry, so each of them read a slightly different
+// change from the one on screen. That was invisible until a reading began
+// fingerprinting what it read, at which point every card reported itself stale
+// the moment it finished (ADR 0037).
+func targetNow(ctx context.Context, entry targetEntry) domain.Target {
+	t := entry.target
+	if t.Kind != domain.TargetLive {
+		return t
+	}
+
+	snap := gitsnap.New(entry.repo, t.ID)
+	head, _ := currentHead(ctx, snap)
+	if head != "" {
+		t = usecase.ResolveLive(t, domain.SnapshotRef{Commit: head, Label: "HEAD"})
+	}
+	if p, err := pinFor(ctx, snap, t.ID, head); err == nil {
+		t.To = p.ref
+	}
+	return t
+}
+
 // unitsFor is the net change a target covers. It is the same engine every other
 // review uses; only the two refs differ.
-//
-// The pin matters and is easy to miss. A live review's far end is a snapshot so
-// the page holds still while it is being read (ADR 0020); building against the
-// working tree here instead would give every reading of that review a slightly
-// different change from the one on screen — which, now that a reading
-// fingerprints what it read, means every card reporting itself stale the moment
-// it finishes (ADR 0037).
 func unitsFor(ctx context.Context, entry targetEntry) ([]domain.Unit, map[string]domain.Diff, error) {
-	snap := gitsnap.New(entry.repo, entry.target.ID)
+	t := targetNow(ctx, entry)
+	snap := gitsnap.New(entry.repo, t.ID)
 	storeRel := storeRelativeTo(entry.repo, entry.out)
-
-	to := entry.target.To
-	if p, pinned := pinnedAt(entry.target.ID); pinned {
-		to = p.ref
-	}
-	return usecase.BuildFileUnits(ctx, snap, entry.target.ID, entry.target.From, to,
-		usecase.InStore(storeRel))
+	return usecase.BuildFileUnits(ctx, snap, t.ID, t.From, t.To, usecase.InStore(storeRel))
 }
 
 // compareRefs turns two refs a reviewer typed into a target and registers it, so
