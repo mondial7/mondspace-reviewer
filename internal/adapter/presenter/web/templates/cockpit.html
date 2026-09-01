@@ -188,6 +188,10 @@
       </div>
       {{ end }}
 
+      <!-- The progress and the button that changes it, on one line. They were
+           two rows with the button pushed to the right of an empty one, which
+           left a band of nothing across the widest card on the page. -->
+      <div class="reviewcard__row">
       <div class="reviewcard__progress">
         {{ if .Review.Chapters }}<span>{{ .Review.Chapters }} chapter(s)</span>{{ end }}
         {{ if .Review.Groups }}
@@ -212,6 +216,7 @@
         </button>
       </form>
       {{ end }}
+      </div>
 
       <!-- The bottom row is what *you* have decided about this change, and how
            to leave with the log — your verdict on the whole thing as opposed to
