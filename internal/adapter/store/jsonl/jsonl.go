@@ -389,6 +389,46 @@ func (s *Store) LoadDismissals(targetID string) (map[string]domain.Verdict, erro
 	return out, nil
 }
 
+// foundFile is the last set of deterministic findings for a target.
+//
+// The findings are reproducible by running the tools again — that is what makes
+// them `reported` — but only by a process that has those tools and that repository
+// in front of it. The MCP server is a different process, `msr export` is another,
+// and neither should have to shell out to nine linters to answer a question the
+// review already knows the answer to. So the answer is written down beside the
+// rulings, which are the part that is genuinely not recoverable (ADR 0043).
+const foundFile = "reported-found.json"
+
+// SaveReported records the findings themselves, for readers outside the process
+// that produced them.
+func (s *Store) SaveReported(targetID string, found []domain.Reported) error {
+	dir := filepath.Join(s.root, targetID)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	body, err := json.Marshal(found)
+	if err != nil {
+		return err
+	}
+	return writeFileAtomic(dir, foundFile, body)
+}
+
+// LoadReported reads them back. Nothing scanned is the ordinary state.
+func (s *Store) LoadReported(targetID string) ([]domain.Reported, error) {
+	body, err := os.ReadFile(filepath.Join(s.root, targetID, foundFile))
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var out []domain.Reported
+	if err := json.Unmarshal(body, &out); err != nil {
+		return nil, nil
+	}
+	return out, nil
+}
+
 // LoadAnalysisAt returns the result of one audit over one exact diff, or a zero
 // Analysis when that diff has never been audited.
 //

@@ -24,7 +24,12 @@ type Review struct {
 	Notes     []domain.Note
 	Exchanges []domain.Exchange
 	Analyses  []domain.Analysis
-	Signoff   domain.Signoff
+	// Reported is what the deterministic analysers said. Kept apart from
+	// Analyses on purpose: those are a model's guesses and these are a tool's
+	// output, and the whole value of the second is that it is not the first
+	// (ADR 0043).
+	Reported []domain.Reported
+	Signoff  domain.Signoff
 
 	// Files resolves a note's unit id to the file it concerns, for notes
 	// written before the file was recorded on the note itself.
@@ -48,6 +53,7 @@ func Tools(w Workspace) []Tool {
 		feedbackTool(w),
 		fileTool(w),
 		findingsTool(w),
+		reportedTool(w),
 		workspaceFeedbackTool(w),
 		searchTool(w),
 	}
@@ -298,6 +304,84 @@ func modelFindings(r Review, path string) string {
 			fmt.Fprintf(&b, " on %s", path)
 		}
 		b.WriteString(". That is the usual result, and it is not evidence that the change is safe.\n")
+	}
+	return b.String()
+}
+
+// reportedTool is the deterministic findings, and it is a tool of its own
+// rather than a section of model_findings (ADR 0043).
+//
+// The split is the point. An agent handed a model's guess and a linter's output
+// in one list, in one voice, has no way to tell which one it can act on — and
+// the answer is different: a `reported` finding names its tool and its rule, is
+// the same answer every time, and does not need verifying against the code
+// before it is worth fixing.
+func reportedTool(w Workspace) Tool {
+	return Tool{
+		Name: "reported_findings",
+		Description: "Findings from deterministic analysers — linters, static " +
+			"analysis, secret and dependency scanners — on the review currently " +
+			"open in mondspace-reviewer. REPORTED, not inferred: each names the " +
+			"tool and the rule that produced it and is reproducible by running " +
+			"that tool. Unlike model_findings these do not need verifying before " +
+			"you act on them. Scoped by default to lines this change added.",
+		Schema: object(map[string]any{
+			"path": str("file to narrow to, as it appears in the diff; omit for everything"),
+			"all":  str("\"true\" to include findings that were already in the code before this change"),
+		}),
+		Call: func(_ context.Context, args map[string]any) (string, error) {
+			review, err := w.Open()
+			if err != nil {
+				return "", err
+			}
+			return reportedFindings(review, text(args, "path"), text(args, "all") == "true"), nil
+		},
+	}
+}
+
+// reportedFindings renders them, standing ones first and dismissed ones after.
+func reportedFindings(r Review, path string, all bool) string {
+	var b strings.Builder
+	b.WriteString("REPORTED by deterministic analysers, not by a model. Each names " +
+		"the tool and rule that produced it and is reproducible. Findings the human " +
+		"reviewer dismissed are marked as settled.\n\n")
+	fmt.Fprintf(&b, "Review: %s\n", describe(r))
+
+	shown, hidden := 0, 0
+	for _, pass := range []bool{true, false} {
+		for _, f := range r.Reported {
+			if f.Stands() != pass || (path != "" && f.File != path) {
+				continue
+			}
+			if !f.New && !all {
+				hidden++
+				continue
+			}
+			shown++
+			fmt.Fprintf(&b, "\n%d. [%s · %s] %s\n   %s\n",
+				shown, f.Ref(), f.Severity.Normalise(), f.Where(), f.Message)
+			if !f.New {
+				fmt.Fprintf(&b, "   Already in the code before this change.\n")
+			}
+			if !f.Stands() {
+				// Kept rather than filtered, for the same reason a dismissed
+				// model finding is: an agent that cannot see the dismissal
+				// raises the same thing again next time.
+				fmt.Fprintf(&b, "   The human reviewer dismissed this — settled, not work.\n")
+			}
+		}
+	}
+
+	if shown == 0 {
+		b.WriteString("\nNo analyser reported anything")
+		if path != "" {
+			fmt.Fprintf(&b, " on %s", path)
+		}
+		b.WriteString(" on the lines this change added.\n")
+	}
+	if hidden > 0 {
+		fmt.Fprintf(&b, "\n%d further finding(s) were already in this code before the "+
+			"change. Pass all=\"true\" to see them; they are not this change's work.\n", hidden)
 	}
 	return b.String()
 }

@@ -109,6 +109,12 @@ func scanTarget(ctx context.Context, targetID string) {
 	scanned[targetID] = scanResult{print: print, at: time.Now(), reports: found}
 	scannersMu.Unlock()
 
+	// Written down for the readers that are not this process: the MCP server
+	// answering an agent, and anything that opens the store later. Failing to
+	// write it costs those readers the answer and costs this one nothing, so it
+	// is not worth failing the scan over.
+	_ = jsonl.New(entry.out).SaveReported(targetID, found)
+
 	if handler := handlerRef(); handler != nil {
 		handler.Broadcast("reported")
 	}
@@ -148,6 +154,7 @@ func dismissReported() web.DismissFunc {
 		if have, ok := scanned[targetID]; ok {
 			have.reports = usecase.ApplyDismissals(have.reports, rulings)
 			scanned[targetID] = have
+			_ = store.SaveReported(targetID, have.reports)
 		}
 		scannersMu.Unlock()
 

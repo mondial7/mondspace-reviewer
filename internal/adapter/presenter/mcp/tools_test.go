@@ -310,3 +310,57 @@ func TestSearchWithoutAQuerySaysWhatItNeeds(t *testing.T) {
 		t.Errorf("want the missing argument named, got:\n%s", got)
 	}
 }
+
+func TestReportedFindingsAreATooOfTheirOwn(t *testing.T) {
+	// The split from model_findings is the point (ADR 0043). An agent handed a
+	// model's guess and a linter's output in one list, in one voice, has no way
+	// to tell which one it can act on.
+	w := space{open: mcp.Review{
+		ID: "abc123", Title: "the change",
+		Reported: []domain.Reported{
+			{Tool: "gosec", Rule: "G404", File: "api/handler.go", Line: 42,
+				Message: "Use of weak random number generator",
+				Severity: domain.SeverityMedium, New: true},
+			{Tool: "staticcheck", Rule: "SA4006", File: "api/old.go", Line: 3,
+				Message: "this value of err is never used"},
+		},
+	}}
+
+	got := tool(t, w, "reported_findings", nil)
+	if !strings.Contains(got, "gosec/G404") {
+		t.Errorf("a finding must name the tool and the rule:\n%s", got)
+	}
+	if !strings.Contains(got, "api/handler.go:42") {
+		t.Errorf("and where it is:\n%s", got)
+	}
+	if !strings.Contains(strings.ToUpper(got), "REPORTED") {
+		t.Errorf("it has to say what class this is:\n%s", got)
+	}
+	// Pre-existing findings are counted and offered, not shown by default.
+	if strings.Contains(got, "SA4006") {
+		t.Errorf("a pre-existing finding is not this change's work:\n%s", got)
+	}
+	if !strings.Contains(got, "1 further finding(s) were already in this code") {
+		t.Errorf("it should say how many were left out:\n%s", got)
+	}
+
+	all := tool(t, w, "reported_findings", map[string]any{"all": "true"})
+	if !strings.Contains(all, "SA4006") {
+		t.Errorf("asked for, they should be there:\n%s", all)
+	}
+}
+
+func TestADismissedReportedFindingIsShownAsSettled(t *testing.T) {
+	// An agent that cannot see the dismissal raises the same thing again.
+	w := space{open: mcp.Review{
+		ID: "abc123",
+		Reported: []domain.Reported{{
+			Tool: "gosec", Rule: "G404", File: "a.go", Line: 1, Message: "weak rng",
+			New: true, Verdict: domain.VerdictDismissed,
+		}},
+	}}
+	got := tool(t, w, "reported_findings", nil)
+	if !strings.Contains(got, "dismissed this — settled, not work") {
+		t.Errorf("a dismissal has to be visible:\n%s", got)
+	}
+}

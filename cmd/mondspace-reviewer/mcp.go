@@ -261,6 +261,12 @@ func (s storedReviews) read(open openReview) mcp.Review {
 			review.Analyses = append(review.Analyses, got)
 		}
 	}
+	// What the deterministic analysers said, as the web process last recorded
+	// it. Not re-run here: an agent asking a question should not cause nine
+	// linters to start, and this process may not even have them (ADR 0043).
+	if found, err := store.LoadReported(open.TargetID); err == nil {
+		review.Reported = found
+	}
 	return review
 }
 
