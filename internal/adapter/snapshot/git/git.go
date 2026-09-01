@@ -1039,18 +1039,23 @@ func (s *Snapshotter) ExportTo(ctx context.Context, ref domain.SnapshotRef, dir 
 	}
 	unpack.Stdin = pipe
 
-	var problems bytes.Buffer
-	archive.Stderr, unpack.Stderr = &problems, &problems
+	// One buffer each. Two commands sharing a writer is two goroutines writing
+	// to it — os/exec only ever deduplicates a Stdout and Stderr belonging to
+	// the *same* command, and this is a data race the race detector catches.
+	var archiveErr, unpackErr bytes.Buffer
+	archive.Stderr, unpack.Stderr = &archiveErr, &unpackErr
 
 	if err := unpack.Start(); err != nil {
 		return err
 	}
 	if err := archive.Run(); err != nil {
-		unpack.Wait()
-		return fmt.Errorf("git archive %s: %w: %s", short(ref.Commit), err, problems.String())
+		_ = unpack.Wait()
+		return fmt.Errorf("git archive %s: %w: %s", short(ref.Commit), err,
+			strings.TrimSpace(archiveErr.String()))
 	}
 	if err := unpack.Wait(); err != nil {
-		return fmt.Errorf("unpacking %s: %w: %s", short(ref.Commit), err, problems.String())
+		return fmt.Errorf("unpacking %s: %w: %s", short(ref.Commit), err,
+			strings.TrimSpace(unpackErr.String()))
 	}
 	return nil
 }
