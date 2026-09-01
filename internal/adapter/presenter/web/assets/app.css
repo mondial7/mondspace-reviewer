@@ -557,7 +557,10 @@
   background: var(--hull);
   border-right: 1px solid var(--rule);
   display: flex; flex-direction: column; gap: 0.1rem;
-  font-size: 0.8rem; letter-spacing: 0.05em; text-transform: uppercase;
+  /* Lower case, like every other heading on the site (ADR 0041). These are the
+     names of pages, and shouting six of them at once was most of what made the
+     rail read as six equally important places to be. */
+  font-size: 0.82rem; letter-spacing: 0.02em;
   transition: width 140ms ease;
 }
 /* Above the content, not merely before it: the rail carries a menu, and the

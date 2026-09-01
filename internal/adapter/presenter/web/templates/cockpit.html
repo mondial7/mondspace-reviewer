@@ -8,7 +8,12 @@
   <script type="module" src="/assets/cockpit.js" defer></script>
   <script type="module" src="/assets/keys.js" defer></script>
   <script type="module" src="/assets/chrome.js" defer></script>
-  <script type="module" src="/assets/live.js" defer></script>
+  <!-- The live stream is what makes the cockpit a cockpit, and it is also an
+       HTTP request that never finishes — which means a headless browser waits
+       for it forever and the documented way to screenshot this page stopped
+       working. `?still=1` is a page with no stream: one frame, for a capture.
+       -->
+  {{ if not .Still }}<script type="module" src="/assets/live.js" defer></script>{{ end }}
 </head>
 <body class="page page--cockpit" data-live="{{ .Stats.Live }}">
   {{ template "icons.html" }}
