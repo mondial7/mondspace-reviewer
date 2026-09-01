@@ -348,6 +348,47 @@ func pruneAnalyses(dir string, kind domain.AnalysisKind) {
 	}
 }
 
+// dismissalFile is where a reviewer's rulings on the deterministic findings
+// live, one file per target.
+//
+// Only the rulings, not the findings. The findings themselves are reproduced by
+// running the tools again — that is what makes them `reported` — so storing them
+// would be storing a cache of something cheap beside the one thing that is not
+// recoverable: what the human decided (ADR 0043).
+const dismissalFile = "reported.json"
+
+// SaveDismissals records what the reviewer made of the deterministic findings.
+func (s *Store) SaveDismissals(targetID string, rulings map[string]domain.Verdict) error {
+	dir := filepath.Join(s.root, targetID)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	body, err := json.Marshal(rulings)
+	if err != nil {
+		return err
+	}
+	return writeFileAtomic(dir, dismissalFile, body)
+}
+
+// LoadDismissals returns those rulings, keyed by finding. Nothing ruled on is
+// the ordinary state, not a failure.
+func (s *Store) LoadDismissals(targetID string) (map[string]domain.Verdict, error) {
+	body, err := os.ReadFile(filepath.Join(s.root, targetID, dismissalFile))
+	if errors.Is(err, fs.ErrNotExist) {
+		return map[string]domain.Verdict{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]domain.Verdict{}
+	if err := json.Unmarshal(body, &out); err != nil {
+		// A corrupt file reads as "nothing ruled on". Losing a dismissal is bad;
+		// refusing to show the review is worse.
+		return map[string]domain.Verdict{}, nil
+	}
+	return out, nil
+}
+
 // LoadAnalysisAt returns the result of one audit over one exact diff, or a zero
 // Analysis when that diff has never been audited.
 //
