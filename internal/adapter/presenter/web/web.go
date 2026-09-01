@@ -1166,6 +1166,42 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /live/include", s.handleInclude)
 	s.mux.HandleFunc("POST /live/split", s.handleSplit)
 	s.mux.HandleFunc("GET /events", s.handleEvents)
+	// One line in the log for something the reviewer did that no request would
+	// otherwise record (ADR 0042).
+	s.mux.HandleFunc("POST /noted", s.handleNoted)
+}
+
+// notable are the interactions worth a line in the log that leave no other
+// trace — the ones that happen entirely in the browser.
+//
+// An allow-list, not a free-text field. This endpoint takes a POST from the
+// page and writes to the review's own record, and "whatever the page said"
+// written into a record a reviewer later reads is not a thing to offer
+// (ADR 0042).
+var notable = map[string]string{
+	"story-opened":  "the reviewer opened the story rail",
+	"story-folded":  "the reviewer folded the story rail away",
+	"story-scanned": "the reviewer scrolled through the chapters",
+}
+
+// handleNoted records one of those. It answers a question the roadmap cannot
+// otherwise ask: whether the story is read, or folded away and never opened.
+func (s *Server) handleNoted(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	detail, known := notable[r.FormValue("what")]
+	if !known {
+		http.Error(w, "not something worth noting", http.StatusBadRequest)
+		return
+	}
+	target, ok := s.actionTarget(r)
+	if !ok {
+		target = s.OpenTargetID()
+	}
+	s.Record(AuditEntry{SessionID: target, Action: r.FormValue("what"), Detail: detail})
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // handleUnitDiff serves one unit's full diff as a fragment. The cockpit shows a
@@ -3006,6 +3042,7 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		Repos              []RepoStatus
 		Candidates         []RepoStatus
 		Work               []Work
+		Habits             []habit
 		RepoErr            string
 		AgentErr           string
 		CanAddRepo         bool
@@ -3025,6 +3062,7 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		Average: avg, Checked: checked,
 		ReasoningShare: reasoningShare, SkipIgnored: skipIgnored,
 		Sessions: sessions, Repos: repos, Candidates: candidates, Work: work,
+		Habits:  s.habits(),
 		RepoErr: repoErr, AgentErr: agentErr,
 		CanAddRepo: canAddRepo, CanRemoveRepo: s.removeRepo != nil,
 		CanConfigure: canConfigure, WorkloadForm: workloadForm(agent),
@@ -3033,6 +3071,62 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.render(w, "settings.html", data)
+}
+
+// habit is one thing a reviewer does, and how often they have done it.
+type habit struct {
+	What  string
+	Count int
+	// Note is what the number means, when a bare count would be ambiguous.
+	Note string
+}
+
+// tracked are the actions worth counting, in the order they are read, with the
+// question each one answers (ADR 0042).
+//
+// This is the whole of msr's instrumentation and it is deliberately small. It
+// reads the review's own audit log, which was already being written; nothing
+// new is recorded except the two lines the story rail adds, and nothing leaves
+// this machine.
+var tracked = []struct {
+	Action string
+	What   string
+	Note   string
+}{
+	{"narrate", "stories written", "each one is several model calls"},
+	{"story-opened", "story rail opened", "the story being asked for"},
+	{"story-folded", "story rail folded away", "the story being dismissed"},
+	{"describe", "groups described", ""},
+	{"security", "security passes run", ""},
+	{"breaking", "breaking-change passes run", ""},
+	{"annotate", "notes written", "the log — the thing this is all for"},
+	{"signoff", "reviews signed off", ""},
+}
+
+// habits counts them. An audit log that cannot be read back yields nothing,
+// which is the truth rather than a row of zeroes.
+func (s *Server) habits() []habit {
+	s.mu.RLock()
+	reader, ok := s.audit.(AuditReader)
+	s.mu.RUnlock()
+	if !ok || reader == nil {
+		return nil
+	}
+	entries, err := reader.Entries()
+	if err != nil {
+		return nil
+	}
+
+	counts := map[string]int{}
+	for _, e := range entries {
+		counts[e.Action]++
+	}
+
+	out := make([]habit, 0, len(tracked))
+	for _, t := range tracked {
+		out = append(out, habit{What: t.What, Count: counts[t.Action], Note: t.Note})
+	}
+	return out
 }
 
 // analysisCardsFor is the audit cards for one review, for whoever needs them

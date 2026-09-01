@@ -18,10 +18,14 @@
     </a>
 
     <a class="storynav__link" href="/" title="cockpit"><svg class="ico sidenav__ico" aria-hidden="true"><use href="#i-cockpit"/></svg><span class="sidenav__word">cockpit</span></a>
-    <a class="storynav__link" href="/branches" title="branches"><svg class="ico sidenav__ico" aria-hidden="true"><use href="#i-branches"/></svg><span class="sidenav__word">branches</span></a>
-    <a class="storynav__link" href="/search" title="search"><svg class="ico sidenav__ico" aria-hidden="true"><use href="#i-search"/></svg><span class="sidenav__word">search</span></a>
     <a class="storynav__link" href="/activity" title="activity"><svg class="ico sidenav__ico" aria-hidden="true"><use href="#i-activity"/></svg><span class="sidenav__word">activity</span></a>
     <a class="storynav__link" href="/settings" aria-current="page" title="settings"><svg class="ico sidenav__ico" aria-hidden="true"><use href="#i-settings"/></svg><span class="sidenav__word">settings</span></a>
+
+    <!-- Below the line: what does not serve open → read → annotate →
+         hand back. Kept, and no longer offered as equals (ADR 0042). -->
+    <span class="sidenav__aside">also</span>
+    <a class="storynav__link" href="/branches" title="branches"><svg class="ico sidenav__ico" aria-hidden="true"><use href="#i-branches"/></svg><span class="sidenav__word">branches</span></a>
+    <a class="storynav__link" href="/search" title="search"><svg class="ico sidenav__ico" aria-hidden="true"><use href="#i-search"/></svg><span class="sidenav__word">search</span></a>
     <a class="storynav__link" href="/tutorial" title="tour"><svg class="ico sidenav__ico" aria-hidden="true"><use href="#i-tour"/></svg><span class="sidenav__word">tour</span></a>
 
     <span class="storynav__spacer"></span>
@@ -471,6 +475,26 @@
       </p>
       {{ end }}
     </section>
+
+    <!-- What actually gets used, counted from this workspace's own log. It is
+         here to answer one question before more is built on top of the story:
+         is it read, or is it written once and folded away (ADR 0042)? -->
+    {{ with .Habits }}
+    <section class="board__panel">
+      <h2 class="board__title">what gets used</h2>
+      {{ range . }}
+      <div class="board__row">
+        <span class="board__key">{{ .What }}</span>
+        <span class="board__val">{{ .Count }}{{ with .Note }} <span class="board__hint">{{ . }}</span>{{ end }}</span>
+      </div>
+      {{ end }}
+      <p class="setting__note">
+        Counted from this workspace's audit log, on this machine, and sent
+        nowhere. It is here so a decision about what msr is for can be made from
+        what a week of using it looks like rather than from an opinion about it.
+      </p>
+    </section>
+    {{ end }}
 
     <!-- What the reviewer's model is doing, and what it was just asked. Every
          call takes seconds to minutes locally, so this is where the waiting

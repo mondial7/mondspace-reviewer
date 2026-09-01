@@ -91,7 +91,22 @@ for (const b of document.querySelectorAll('[data-story-toggle]')) {
     storyFolded = !storyFolded;
     remember(STORY_KEY, storyFolded ? 'off' : 'on');
     applyStory();
+    // One line in the review's own log. Whether the story is read at all, or
+    // folded away on the first day and never opened again, is a question about
+    // the roadmap that nothing else here can answer (ADR 0042).
+    note(storyFolded ? 'story-folded' : 'story-opened');
   });
+}
+
+// note records something the reviewer did that leaves no other trace. It is
+// fire-and-forget: a failed note must never interrupt what it was noting.
+function note(what) {
+  const target = new URL(window.location.href).searchParams.get('target') ?? '';
+  fetch('/noted', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ what, target }),
+  }).catch(() => {});
 }
 
 // ── Theme ───────────────────────────────────────────────────────────────────
