@@ -4,6 +4,37 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **The fourth reading only ran on the review msr started with.** Every commit
+  you navigated to reported "nothing to report in 4 files" — the one sentence
+  this layer must never say when it has not looked. The analysers are now run
+  when a review is opened, in the background and cached, so a target opened
+  twice runs nothing the second time.
+- **A data race** in the `git archive` path added for comparing against the
+  base: two commands shared one stderr buffer, which is two goroutines writing
+  to it.
+- **Work that arrived mid-review followed you off the review it arrived under**,
+  so a commit could show a banner offering to fold uncommitted files into a
+  review of something that happened yesterday.
+- **Following a link to a file did not open it.** Every file in the tree view
+  links to one, and a `<details>` does not open because something scrolled to
+  it — so you landed on a folded summary with the diff you clicked for still
+  shut.
+- **The only control on the report page** sat at the far right of a 62rem
+  column, half a screen from the finding it belonged to.
+- A band of empty space across the review card, the last of the shouted labels,
+  and four page headings that had not been brought to the one rule.
+
+### Changed
+
+- **Every screenshot retaken** against this build, from one `msr` at one window
+  size in one theme, with two new ones for the deterministic findings and the
+  analysers panel. `docs/img/demo.sh` builds the repository they are of, with
+  pinned dates, so the next set is comparable to this one.
+
 ## [7.0.0] — 2026-09-01
 
 ### Changed, and worth a major
