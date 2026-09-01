@@ -1443,10 +1443,22 @@ func narrateTarget(ctx context.Context, handler *web.Server, sum port.Summarizer
 
 // unitsFor is the net change a target covers. It is the same engine every other
 // review uses; only the two refs differ.
+//
+// The pin matters and is easy to miss. A live review's far end is a snapshot so
+// the page holds still while it is being read (ADR 0020); building against the
+// working tree here instead would give every reading of that review a slightly
+// different change from the one on screen — which, now that a reading
+// fingerprints what it read, means every card reporting itself stale the moment
+// it finishes (ADR 0037).
 func unitsFor(ctx context.Context, entry targetEntry) ([]domain.Unit, map[string]domain.Diff, error) {
 	snap := gitsnap.New(entry.repo, entry.target.ID)
 	storeRel := storeRelativeTo(entry.repo, entry.out)
-	return usecase.BuildFileUnits(ctx, snap, entry.target.ID, entry.target.From, entry.target.To,
+
+	to := entry.target.To
+	if p, pinned := pinnedAt(entry.target.ID); pinned {
+		to = p.ref
+	}
+	return usecase.BuildFileUnits(ctx, snap, entry.target.ID, entry.target.From, to,
 		usecase.InStore(storeRel))
 }
 
