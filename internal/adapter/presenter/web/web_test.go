@@ -3134,3 +3134,30 @@ func TestOpeningAReviewIsWhatMakesItsFindingsAppear(t *testing.T) {
 		t.Fatal("opening a target the server did not start on must reach the loader")
 	}
 }
+
+func TestWorkWaitingOnAnotherReviewIsNotThisOnesNews(t *testing.T) {
+	// The banner offers to fold what arrived into what you are reading. Shown
+	// over a commit, that is an offer to fold uncommitted files into a review
+	// of something that happened yesterday.
+	h := web.NewServer(testSession(), nil)
+	h.SetPending([]domain.FileStat{{Path: "api/handler.go", Added: 2, Removed: 1}},
+		domain.SnapshotRef{Commit: "aaa"}, domain.SnapshotRef{Label: "now"}, time.Now())
+
+	if !strings.Contains(get(t, h, "/").Body.String(), "changed since you opened this review") {
+		t.Fatal("the review it is about should show it")
+	}
+
+	elsewhere := web.NewServer(testSession(), nil).
+		WithLoader(func(_ context.Context, id string) (web.Session, error) {
+			sess := testSession()
+			sess.ID = id
+			return sess, nil
+		})
+	elsewhere.SetPending([]domain.FileStat{{Path: "api/handler.go", Added: 2, Removed: 1}},
+		domain.SnapshotRef{Commit: "aaa"}, domain.SnapshotRef{Label: "now"}, time.Now())
+
+	if strings.Contains(get(t, elsewhere, "/?target=abc123def4567890").Body.String(),
+		"changed since you opened this review") {
+		t.Error("another review's pending work must not appear here")
+	}
+}

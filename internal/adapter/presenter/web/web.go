@@ -1415,6 +1415,11 @@ func (s *Server) send(ev sseEvent) {
 func (s *Server) SetPending(changed []domain.FileStat, from, to domain.SnapshotRef, since time.Time) {
 	s.mu.Lock()
 	p := usecase.PendingWork(s.sess.Units, s.sess.Notes, changed, from, to, since)
+	// Stamped with the review it is about. Without it, work that arrived under
+	// the live review kept its banner while the reviewer was reading a commit —
+	// offering to fold uncommitted files into a review of something that
+	// happened yesterday.
+	p.Target = s.sess.ID
 	was := s.pending.Headline()
 	s.pending = p
 	s.mu.Unlock()
@@ -2734,6 +2739,10 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 	s.mu.RLock()
 	views := s.viewsOf(sess)
 	pending := s.pending
+	if !pending.About(sess.ID) {
+		// Work waiting on another review is not this review's news.
+		pending = domain.Pending{}
+	}
 	signoffOf := s.signoffOf
 	canSignoff := s.signoff != nil
 	logOf := s.logOf
