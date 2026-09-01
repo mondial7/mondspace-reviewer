@@ -2116,7 +2116,7 @@ func TestTheAnalysisCardsAreOfferedAndRunOnDemand(t *testing.T) {
 
 	body := get(t, h, "/").Body.String()
 
-	for _, want := range []string{"Security pass", "Breaking changes"} {
+	for _, want := range []string{"security pass", "breaking changes"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the cards should offer %q:\n%s", want, body)
 		}

@@ -262,7 +262,7 @@
            one that answers "what even is this", which is where reading starts. -->
       <article class="acard acard--{{ .Review.State }}">
         <header class="acard__head">
-          <h2 class="acard__title">Story</h2>
+          <h2 class="acard__title">story</h2>
           <span class="acard__state">
             {{ if eq .Review.State "reading" }}<span class="ask__spinner" aria-hidden="true"></span>reading…
             {{ else if eq .Review.State "read" }}read {{ .Review.When }}
@@ -448,6 +448,11 @@
       <div class="viewswitch">
         <button class="viewswitch__btn" type="button" data-view="detail" aria-pressed="true">detail</button>
         <button class="viewswitch__btn" type="button" data-view="tree" aria-pressed="false">tree</button>
+        <!-- Beside the thing they move, not only in the ? overlay. A shortcut
+             you have to go looking for is one nobody learns (ADR 0041). -->
+        <span class="keyhint">
+          <kbd>j</kbd><kbd>k</kbd> move · <kbd>o</kbd> open · <kbd>?</kbd> all keys
+        </span>
       </div>
 
       <!-- Every flag in this review, counted once. Thirty files each wearing an
@@ -751,6 +756,7 @@
       <section class="log" id="log">
         <header class="log__head">
           <span class="log__title">history</span>
+          <span class="keyhint"><kbd>[</kbd><kbd>]</kbd></span>
           {{ with .Log.Remote.Upstream }}
           <a class="log__branch" href="/branches"
              title="{{ $.Log.Remote.Branch }} tracks {{ . }} — see every branch">{{ . }}</a>

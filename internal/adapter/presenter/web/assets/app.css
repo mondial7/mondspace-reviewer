@@ -906,10 +906,9 @@ button .ico, a .ico, summary .ico { margin-right: 0.35em; }
 
 .storyrail__title {
   margin: 0;
-  font-size: 0.72rem;
+  font-size: 0.78rem;
   font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  letter-spacing: 0.04em;
   color: var(--fg-dim);
 }
 
@@ -1074,7 +1073,7 @@ button .ico, a .ico, summary .ico { margin-right: 0.35em; }
 }
 .pulseinfo__title {
   margin: 0 0 0.35rem;
-  font-size: 0.64rem; letter-spacing: 0.1em; text-transform: uppercase;
+  font-size: 0.7rem; letter-spacing: 0.04em;
   color: var(--fg-dim);
 }
 .pulseinfo__note { margin: 0.45rem 0 0; font-size: 0.7rem; color: var(--fg-dim); line-height: 1.5; }
@@ -1325,6 +1324,15 @@ button:disabled:hover, .btn:disabled:hover {
 .btn--go { background: var(--accent); border-color: var(--accent); color: var(--bg); }
 .btn--go:hover { color: var(--bg); filter: brightness(1.08); }
 
+/* ── Heading case ───────────────────────────────────────────────────────────
+   One rule, because there were four: `Story`, `Security pass`, `HISTORY`,
+   `REVIEWER ASSISTANT` (ADR 0041).
+
+   A heading is lower case, in the words it was written in. Nothing is
+   transformed. Upper case survives in exactly one place — the one-word key
+   beside a value, in a stat tile or a form label — because there it is doing
+   the work of a colon rather than naming a region. */
+
 /* ── Weight ─────────────────────────────────────────────────────────────────
    Two actions on the cockpit matter: start the review, and say you have
    reviewed it. Everything else — run it again, read the report, re-describe,
@@ -1413,7 +1421,7 @@ button:disabled:hover, .btn:disabled:hover {
 }
 .subnav__title {
   margin: 0.1rem 0.4rem 0.5rem;
-  font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase;
+  font-size: 0.74rem; letter-spacing: 0.04em;
   color: var(--fg-dim);
 }
 .subnav__link {
@@ -1487,8 +1495,8 @@ button:disabled:hover, .btn:disabled:hover {
   min-width: 0;
 }
 .board__title {
-  margin: 0 0 0.8rem; font-size: 0.72rem; font-weight: 700;
-  color: var(--fg-dim); text-transform: uppercase; letter-spacing: 0.1em;
+  margin: 0 0 0.8rem; font-size: 0.78rem; font-weight: 700;
+  color: var(--fg-dim); letter-spacing: 0.04em;
 }
 .board__row {
   display: flex; justify-content: space-between; gap: 1rem;
@@ -1679,8 +1687,8 @@ button:disabled:hover, .btn:disabled:hover {
   background: none; backdrop-filter: none;
 }
 .ask__title {
-  margin: 0 0 0.6rem; font-size: 0.72rem; font-weight: 700;
-  color: var(--fg-dim); text-transform: uppercase; letter-spacing: 0.1em;
+  margin: 0 0 0.6rem; font-size: 0.78rem; font-weight: 700;
+  color: var(--fg-dim); letter-spacing: 0.04em;
 }
 .ask__exchange { margin-bottom: 1rem; }
 .ask__q {
@@ -1759,8 +1767,8 @@ button:disabled:hover, .btn:disabled:hover {
 
 /* What kind of thing is under review. Git supplies most of them. */
 .brief__kind {
-  margin: 0 0 0.25rem; font-size: 0.62rem; letter-spacing: 0.12em;
-  text-transform: uppercase; color: var(--fg-dim);
+  margin: 0 0 0.25rem; font-size: 0.68rem; letter-spacing: 0.04em;
+  color: var(--fg-dim);
 }
 .brief__kind--commit { color: var(--hunk); }
 .brief__kind--tag { color: var(--add); }
@@ -2602,8 +2610,7 @@ a.toast:hover { border-color: var(--kind, var(--accent)); }
   color: var(--fg-dim);
   font-family: var(--mono);
   font-size: 0.66rem;
-  text-transform: uppercase;
-  letter-spacing: 0.09em;
+  letter-spacing: 0.06em;
 }
 
 .log__branch {
@@ -3343,4 +3350,30 @@ a.log__branch:hover { text-decoration: underline; }
 .ask__a .md__code,
 .report__stats {
   font-family: var(--mono);
+}
+
+/* ── Keys, where they are used ──────────────────────────────────────────────
+   The ? overlay lists everything, which is the right place to look something
+   up and the wrong place to learn it. A hint sits beside the thing its keys
+   move (ADR 0041). */
+
+.keyhint {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--fg-dim);
+  font-size: 0.66rem;
+  white-space: nowrap;
+}
+
+.keyhint kbd {
+  padding: 0 0.28rem;
+  border: 1px solid var(--rule);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--bg);
+  font-family: var(--mono);
+  font-size: 0.92em;
+  line-height: 1.4;
 }

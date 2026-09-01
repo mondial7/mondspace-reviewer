@@ -49,13 +49,13 @@ func Audits() []Audit {
 	return []Audit{
 		{
 			Kind:    AuditSecurity,
-			Title:   "Security pass",
+			Title:   "security pass",
 			Purpose: "what in this change is worth a second look",
 			ask:     securityPrompt,
 		},
 		{
 			Kind:    AuditBreaking,
-			Title:   "Breaking changes",
+			Title:   "breaking changes",
 			Purpose: "what this could break for existing callers",
 			ask:     breakingPrompt,
 		},
