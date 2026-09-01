@@ -167,6 +167,7 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 		WithSignoff(saveSignoff(), loadSignoff()).
 		WithAnalyses(runAnalysis(pool, agent.For(domain.Narration).Model), analysisOf()).
 		WithReported(reportedOf(), dismissReported()).
+		WithVerify(verifyTarget).
 		WithTools(toolsOf()).
 		WithJudge(judgeFinding()).
 		WithSearch(searchWorkspace()).

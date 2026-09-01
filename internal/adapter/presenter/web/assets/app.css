@@ -3440,6 +3440,7 @@ a.log__branch:hover { text-decoration: underline; }
 .reportbar--found { border-left-color: var(--reported); }
 
 .reportbar__text { color: var(--fg); font-family: var(--sans); }
+.reportbar__verify { display: inline; }
 .reportbar__tools { margin-left: auto; font-family: var(--mono); font-size: 0.66rem; }
 .reportbar__only { margin-left: 0.2rem; }
 

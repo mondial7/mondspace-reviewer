@@ -146,6 +146,37 @@ func MarkNew(findings []domain.Reported, units []domain.Unit,
 	return out
 }
 
+// MarkAgainstBase is the accurate answer to "was this here before".
+//
+// The cheap path intersects a finding's line with the lines the change added,
+// which is fast and misses one real case: a problem the change caused somewhere
+// it did not touch. An import that is now unused, a function nothing calls any
+// more, a type assertion that can now fail — none of those are on an added line
+// and all of them are this change's doing.
+//
+// This is the answer from actually looking: the same tools over the same files
+// as they were before, and anything the base did not say is new.
+//
+// Matched on the finding's own identity rather than on its line, because the
+// line has moved by definition — the change is what moved it (ADR 0043).
+func MarkAgainstBase(found, before []domain.Reported) []domain.Reported {
+	was := make(map[string]bool, len(before))
+	for _, f := range before {
+		was[f.Key()] = true
+	}
+
+	out := make([]domain.Reported, 0, len(found))
+	for _, f := range found {
+		// msr's own flags are derived from the diff itself, so there is no
+		// version of them that existed before and the base has no opinion.
+		if f.Tool != msrTool {
+			f.New = !was[f.Key()]
+		}
+		out = append(out, f)
+	}
+	return out
+}
+
 // SplitNew separates what this change introduced from what was already there,
 // keeping the order of each.
 //

@@ -115,3 +115,35 @@ func TestADismissalSurvivesTheNextRunOfTheSameTool(t *testing.T) {
 		t.Error("the dismissal did not survive the line moving")
 	}
 }
+
+func TestTheBaseDecidesWhatWasAlreadyThere(t *testing.T) {
+	// The case the cheap path cannot see: an import that is now unused is not
+	// on a line this change added, and is entirely this change's doing.
+	found := []domain.Reported{
+		{Tool: "staticcheck", Rule: "ST1003", File: "a.go", Line: 3, Message: "was here before"},
+		{Tool: "staticcheck", Rule: "SA4006", File: "a.go", Line: 40, Message: "this change caused this"},
+	}
+	before := []domain.Reported{
+		// The same finding, on a different line, because the change moved it.
+		{Tool: "staticcheck", Rule: "ST1003", File: "a.go", Line: 3000, Message: "was here before"},
+	}
+
+	got := usecase.MarkAgainstBase(found, before)
+	if got[0].New {
+		t.Error("the base reported this one; the line moving does not make it new")
+	}
+	if !got[1].New {
+		t.Error("the base did not report this one, so this change caused it")
+	}
+}
+
+func TestMsrsOwnFlagsAreNotJudgedAgainstTheBase(t *testing.T) {
+	// They are derived from the diff itself, so there is no version of them
+	// that existed before and the base has no opinion to offer.
+	found := []domain.Reported{
+		{Tool: "msr", Rule: "swallowed-err", File: "a.go", Message: "an error is discarded", New: true},
+	}
+	if got := usecase.MarkAgainstBase(found, nil); !got[0].New {
+		t.Error("a flag is always this change's own")
+	}
+}

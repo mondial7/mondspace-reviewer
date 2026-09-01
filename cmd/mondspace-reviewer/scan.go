@@ -2,12 +2,15 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"sync"
 	"time"
 
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/config"
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/presenter/web"
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/scanner/local"
+	gitsnap "github.com/mondial7/mondspace-reviewer/internal/adapter/snapshot/git"
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/store/jsonl"
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
 	"github.com/mondial7/mondspace-reviewer/internal/usecase"
@@ -48,6 +51,11 @@ type scanResult struct {
 	print   string
 	at      time.Time
 	reports []domain.Reported
+	// verified says this was decided by looking at the base rather than by
+	// intersecting lines. The page says which, because the two answers differ
+	// and a reviewer deciding whether to run the expensive one needs to know
+	// they have not already.
+	verified bool
 }
 
 // scannerFor is the analyser set for one repository, built once.
@@ -124,6 +132,71 @@ func scanTarget(ctx context.Context, targetID string) {
 	if handler := handlerRef(); handler != nil {
 		handler.Broadcast("reported")
 	}
+}
+
+// verifyTarget is the accurate answer to "was this here before", on demand.
+//
+// It exports the base into a temporary directory and runs the same analysers
+// over the same files as they were, then set-diffs. That catches the case the
+// cheap path cannot see: a problem this change caused on a line it did not
+// touch — an import that is now unused, a function nothing calls any more.
+//
+// On demand rather than on the poll, because it costs a copy of the tree and a
+// second run of every tool. Read-only: `git archive` into a temp dir the
+// process removes, never a registered worktree (ADR 0043).
+func verifyTarget(ctx context.Context, targetID string) error {
+	entry, known := lookupTarget(targetID)
+	if !known {
+		return fmt.Errorf("no such review %q", targetID)
+	}
+	units, diffs, err := unitsFor(ctx, entry)
+	if err != nil || len(units) == 0 {
+		return err
+	}
+
+	dir, err := os.MkdirTemp("", "msr-base-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(dir)
+
+	snap := gitsnap.New(entry.repo, targetID)
+	if err := snap.ExportTo(ctx, entry.target.From, dir); err != nil {
+		return err
+	}
+
+	scanner := scannerFor(entry.repo)
+	files := pathsOf(units)
+	before := scanner.LookIn(ctx, dir, files, entry.target.From.Commit)
+	now := scanner.Look(ctx, files, usecase.FilePrints(units, diffs), entry.target.From.Commit)
+
+	found := usecase.MarkAgainstBase(usecase.MarkNew(now, units, diffs), before)
+	found = append(found, usecase.FlagFindings(units, diffs)...)
+
+	store := jsonl.New(entry.out)
+	if rulings, err := store.LoadDismissals(targetID); err == nil {
+		found = usecase.ApplyDismissals(found, rulings)
+	}
+
+	scannersMu.Lock()
+	scanned[targetID] = scanResult{
+		print:    usecase.ChangeFingerprint(units, diffs),
+		at:       time.Now(),
+		reports:  found,
+		verified: true,
+	}
+	scannersMu.Unlock()
+	_ = store.SaveReported(targetID, found)
+
+	if handler := handlerRef(); handler != nil {
+		handler.Record(web.AuditEntry{
+			SessionID: targetID, Action: "reported-verified",
+			Detail: fmt.Sprintf("compared %d file(s) against %s",
+				len(files), usecase.Brief(entry.target.From.Commit, 8)),
+		})
+		handler.Broadcast("reported")
+	}
+	return nil
 }
 
 // reportedOf hands the page whatever the analysers last said.

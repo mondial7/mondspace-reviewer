@@ -286,6 +286,7 @@ type Server struct {
 	runAnalysis     RunAnalysisFunc
 	reportedOf      ReportedOf
 	dismissReported DismissFunc
+	verifyReported  VerifyFunc
 	toolsOf         ToolsFunc
 	judge           JudgeFindingFunc
 	search          SearchFunc
@@ -1167,6 +1168,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /analysis/{kind}", s.handleAnalysis)
 	s.mux.HandleFunc("POST /analysis/{kind}/judge", s.handleJudge)
 	s.mux.HandleFunc("POST /reported/dismiss", s.handleDismissReported)
+	s.mux.HandleFunc("POST /reported/verify", s.handleVerifyReported)
 	s.mux.HandleFunc("POST /live/include", s.handleInclude)
 	s.mux.HandleFunc("POST /live/split", s.handleSplit)
 	s.mux.HandleFunc("GET /events", s.handleEvents)
@@ -1751,6 +1753,54 @@ type ToolStatus struct {
 
 // ToolsFunc is every analyser msr looked for and what became of it.
 type ToolsFunc func() []ToolStatus
+
+// VerifyFunc runs the accurate answer to "was this here before": the same tools
+// over the same files as they were at the base, set-diffed against now.
+//
+// On demand, because it costs a copy of the tree and a second run of every
+// tool. It is the one thing in this layer a reviewer has to ask for (ADR 0043).
+type VerifyFunc func(ctx context.Context, targetID string) error
+
+// WithVerify wires that.
+func (s *Server) WithVerify(fn VerifyFunc) *Server {
+	s.verifyReported = fn
+	return s
+}
+
+// handleVerifyReported starts it, in the background, and says so.
+//
+// Nothing waits for it. It is minutes of subprocess on a large repository, and
+// the contract every reading in msr keeps is that the review is never blocked
+// on one.
+func (s *Server) handleVerifyReported(w http.ResponseWriter, r *http.Request) {
+	s.mu.RLock()
+	verify := s.verifyReported
+	s.mu.RUnlock()
+	if verify == nil {
+		http.NotFound(w, r)
+		return
+	}
+	target, ok := s.actionTarget(r)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+
+	done := s.BeginWork("verify", target,
+		"comparing against the code before this change")
+	go func() {
+		defer func() {
+			if p := recover(); p != nil {
+				done(fmt.Errorf("verifying panicked: %v", p))
+			}
+		}()
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
+		defer cancel()
+		done(verify(ctx, target))
+	}()
+
+	http.Redirect(w, r, backTo(r, "#changes-col"), http.StatusSeeOther)
+}
 
 // WithReported wires the deterministic layer: reading its findings, and ruling
 // on one.
@@ -2855,6 +2905,7 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 		Flags              []flagCount
 		Reported           usecase.ReportedView
 		CanDismissReported bool
+		CanVerifyReported  bool
 		CanDescribe        bool
 		CanDescribeFile    bool
 		Work               []Work
@@ -2901,6 +2952,7 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 		Flags:              flagTally(sess.Units),
 		Reported:           reported,
 		CanDismissReported: s.dismissReported != nil,
+		CanVerifyReported:  s.verifyReported != nil,
 		CanDescribe:        canDescribe, CanDescribeFile: canDescribeFile, Work: work,
 		Thread: thread, HasAsk: hasAsk, HasReanal: hasReanal,
 		CanRetry: canRetry, Narrating: narrating,

@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -162,6 +163,62 @@ func (s *Scanner) Look(ctx context.Context, files []string, prints map[string]st
 		out = append(out, found...)
 	}
 	return out
+}
+
+// LookIn runs the same analysers over a copy of the code as it was before the
+// change, so a finding can be asked the one question the cheap path cannot
+// answer: were you here already? (ADR 0043)
+//
+// Uncached and unshared with Look. The whole point is that the content is
+// different, and a cache keyed on file content would answer with the wrong
+// side's findings if it were ever keyed slightly wrong. This is the expensive,
+// on-demand path; it should be expensive rather than subtly wrong.
+//
+// Detection is shared, because whether gosec is installed is a fact about the
+// machine and not about which copy of the code is being read.
+func (s *Scanner) LookIn(ctx context.Context, dir string, files []string, base string) []domain.Reported {
+	s.Detect(ctx)
+
+	elsewhere := &Scanner{
+		repoDir: dir, analysers: s.analysers, cap: s.cap,
+		version: map[string]string{}, why: map[string]string{},
+		broken: map[string]string{}, answers: map[string][]domain.Reported{},
+	}
+	s.mu.Lock()
+	for name, version := range s.version {
+		elsewhere.version[name] = version
+	}
+	s.mu.Unlock()
+
+	// Files that did not exist before this change are not in the archive, and a
+	// tool pointed at a path that is not there fails rather than reporting
+	// nothing.
+	here := make([]string, 0, len(files))
+	for _, f := range files {
+		if _, err := os.Stat(filepath.Join(dir, f)); err == nil {
+			here = append(here, f)
+		}
+	}
+	if len(here) == 0 {
+		return nil
+	}
+
+	found := elsewhere.Look(ctx, here, nil, base)
+
+	// A tool that broke over there is still a tool that broke, and the settings
+	// page is the one place that is said.
+	elsewhere.mu.Lock()
+	broken := elsewhere.broken
+	elsewhere.mu.Unlock()
+	s.mu.Lock()
+	for tool, why := range broken {
+		if _, said := s.broken[tool]; !said {
+			s.broken[tool] = why
+		}
+	}
+	s.mu.Unlock()
+
+	return found
 }
 
 // note records a tool that broke, once. Reported on the settings page and

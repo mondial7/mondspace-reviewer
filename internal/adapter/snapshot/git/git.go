@@ -1012,6 +1012,57 @@ func splitByFile(text string) map[string]domain.Diff {
 	return out
 }
 
+// ExportTo writes the tree at one ref into a directory, so it can be analysed
+// as it was (ADR 0043).
+//
+// `git archive` piped into `tar`, deliberately. The alternative is
+// `git worktree add`, which registers the worktree in `.git/worktrees`, writes
+// an administrative file per checkout, and leaves one behind on every crash.
+// msr's claim is that it never writes to the repository, and a read-only
+// question should not be the thing that breaks it.
+//
+// The directory must exist and should be a temporary one the caller removes.
+func (s *Snapshotter) ExportTo(ctx context.Context, ref domain.SnapshotRef, dir string) error {
+	if ref.Commit == "" || ref.Commit == emptyTree {
+		// Nothing before this change. An empty directory is the honest answer:
+		// every finding in it is new because none of the code was there.
+		return nil
+	}
+
+	archive := exec.CommandContext(ctx, "git", "archive", "--format=tar", ref.Commit)
+	archive.Dir = s.repoDir
+	unpack := exec.CommandContext(ctx, "tar", "-x", "-C", dir)
+
+	pipe, err := archive.StdoutPipe()
+	if err != nil {
+		return err
+	}
+	unpack.Stdin = pipe
+
+	var problems bytes.Buffer
+	archive.Stderr, unpack.Stderr = &problems, &problems
+
+	if err := unpack.Start(); err != nil {
+		return err
+	}
+	if err := archive.Run(); err != nil {
+		unpack.Wait()
+		return fmt.Errorf("git archive %s: %w: %s", short(ref.Commit), err, problems.String())
+	}
+	if err := unpack.Wait(); err != nil {
+		return fmt.Errorf("unpacking %s: %w: %s", short(ref.Commit), err, problems.String())
+	}
+	return nil
+}
+
+// short abbreviates a commit for an error message.
+func short(commit string) string {
+	if len(commit) <= 8 {
+		return commit
+	}
+	return commit[:8]
+}
+
 // ── The cheap question ──────────────────────────────────────────────────────
 
 // Probe is a cheap answer to "has anything moved in this repository?", meant to

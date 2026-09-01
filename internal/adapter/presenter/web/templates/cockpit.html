@@ -480,6 +480,18 @@
         <button class="act act--quiet reportbar__only" type="button" data-only-findings
                 aria-pressed="false">only these files</button>
         {{ end }}
+        {{ if $.CanVerifyReported }}
+        <!-- The accurate answer to "was this here before". Off by default and
+             asked for, because it costs a copy of the tree and a second run of
+             every tool — and because the cheap answer is right most of the
+             time (ADR 0043). -->
+        <form class="reportbar__verify" method="post" action="/reported/verify?target={{ $.Session.ID }}">
+          <button class="act act--quiet" type="submit"
+                  title="run the same tools over the code as it was, and compare">
+            compare against the base
+          </button>
+        </form>
+        {{ end }}
         {{ with $.Reported.Tools }}
         <span class="reportbar__tools" title="the analysers that ran; anything not listed is not installed">{{ range $i, $t := . }}{{ if $i }} · {{ end }}{{ $t }}{{ end }}</span>
         {{ end }}

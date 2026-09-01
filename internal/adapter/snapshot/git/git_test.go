@@ -1324,3 +1324,59 @@ func TestProbeMovesOnlyWhenTheRepositoryDoes(t *testing.T) {
 		t.Fatal("probe did not move when the work was committed")
 	}
 }
+
+func TestExportingABaseTreeTouchesNothing(t *testing.T) {
+	// The accurate answer to "was this finding here before" needs the code as
+	// it was. `git archive` rather than `git worktree add`, because msr's claim
+	// is that it never writes to the repository (ADR 0043).
+	dir := t.TempDir()
+	gitCmd(t, dir, "init", "-q")
+	gitCmd(t, dir, "config", "user.email", "t@t")
+	gitCmd(t, dir, "config", "user.name", "t")
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("before\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCmd(t, dir, "add", "-A")
+	gitCommitAt(t, dir, "2026-01-01T00:00:00", "init")
+
+	s := gitsnap.New(dir, "sess")
+	ctx := context.Background()
+	base, err := s.ResolveRef(ctx, "HEAD")
+	if err != nil {
+		t.Fatalf("ResolveRef: %v", err)
+	}
+
+	// Now the working tree moves on.
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("after\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out := t.TempDir()
+	if err := s.ExportTo(ctx, base, out); err != nil {
+		t.Fatalf("ExportTo: %v", err)
+	}
+	body, err := os.ReadFile(filepath.Join(out, "a.txt"))
+	if err != nil {
+		t.Fatalf("the exported tree is missing its file: %v", err)
+	}
+	if strings.TrimSpace(string(body)) != "before" {
+		t.Errorf("exported %q, want the code as it was", body)
+	}
+
+	// And nothing was registered in the repository to be cleaned up later.
+	if _, err := os.Stat(filepath.Join(dir, ".git", "worktrees")); err == nil {
+		t.Error("a read-only question must not register a worktree")
+	}
+}
+
+func TestExportingNothingIsNotAFailure(t *testing.T) {
+	// A review with no commit before it: every finding in it is new, because
+	// none of the code was there.
+	dir := t.TempDir()
+	gitCmd(t, dir, "init", "-q")
+	s := gitsnap.New(dir, "sess")
+	out := t.TempDir()
+	if err := s.ExportTo(context.Background(), domain.SnapshotRef{}, out); err != nil {
+		t.Errorf("ExportTo with no base: %v", err)
+	}
+}
