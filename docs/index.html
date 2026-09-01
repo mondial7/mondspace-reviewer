@@ -390,27 +390,50 @@ footer p { margin: 0.3rem 0; }
 
 <section id="shots">
   <figure class="shot">
-    <img src="img/cockpit.png" alt="The msr cockpit: navigation down the left, the change told as chapters of prose beside every changed file, and an instrument panel on the right with the isometric field and the history." loading="lazy" width="1600" height="1000">
-    <figcaption><b>One page.</b> What this change is and its numbers on the left, the story in the middle, every file on the right. Nothing on the panel is model-derived — every number is a git fact.</figcaption>
+    <img src="img/cockpit.png" alt="The msr cockpit: navigation down the left, the story as a folding rail, every changed file with its diff in the middle, and an instrument panel on the right with the history and the numbers." loading="lazy" width="1600" height="1000">
+    <figcaption><b>One page.</b> The log is the product, so the diffs take the
+    middle. The story folds away to a strip on the left when you want the width;
+    the panel on the right is the history and the numbers, and nothing on it is
+    model-derived — every number is a git fact.</figcaption>
   </figure>
 
   <figure class="shot">
-    <img src="img/cockpit-changes.png" alt="A file opened in msr, showing its diff, its flags, the lines worth reading, and the annotation controls." loading="lazy" width="1600" height="1120">
-    <figcaption><b>Open a file</b> for its diff, the one to three lines worth reading, and the flags that made you stop — then annotate it <code>ok</code>, <code>question</code>, <code>objection</code>, <code>debt</code> or <code>note</code>. The review log is the product.</figcaption>
+    <img src="img/cockpit-changes.png" alt="A file opened in msr, showing its diff, its flags, and the five annotation controls beneath it." loading="lazy" width="1600" height="1000">
+    <figcaption><b>Open a file</b> for its diff and the flags that made you stop
+    — then annotate it <code>ok</code>, <code>question</code>,
+    <code>objection</code>, <code>debt</code> or <code>note</code>, on the file
+    or on one line of it. The review log is the product.</figcaption>
   </figure>
 
   <figure class="shot">
-    <img src="img/cockpit-analyses.png" alt="Three analysis cards side by side: story, security pass and breaking changes, each with its own verdict, its tally by severity, and a button to read the full report." loading="lazy" width="1600" height="360">
-    <figcaption><b>Three readings, on demand.</b> The story, a security pass and a breaking-change check — each run when you ask, and none of them shown what the others found. Capped at five findings by the schema, and labelled <code>inferred</code>, because a small local model suggests where to look; it does not rule.</figcaption>
+    <img src="img/cockpit-analyses.png" alt="Three analysis cards side by side: story, security pass and breaking changes, each with its own verdict, its tally by severity, and a button to read the full report." loading="lazy" width="1600" height="380">
+    <figcaption><b>Three readings, on demand.</b> The story, a security pass and
+    a breaking-change check — each run when you ask, and none of them shown what
+    the others found. A card is never ambiguous about whether it describes the
+    code on screen: <i>this is the change on screen</i>, or <i>the code has moved
+    since this ran</i>. Labelled <code>inferred</code>, because a model suggests
+    where to look; it does not rule.</figcaption>
   </figure>
 
   <figure class="shot">
-    <img src="img/report.png" alt="One audit in full on its own page: what is being reviewed above, then every finding with its severity, the file it is in and a control to dismiss it." loading="lazy" width="1600" height="900">
+    <img src="img/cockpit-reported.png" alt="A file opened in msr with two deterministic findings above its diff: one from golangci-lint naming its rule and line, one from msr's own rules, each with a control to dismiss it." loading="lazy" width="1600" height="1000">
+    <figcaption><b>A fourth reading, and it is not a model.</b> msr runs whatever
+    analysers are already on your <code>PATH</code> — golangci-lint, gosec,
+    staticcheck, semgrep, gitleaks, ruff, eslint — over the files you changed,
+    and shows what they found against the file it is about. It ships none of
+    them, and says nothing at all on a machine that has none. These are
+    <code>reported</code>: they name their tool and their rule, they are the same
+    answer every time, and they are the only class here you can act on without
+    checking first.</figcaption>
+  </figure>
+
+  <figure class="shot">
+    <img src="img/report.png" alt="One audit in full on its own page: what is being reviewed above, then every finding with its severity, the file it is in and a control to dismiss it." loading="lazy" width="1600" height="700">
     <figcaption><b>The report.</b> A card holds a verdict and a tally; the findings are read here, with what is being reviewed above them and two ways back to where you left off.</figcaption>
   </figure>
 
   <figure class="shot">
-    <img src="img/cockpit-pending.png" alt="msr showing a banner: two files changed since the review was opened, with buttons to keep reading, include them, or review just those." loading="lazy" width="1600" height="900">
+    <img src="img/cockpit-pending.png" alt="msr showing a banner: a file changed since the review was opened, with buttons to keep reading, include it, or review just that." loading="lazy" width="1600" height="600">
     <figcaption><b>The agent kept working while you read.</b> The page holds still, and what arrived queues up — naming the files, and flagging any you had already annotated. Then you choose: keep reading, fold it in, or review just the new work.</figcaption>
   </figure>
 </section>
@@ -667,7 +690,7 @@ footer p { margin: 0.3rem 0; }
     answering, what it has cost, and lets you point msr somewhere else without a restart.
   </p>
   <figure class="shot">
-    <img src="img/cockpit-status.png" alt="msr settings: the reviewer model, whether it is online, what it has spent, and the repositories being watched." loading="lazy" width="1600" height="1000">
+    <img src="img/cockpit-status.png" alt="msr settings: both engines reported separately — the Claude Code CLI and the local model — with what each one reads and what each has spent." loading="lazy" width="1600" height="800">
     <figcaption>If the model is unreachable, msr degrades to mechanical headlines and carries on — <b>the review never waits on it.</b></figcaption>
   </figure>
 </section>

@@ -59,9 +59,10 @@
       <li class="tour__step">
         <h2 class="tour__title">Pick what to review</h2>
         <p class="tour__body">
-          Top left of the cockpit, under <em>reviewing</em>. Type a tag, a commit,
-          a branch — it searches as you type. Or leave it on <strong>live</strong>,
-          which is your working tree against HEAD and where msr opens.
+          From the <em>history</em> card on the right: every commit, the tags on
+          them and your recorded runs, in time order, with <kbd>[</kbd> and
+          <kbd>]</kbd> to walk it. Or leave it on <strong>live</strong>, which is
+          your working tree against HEAD and where msr opens.
         </p>
         <p class="tour__body tour__body--dim">
           Anything in git is reviewable: one commit, a tag (everything since the
@@ -116,6 +117,16 @@
           <code>no-test</code>, <code>new-dep</code> or <code>swallowed-err</code>
           mark what deserves a second look — those are computed offline, with no
           model involved at all.
+        </p>
+        <p class="tour__body tour__body--dim">
+          So is the fourth reading. Whatever analysers you already have on your
+          <code>PATH</code> — golangci-lint, gosec, staticcheck, ruff, eslint —
+          are run over the files you changed and reported against them, scoped to
+          the lines this change actually added. They are labelled
+          <strong>reported</strong> rather than <code>inferred</code>: each names
+          its tool and its rule, and it is the one class here you can act on
+          without checking it first. msr ships none of them, and a machine with
+          none installed sees nothing about any of this.
         </p>
         <p class="tour__body">
           Every change takes a note and one of <code>ok</code> ·

@@ -262,8 +262,15 @@ off = ["semgrep"]
 directories holding them, for tools that cannot analyse one file of a package;
 `{dir}` to the repository root; `{base}` to the ref the review is measured
 against. Listing `[[analyser]]` instead of `[[extra]]` replaces the defaults
-outright. The settings page names every analyser it looked for, which are here,
-and which broke.
+outright.
+
+![Findings from golangci-lint and from msr's own rules, against the file they are about](docs/img/cockpit-reported.png)
+
+The settings page names every analyser it looked for, which are here, and which
+broke — so "gosec found nothing" and "gosec is not installed" are never the same
+sentence.
+
+![Which analysers are on this machine, and what was not found](docs/img/analysers.png)
 
 **Keep an eye on the rest of the team.** A history card in the panel shows where
 you are against everything that has landed — the commit you are reviewing, what
@@ -431,6 +438,8 @@ Nothing blocks on either engine, and a result that came from the fallback says
 so on the card rather than borrowing the confidence of the engine it stood in
 for. `/settings` reports both separately: present or not, answering or not, and
 what each has cost.
+
+![Both engines, reported separately, with what each one reads](docs/img/cockpit-status.png)
 
 `MSR_CLAUDE_CLI=0` turns the CLI off entirely and puts everything back on your
 own machine. A per-workload override on `/settings` still beats the table.
@@ -606,8 +615,6 @@ prose. Measured on an M4 Pro with 24 GB, 6 runs each at temperature 0:
 The small instruct model wins outright, so it answers everything. Running the 9B
 alongside it made the 4B four times slower (6.8s → 28s) from memory pressure
 alone — on 24 GB a second model has to earn a lot to be worth loading.
-
-![Settings: which model answers, whether it is online, and what it has cost](docs/img/cockpit-status.png)
 
 ### One server, or two
 
