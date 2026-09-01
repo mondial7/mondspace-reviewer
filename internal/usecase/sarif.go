@@ -67,12 +67,15 @@ type sarifLog struct {
 }
 
 func readSARIF(a Analyser, output, repoDir string) []domain.Reported {
+	// Tools print things around their own report — a version banner before it,
+	// a "14 issues:" summary after it — so the document is cut out of whatever
+	// else was on the stream. golangci-lint does both.
 	body := strings.TrimSpace(output)
-	// Some tools print a line of their own before the document. Finding the
-	// object is the same defensive move the model replies get.
-	if i := strings.Index(body, "{"); i > 0 {
-		body = body[i:]
+	start, end := strings.Index(body, "{"), strings.LastIndex(body, "}")
+	if start < 0 || end <= start {
+		return nil
 	}
+	body = body[start : end+1]
 
 	var log sarifLog
 	if err := json.Unmarshal([]byte(body), &log); err != nil {

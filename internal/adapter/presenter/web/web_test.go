@@ -3025,3 +3025,72 @@ func TestTheReportSaysWhatDismissingDoes(t *testing.T) {
 		t.Error("the page should say what dismissing actually does")
 	}
 }
+
+func TestDeterministicFindingsAppearAgainstTheirFile(t *testing.T) {
+	// The fourth reading is not a fourth card: it belongs against the file,
+	// because "is anything mechanically wrong with what I am reading" is a
+	// question about the file (ADR 0043).
+	h := web.NewServer(testSession(), nil).
+		WithReported(func(string) []domain.Reported {
+			return []domain.Reported{{
+				Tool: "gosec", Rule: "G404", File: "auth/token.go", Line: 2,
+				Message: "Use of weak random number generator",
+				Severity: domain.SeverityMedium, New: true,
+			}, {
+				Tool: "staticcheck", Rule: "SA4006", File: "auth/token.go", Line: 9,
+				Message: "this value of err is never used",
+			}}
+		}, func(context.Context, string, string, domain.Verdict) error { return nil }).
+		WithTools(func() []web.ToolStatus {
+			return []web.ToolStatus{{Name: "gosec", Present: true}, {Name: "staticcheck", Present: true}}
+		})
+
+	body := get(t, h, "/").Body.String()
+	for _, want := range []string{
+		"gosec/G404",                          // the tool and the rule, named
+		"Use of weak random number generator", // what it said
+		"why--reported",                       // a third class beside stated and inferred
+		"1 of 2 files has findings",           // the one summary line
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("missing %q from the page", want)
+		}
+	}
+	// The pre-existing one is counted and folded away, never silently dropped.
+	if !strings.Contains(body, "1 finding(s) already in this file") {
+		t.Error("a pre-existing finding should be counted, behind a fold")
+	}
+}
+
+func TestAReviewWithNothingReportedStillSaysSo(t *testing.T) {
+	// "Nothing found" and "nothing ran" must not look the same, which is the
+	// same discipline the security card follows.
+	h := web.NewServer(testSession(), nil).
+		WithReported(func(string) []domain.Reported { return nil }, nil).
+		WithTools(func() []web.ToolStatus { return []web.ToolStatus{{Name: "gosec", Present: true}} })
+
+	body := get(t, h, "/").Body.String()
+	if !strings.Contains(body, "Nothing to report in 2 files") {
+		t.Error("a clean deterministic result has to read as a result")
+	}
+}
+
+func TestAnAnalyserThatIsNotInstalledIsNotReportedAsClean(t *testing.T) {
+	// The distinction this layer is least able to survive getting wrong.
+	h := web.NewServer(testSession(), nil).
+		WithReported(func(string) []domain.Reported { return nil }, nil).
+		WithTools(func() []web.ToolStatus { return []web.ToolStatus{{Name: "gosec"}} })
+
+	if strings.Contains(get(t, h, "/").Body.String(), "Nothing to report") {
+		t.Error("a tool that is not installed found nothing because it never ran")
+	}
+}
+
+func TestWithNoAnalysersWiredThePageSaysNothingAboutThem(t *testing.T) {
+	// msr ships no analysers. A machine with none installed should see no
+	// mention of them at all, and be nagged about nothing.
+	body := get(t, web.NewServer(testSession(), nil), "/").Body.String()
+	if strings.Contains(body, "reportbar") {
+		t.Error("nothing wired should mean nothing shown")
+	}
+}

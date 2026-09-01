@@ -1,5 +1,10 @@
 package domain
 
+import (
+	"crypto/sha256"
+	"encoding/hex"
+)
+
 // WhyReported is a third class beside stated and inferred (ADR 0003, ADR 0043).
 //
 // `stated` is the agent's own words. `inferred` is a model's guess. `reported`
@@ -75,8 +80,15 @@ func (r Reported) Ref() string {
 // and a key that moved would lose every dismissal on the file every time
 // anything was added to the top of it. Tool, rule, file and the tool's own
 // message are stable across exactly the runs where it is the same finding.
+//
+// Hashed rather than joined, because this travels: it goes into an HTML form
+// value, back through a POST, and into a JSON object as a key. A separator
+// that is a control character survives none of those reliably, and the failure
+// is silent — a dismissal that is written down and never matches anything
+// again.
 func (r Reported) Key() string {
-	return r.Tool + "\x00" + r.Rule + "\x00" + r.File + "\x00" + r.Message
+	sum := sha256.Sum256([]byte(r.Tool + "\x00" + r.Rule + "\x00" + r.File + "\x00" + r.Message))
+	return hex.EncodeToString(sum[:12])
 }
 
 // itoa is strconv.Itoa without the import. This package deliberately depends on

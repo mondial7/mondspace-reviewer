@@ -166,6 +166,8 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 		WithLiveActions(liveActions()).
 		WithSignoff(saveSignoff(), loadSignoff()).
 		WithAnalyses(runAnalysis(pool, agent.For(domain.Narration).Model), analysisOf()).
+		WithReported(reportedOf(), dismissReported()).
+		WithTools(toolsOf()).
 		WithJudge(judgeFinding()).
 		WithSearch(searchWorkspace()).
 		WithLog(buildLog(repo)).
@@ -213,6 +215,11 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 		fingerprint: usecase.ChangeFingerprint(view.Units, view.Diffs), narrate: narrate,
 	})
 	go refreshAgent(ctx, handler, pool, &agent)
+
+	// The first reading of the change that is already there. A review opened on
+	// a commit nobody is working on never "moves", so waiting for quiescence
+	// would mean waiting forever (ADR 0043).
+	go scanTarget(ctx, initial)
 
 	// The refresher above watches one review. This watches the repository
 	// itself, which is how a commit or a tag that belongs to some *other*
@@ -597,7 +604,25 @@ func refreshReview(ctx context.Context, r reviewRefresher) {
 			}
 		}
 		refreshOnce(ctx, &r, &state)
+		maybeScan(ctx, r.sessionID, &state)
 	}
+}
+
+// maybeScan runs the deterministic analysers once the repository has held still
+// (ADR 0043).
+//
+// Debounced on quiescence rather than run on the tick: this is a subprocess per
+// tool, and firing one at an agent mid-write costs a process to be told about a
+// syntax error that will not exist a second later.
+//
+// In the background, because the poll loop is what keeps the page current and
+// nothing here is worth delaying that for.
+func maybeScan(ctx context.Context, targetID string, state *refreshState) {
+	if state.moved.IsZero() || time.Since(state.moved) < scanQuiet {
+		return
+	}
+	state.moved = time.Time{}
+	go scanTarget(ctx, targetID)
 }
 
 // refreshState is what one pass has to remember from the last.
@@ -606,6 +631,10 @@ type refreshState struct {
 	// current one is the whole idle path.
 	probe         string
 	lastNarration time.Time
+	// moved is when the review last changed, and scanning is what waits for it
+	// to stop. An agent writes a file several times in a row, and a linter over
+	// a half-written file reports a syntax error as a finding (ADR 0043).
+	moved time.Time
 }
 
 // refreshOnce is one pass of the loop above. It returns nothing: every outcome
@@ -657,6 +686,10 @@ func refreshOnce(ctx context.Context, r *reviewRefresher, state *refreshState) {
 			Units: units, Notes: usecase.PlaceNotes(units, sess.Notes),
 			Diffs: diffs,
 		}, usecase.FileHistories(sess.Events, units))
+	}
+
+	if changed {
+		state.moved = time.Now()
 	}
 
 	commits, _ := r.snap.CommitsSince(ctx, firstEventTime(sess))

@@ -277,21 +277,24 @@ type Server struct {
 
 	// pending is work that arrived after this review was opened, waiting for
 	// the reviewer to decide what to do with it (ADR 0020).
-	pending        domain.Pending
-	include        IncludeFunc
-	split          SplitFunc
-	signoff        SignoffFunc
-	signoffOf      SignoffOf
-	signErr        string
-	runAnalysis    RunAnalysisFunc
-	judge          JudgeFindingFunc
-	search         SearchFunc
-	analysisOf     AnalysisOf
-	logOf          LogOf
-	showAll        ShowAllFunc
-	branchesOf     BranchesOf
-	remoteWatch    RemoteWatchState
-	setRemoteWatch SetRemoteWatch
+	pending         domain.Pending
+	include         IncludeFunc
+	split           SplitFunc
+	signoff         SignoffFunc
+	signoffOf       SignoffOf
+	signErr         string
+	runAnalysis     RunAnalysisFunc
+	reportedOf      ReportedOf
+	dismissReported DismissFunc
+	toolsOf         ToolsFunc
+	judge           JudgeFindingFunc
+	search          SearchFunc
+	analysisOf      AnalysisOf
+	logOf           LogOf
+	showAll         ShowAllFunc
+	branchesOf      BranchesOf
+	remoteWatch     RemoteWatchState
+	setRemoteWatch  SetRemoteWatch
 
 	// subs are live subscribers (server-sent events). Each gets a buffered
 	// channel so a slow reader can never block a request handler.
@@ -1163,6 +1166,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /analysis/{kind}", s.handleReport)
 	s.mux.HandleFunc("POST /analysis/{kind}", s.handleAnalysis)
 	s.mux.HandleFunc("POST /analysis/{kind}/judge", s.handleJudge)
+	s.mux.HandleFunc("POST /reported/dismiss", s.handleDismissReported)
 	s.mux.HandleFunc("POST /live/include", s.handleInclude)
 	s.mux.HandleFunc("POST /live/split", s.handleSplit)
 	s.mux.HandleFunc("GET /events", s.handleEvents)
@@ -1371,6 +1375,12 @@ func (s *Server) Attention() <-chan struct{} { return s.attention }
 // broadcast tells every live page that something changed. It never blocks: a
 // subscriber that is not keeping up simply misses this nudge, and the next one
 // (or its own reload) brings it back in sync.
+// Broadcast tells every open page that one named thing changed. It is exported
+// for the background work that happens outside a request — the deterministic
+// analysers finishing, most of all, since nothing asked for those and nothing
+// is waiting on them.
+func (s *Server) Broadcast(event string) { s.broadcast(event) }
+
 func (s *Server) broadcast(event string) {
 	s.send(sseEvent{Name: event, Data: "{}"})
 }
@@ -1712,6 +1722,86 @@ func (s *Server) handleJudge(w http.ResponseWriter, r *http.Request) {
 	}
 	s.broadcast("analysis")
 	http.Redirect(w, r, backTo(r, "#analyses"), http.StatusSeeOther)
+}
+
+// ReportedOf reads the deterministic findings for one review — the fourth
+// reading, and the only one that is not a model (ADR 0043).
+//
+// It never blocks and never fails: an analyser that is not installed, is
+// broken, or has not finished yet is a review with nothing reported, which is
+// the same shape as a review with nothing wrong with it. The settings page is
+// where the difference is stated.
+type ReportedOf func(targetID string) []domain.Reported
+
+// DismissFunc records what a reviewer made of one deterministic finding.
+// Keyed by the finding's own identity rather than by its line, so a diff
+// growing above it does not lose the ruling.
+type DismissFunc func(ctx context.Context, targetID, key string, verdict domain.Verdict) error
+
+// ToolStatus is one deterministic analyser as the settings page needs it:
+// whether it is here, what it is for, and what went wrong if anything did.
+type ToolStatus struct {
+	Name    string
+	Why     string
+	Present bool
+	Version string
+	Absent  string
+	Failed  string
+}
+
+// ToolsFunc is every analyser msr looked for and what became of it.
+type ToolsFunc func() []ToolStatus
+
+// WithReported wires the deterministic layer: reading its findings, and ruling
+// on one.
+func (s *Server) WithReported(of ReportedOf, dismiss DismissFunc) *Server {
+	s.reportedOf, s.dismissReported = of, dismiss
+	return s
+}
+
+// WithTools wires what the settings page says about the analysers.
+func (s *Server) WithTools(fn ToolsFunc) *Server {
+	s.toolsOf = fn
+	return s
+}
+
+// handleDismissReported records a ruling on one deterministic finding.
+//
+// The same discipline as a model's finding (ADR 0030): it stays on the list,
+// greyed, because deleting it would invite the next run of the tool to raise
+// the same thing as though nobody had ever looked at it — and a deterministic
+// tool will raise it again, every time, which is the point of it.
+func (s *Server) handleDismissReported(w http.ResponseWriter, r *http.Request) {
+	s.mu.RLock()
+	dismiss := s.dismissReported
+	s.mu.RUnlock()
+	if dismiss == nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	verdict := domain.Verdict(r.FormValue("verdict"))
+	if verdict != domain.VerdictDismissed && verdict != domain.VerdictConfirmed {
+		http.Error(w, "unknown verdict", http.StatusBadRequest)
+		return
+	}
+	target, ok := s.actionTarget(r)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+
+	if err := dismiss(r.Context(), target, r.FormValue("key"), verdict); err == nil {
+		s.Record(AuditEntry{
+			SessionID: target, Action: "reported-" + string(verdict),
+			Detail: usecase.Brief(r.FormValue("what"), 90),
+		})
+	}
+	s.broadcast("reported")
+	http.Redirect(w, r, backTo(r, "#changes-col"), http.StatusSeeOther)
 }
 
 // RunAnalysisFunc runs one audit over one target. AnalysisOf reads back
@@ -2558,6 +2648,11 @@ type feedItem struct {
 	// are not orphaned — the line is still in the file — so they must not be
 	// reported as though the code had moved under them.
 	HiddenNotes int
+	// Reported is what the deterministic analysers said about this file. It
+	// sits against the file rather than on a card of its own, because "is
+	// there anything mechanically wrong with what I am reading" is a question
+	// about the file (ADR 0043).
+	Reported usecase.FileFindings
 }
 
 // groupView is a set of files that changed together, with one model-written
@@ -2697,6 +2792,25 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 	// Files that changed together are shown together: five files under one
 	// package is one act of work, not five entries.
 	groups := make([]groupView, 0, 8)
+	// The fourth reading, before the files are assembled, so each one can carry
+	// what was said about it (ADR 0043).
+	//
+	// Nothing is said unless an analyser actually ran. msr ships none and
+	// installs none, and a machine with none on its PATH should see no mention
+	// of the whole layer rather than a line reporting that it found nothing.
+	s.mu.RLock()
+	reportedOf := s.reportedOf
+	s.mu.RUnlock()
+
+	var reported usecase.ReportedView
+	if ran := installedTools(s.tools()); reportedOf != nil && len(ran) > 0 {
+		reported = usecase.GroupReported(reportedOf(sess.ID), sess.Units)
+		// The tools that are *here*, not the ones that happened to find
+		// something. "gosec found nothing" and "gosec is not installed" are the
+		// two states this layer must never confuse.
+		reported.Tools = ran
+	}
+
 	for _, g := range usecase.GroupChanges(ordered, sess.Diffs) {
 		gv := groupView{
 			ID: g.ID, Dir: dirName(g.Dir), Added: g.Added, Removed: g.Removed,
@@ -2720,42 +2834,45 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 			gv.Files = append(gv.Files, feedItem{
 				unitView: v, Hidden: hidden,
 				HiddenNotes: notesOffScreen(v.Diff, notes, v.Orphaned),
+				Reported:    reported.FindingsFor(v.File),
 			})
 		}
 		groups = append(groups, gv)
 	}
 
 	data := struct {
-		Session         Session
-		Workspace       []SessionSummary
-		Targets         []TargetSummary
-		Repos           []RepoStatus
-		CanCompare      bool
-		Review          reviewStatus
-		Stats           cockpitStats
-		Narrative       domain.Narrative
-		Chapters        []chapterView
-		Groups          []groupView
-		Tree            []domain.TreeNode
-		Flags           []flagCount
-		CanDescribe     bool
-		CanDescribeFile bool
-		Work            []Work
-		Thread          []Exchange
-		HasAsk          bool
-		HasThread       bool
-		HasReanal       bool
-		CanRetry        bool
-		Narrating       bool
-		Pending         domain.Pending
-		Signoff         usecase.SignoffView
-		HasSignoff      bool
-		CanSignoff      bool
-		Analyses        []analysisCard
-		CanAnalyse      bool
-		CanRunAnalysis  bool
-		Log             LogView
-		HasLog          bool
+		Session            Session
+		Workspace          []SessionSummary
+		Targets            []TargetSummary
+		Repos              []RepoStatus
+		CanCompare         bool
+		Review             reviewStatus
+		Stats              cockpitStats
+		Narrative          domain.Narrative
+		Chapters           []chapterView
+		Groups             []groupView
+		Tree               []domain.TreeNode
+		Flags              []flagCount
+		Reported           usecase.ReportedView
+		CanDismissReported bool
+		CanDescribe        bool
+		CanDescribeFile    bool
+		Work               []Work
+		Thread             []Exchange
+		HasAsk             bool
+		HasThread          bool
+		HasReanal          bool
+		CanRetry           bool
+		Narrating          bool
+		Pending            domain.Pending
+		Signoff            usecase.SignoffView
+		HasSignoff         bool
+		CanSignoff         bool
+		Analyses           []analysisCard
+		CanAnalyse         bool
+		CanRunAnalysis     bool
+		Log                LogView
+		HasLog             bool
 		// Checkpoints is the history and everything else worth reviewing, in
 		// one list in time order.
 		Checkpoints []Checkpoint
@@ -2780,9 +2897,11 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 		Review:    describeReview(narrative, groupIDs(groups), narrating, s.narrate != nil, s.now()),
 		Stats:     statsFor(sess.Target.Kind, stats, sess.Target.Subtitle),
 		Narrative: narrative, Chapters: chapters, Groups: groups,
-		Tree:        usecase.FileTree(sess.Units, sess.Diffs),
-		Flags:       flagTally(sess.Units),
-		CanDescribe: canDescribe, CanDescribeFile: canDescribeFile, Work: work,
+		Tree:               usecase.FileTree(sess.Units, sess.Diffs),
+		Flags:              flagTally(sess.Units),
+		Reported:           reported,
+		CanDismissReported: s.dismissReported != nil,
+		CanDescribe:        canDescribe, CanDescribeFile: canDescribeFile, Work: work,
 		Thread: thread, HasAsk: hasAsk, HasReanal: hasReanal,
 		CanRetry: canRetry, Narrating: narrating,
 	}
@@ -3043,6 +3162,7 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		Candidates         []RepoStatus
 		Work               []Work
 		Habits             []habit
+		Tools              []ToolStatus
 		RepoErr            string
 		AgentErr           string
 		CanAddRepo         bool
@@ -3063,6 +3183,7 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		ReasoningShare: reasoningShare, SkipIgnored: skipIgnored,
 		Sessions: sessions, Repos: repos, Candidates: candidates, Work: work,
 		Habits:  s.habits(),
+		Tools:   s.tools(),
 		RepoErr: repoErr, AgentErr: agentErr,
 		CanAddRepo: canAddRepo, CanRemoveRepo: s.removeRepo != nil,
 		CanConfigure: canConfigure, WorkloadForm: workloadForm(agent),
@@ -3071,6 +3192,31 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.render(w, "settings.html", data)
+}
+
+// installedTools names the analysers that are actually on this machine.
+func installedTools(all []ToolStatus) []string {
+	var out []string
+	for _, t := range all {
+		if t.Present {
+			out = append(out, t.Name)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// tools is what the deterministic analysers came to, for the settings page.
+// Nothing wired means nothing shown: msr ships no analysers, and a machine with
+// none installed should see no panel about them (ADR 0043).
+func (s *Server) tools() []ToolStatus {
+	s.mu.RLock()
+	of := s.toolsOf
+	s.mu.RUnlock()
+	if of == nil {
+		return nil
+	}
+	return of()
 }
 
 // habit is one thing a reviewer does, and how often they have done it.

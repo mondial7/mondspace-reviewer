@@ -476,6 +476,40 @@
       {{ end }}
     </section>
 
+    <!-- The fourth reading: deterministic, reproducible, and not a model. msr
+         ships none of these and installs none of them; this says which are on
+         this machine and which are not, because a reviewer who believes gosec
+         is running and finds out here that it is not has learnt something
+         (ADR 0043). -->
+    {{ with .Tools }}
+    <section class="board__panel">
+      <h2 class="board__title">analysers</h2>
+      {{ range . }}
+      <div class="board__row">
+        <span class="board__key">{{ .Name }}</span>
+        <span class="board__val {{ if .Present }}board__val--up{{ end }}">
+          {{ if .Present }}{{ if .Version }}{{ .Version }}{{ else }}here{{ end }}
+          {{ else }}{{ if .Absent }}{{ .Absent }}{{ else }}not looked for yet{{ end }}{{ end }}
+          {{ with .Why }}<span class="board__hint">{{ . }}</span>{{ end }}
+        </span>
+      </div>
+      {{ with .Failed }}
+      <!-- Reported here and nowhere else. A crashing analyser must not
+           interrupt a review, and must especially not interrupt it every five
+           seconds (ADR 0043). -->
+      <p class="agentform__warn">{{ . }}</p>
+      {{ end }}
+      {{ end }}
+      <p class="setting__note">
+        Nothing here is bundled with msr or installed by it. Each is used only if
+        it is already on your <code>PATH</code>; a repository can add its own, or
+        turn one of these off, in <code>.msr.toml</code>. Findings are scoped to
+        the lines a change actually added, so a repository full of pre-existing
+        lint does not drown the one thing that is new.
+      </p>
+    </section>
+    {{ end }}
+
     <!-- What actually gets used, counted from this workspace's own log. It is
          here to answer one question before more is built on top of the story:
          is it read, or is it written once and folded away (ADR 0042)? -->

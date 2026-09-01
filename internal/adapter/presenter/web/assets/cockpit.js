@@ -579,3 +579,34 @@ document.addEventListener('click', (e) => {
   e.preventDefault();
   expandDiff(link);
 });
+
+
+// ── Only the files with something in them ───────────────────────────────────
+//
+// The "go faster" affordance (ADR 0043). A deterministic analyser knows which
+// files have nothing mechanically wrong with them, and the honest use of that
+// is not to hide them permanently but to let a reviewer skip them on the pass
+// where they are looking for exactly that.
+//
+// It hides rather than filters the list: the count in the summary line above
+// still says how many files there are, so nothing has quietly disappeared.
+
+const onlyToggle = document.querySelector('[data-only-findings]');
+
+if (onlyToggle) {
+  onlyToggle.addEventListener('click', () => {
+    const on = onlyToggle.getAttribute('aria-pressed') !== 'true';
+    onlyToggle.setAttribute('aria-pressed', String(on));
+    onlyToggle.textContent = on ? 'show every file' : 'only these files';
+
+    for (const post of document.querySelectorAll('.post[data-reported]')) {
+      post.hidden = on && post.dataset.reported === '0';
+    }
+    // A group whose every file just went away is a heading over nothing.
+    for (const group of document.querySelectorAll('.group')) {
+      const posts = group.querySelectorAll('.post');
+      group.hidden = on && posts.length > 0 &&
+        Array.from(posts).every((p) => p.hidden);
+    }
+  });
+}

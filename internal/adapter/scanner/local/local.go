@@ -32,9 +32,12 @@ import (
 // for it.
 const Cap = 30 * time.Second
 
-// detectCap bounds the `--version` call. A binary that cannot answer that in a
-// second is not going to analyse anything in thirty.
-const detectCap = 2 * time.Second
+// detectCap bounds the `--version` call. Generous for what it is, because it is
+// paid once per tool per process and the cost of getting it wrong is a tool
+// that is installed being reported as absent — which is worse than waiting.
+// Several of these are shell wrappers that start a JVM or a Python interpreter
+// to answer.
+const detectCap = 8 * time.Second
 
 // Scanner is the analysers this machine has, and what they have already said.
 type Scanner struct {

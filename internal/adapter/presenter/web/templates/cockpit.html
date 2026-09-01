@@ -468,6 +468,24 @@
       </p>
       {{ end }}
 
+      <!-- What the deterministic analysers made of this change: one line, and
+           the affordance for going faster — skip to the files that have
+           something (ADR 0043). Reported, not inferred: a reviewer can act on
+           these without checking them first. -->
+      {{ with .Reported.Summary }}
+      <p class="reportbar{{ if $.Reported.Any }} reportbar--found{{ end }}">
+        <span class="why why--reported">reported</span>
+        <span class="reportbar__text">{{ . }}</span>
+        {{ if $.Reported.Any }}
+        <button class="act act--quiet reportbar__only" type="button" data-only-findings
+                aria-pressed="false">only these files</button>
+        {{ end }}
+        {{ with $.Reported.Tools }}
+        <span class="reportbar__tools" title="the analysers that ran; anything not listed is not installed">{{ range $i, $t := . }}{{ if $i }} · {{ end }}{{ $t }}{{ end }}</span>
+        {{ end }}
+      </p>
+      {{ end }}
+
       <ol class="tree" id="tree-view" hidden>
         {{ range .Tree }}
         <li class="tree__row tree__row--{{ if .IsDir }}dir{{ else }}file{{ end }}"
@@ -511,7 +529,8 @@
         <!-- Folded by default: a hundred open diffs is not a review. Clicking
              the file opens it. Native <details>, so it needs no JavaScript. -->
         <details class="post" id="unit-{{ .ID }}" data-file="{{ .File }}" data-added="{{ .Added }}"
-                 data-removed="{{ .Removed }}" data-flags="{{ len .Flags }}">
+                 data-removed="{{ .Removed }}" data-flags="{{ len .Flags }}"
+                 data-reported="{{ len .Reported.New }}">
           <summary class="post__head">
             <span class="post__file" title="{{ .File }}">{{ .Name }}</span>
             <span class="post__stats">
@@ -519,6 +538,12 @@
               <span class="unit__stat unit__stat--del">-{{ .Removed }}</span>
             </span>
             {{ range .Flags }}<span class="flag flag--{{ . }}">{{ . }}</span>{{ end }}
+            <!-- A count of the deterministic findings survives the fold, for the
+                 same reason a note count does: this is the file list, and it has
+                 to say which files are worth opening. -->
+            {{ if .Reported.New }}
+            <span class="post__reported post__reported--{{ .Reported.Worst }}">{{ len .Reported.New }} reported</span>
+            {{ end }}
             <!-- A note count survives the fold: an annotated file must still be
                  findable without opening every one. -->
             {{ with .Notes }}<span class="post__notecount">{{ len . }} note(s)</span>{{ end }}
@@ -552,6 +577,56 @@
           {{ end }}
           {{ if and .Why (ne .WhySrc "") }}
           <p class="post__why"><span class="why why--{{ .WhySrc }}">{{ .WhySrc }}</span>{{ .Why }}</p>
+          {{ end }}
+
+          <!-- What a tool said about this file. Reported, not inferred: it names
+               the tool and the rule, it is the same answer every time, and it is
+               the only class here a reviewer can act on without checking it
+               first (ADR 0043). -->
+          {{ if .Reported.New }}
+          <ul class="reported">
+            {{ $unit := . }}
+            {{ range .Reported.New }}
+            <li class="reported__item reported__item--{{ .Severity }}">
+              <span class="reported__where">
+                <span class="sev sev--{{ .Severity }}">{{ .Severity }}</span>
+                <code class="reported__rule">{{ .Ref }}</code>
+                <span class="reported__line">{{ .Where }}</span>
+              </span>
+              <span class="reported__msg">{{ .Message }}</span>
+              {{ if $.CanDismissReported }}
+              <form class="reported__judge" method="post"
+                    action="/reported/dismiss?target={{ $.Session.ID }}">
+                <input type="hidden" name="key" value="{{ .Key }}">
+                <input type="hidden" name="what" value="{{ .Ref }} {{ .Where }}">
+                <input type="hidden" name="verdict" value="dismissed">
+                <button class="act act--quiet" type="submit">dismiss — not a problem</button>
+              </form>
+              {{ end }}
+            </li>
+            {{ end }}
+          </ul>
+          {{ end }}
+
+          <!-- Already here before anybody opened this review. Counted rather
+               than hidden: silently showing none and silently hiding forty look
+               the same from here, and one of them means the tool is broken. -->
+          {{ with .Reported.Standing }}
+          <details class="prexisting">
+            <summary class="post__moresummary">{{ len . }} finding(s) already in this file</summary>
+            <ul class="reported reported--standing">
+              {{ range . }}
+              <li class="reported__item">
+                <span class="reported__where">
+                  <span class="sev sev--{{ .Severity }}">{{ .Severity }}</span>
+                  <code class="reported__rule">{{ .Ref }}</code>
+                  <span class="reported__line">{{ .Where }}</span>
+                </span>
+                <span class="reported__msg">{{ .Message }}</span>
+              </li>
+              {{ end }}
+            </ul>
+          </details>
           {{ end }}
 
           {{ with .Notes }}

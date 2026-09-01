@@ -119,7 +119,7 @@ func BuiltInAnalysers() []Analyser {
 			// better than anything msr could do after the fact: it knows which
 			// findings its own linters would have produced before.
 			Detect: []string{"golangci-lint", "--version"},
-			Run: []string{"golangci-lint", "run", "--out-format", "sarif",
+			Run: []string{"golangci-lint", "run", "--output.sarif.path=stdout",
 				"--new-from-rev", "{base}", "{dirs}"},
 			Format:   FormatSARIF,
 			Scope:    ScopeDirs,

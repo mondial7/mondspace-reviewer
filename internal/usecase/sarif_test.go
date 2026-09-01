@@ -105,3 +105,15 @@ func TestAFindingWithNothingToSayIsDropped(t *testing.T) {
 		t.Errorf("an empty message is not a finding: %+v", got)
 	}
 }
+
+func TestASARIFDocumentIsFoundAmongWhateverElseWasPrinted(t *testing.T) {
+	// golangci-lint prints its own summary after the document; other tools
+	// print a banner before it. Neither is a reason to lose the report.
+	a := analyserNamed(t, "gosec")
+	wrapped := "loading config…\n" + gosecSARIF + "\n14 issues:\n* errcheck: 4\n"
+
+	got := usecase.ReadFindings(a, wrapped, "/repo")
+	if len(got) != 2 {
+		t.Fatalf("got %d findings, want 2", len(got))
+	}
+}

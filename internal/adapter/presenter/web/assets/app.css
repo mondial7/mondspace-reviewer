@@ -25,6 +25,10 @@
   --accent: #a78bfa;
   --stated: #4fdc95;
   --inferred: #ffcc70;
+  /* A third class beside those two, and it needs a colour of its own or the
+     distinction is a word nobody reads (ADR 0043). Cool and definite: not the
+     green of "the agent said so", not the amber of "something guessed this". */
+  --reported: #5cc2ff;
 
   /* The isometric field is solid geometry, not type. On a dark ground the two
      wants coincide, so these repeat the signal colours; on a light one they
@@ -73,6 +77,7 @@
   --accent: #6d3fb5;
   --stated: #1d7a45;
   --inferred: #7a5c00;
+  --reported: #0d6a86;
   --solid-add: #35b06f;
   --solid-del: #ef5f76;
   --solid-ctx: #8e6ae8;
@@ -96,6 +101,7 @@
   --accent: #6d3fb5;
   --stated: #1d7a45;
   --inferred: #7a5c00;
+  --reported: #0d6a86;
   --solid-add: #35b06f;
   --solid-del: #ef5f76;
   --solid-ctx: #8e6ae8;
@@ -125,6 +131,7 @@
   --accent: #8287cd;     /* violet */
   --stated: #859900;
   --inferred: #b58900;   /* yellow */
+  --reported: #2f93d9;   /* blue */
   --solid-add: #859900;   /* the canonical accents, unpulled: they were never */
   --solid-del: #dc322f;   /* meant to be read as words, and as material they   */
   --solid-ctx: #6c71c4;
@@ -147,6 +154,7 @@
   --accent: #6369c1;
   --stated: #697800;
   --inferred: #8f6c00;
+  --reported: #2076b3;
   --solid-add: #859900;
   --solid-del: #dc322f;
   --solid-ctx: #6c71c4;
@@ -3401,3 +3409,100 @@ a.log__branch:hover { text-decoration: underline; }
 }
 
 .page--folded .sidenav__aside::before { content: ""; }
+
+/* ── Reported ───────────────────────────────────────────────────────────────
+   A third class beside stated and inferred (ADR 0003, ADR 0043). It names its
+   tool and its rule, it is the same answer every time it is asked, and it is
+   the only one of the three a reviewer can act on without checking it first.
+
+   That last property is what the styling has to carry: this looks solid where
+   `inferred` looks provisional, and it does it without a paragraph explaining
+   the difference. */
+
+.why--reported { color: var(--reported); }
+
+.reportbar {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin: 0 0 0.6rem;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--fg-dim);
+  border-radius: 7px;
+  font-size: 0.74rem;
+  color: var(--fg-dim);
+}
+
+/* Coloured only when there is something to act on. A clean result is a result,
+   and it should read as calmly as it deserves to. */
+.reportbar--found { border-left-color: var(--reported); }
+
+.reportbar__text { color: var(--fg); font-family: var(--sans); }
+.reportbar__tools { margin-left: auto; font-family: var(--mono); font-size: 0.66rem; }
+.reportbar__only { margin-left: 0.2rem; }
+
+/* On the folded file, beside the note count: this is the file list, and it has
+   to say which files are worth opening. */
+.post__reported {
+  color: var(--reported);
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.post__reported--high { color: var(--del); }
+
+.reported {
+  margin: 0.4rem 0 0.6rem;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.reported__item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.35rem 0.5rem;
+  border-left: 2px solid var(--reported);
+  border-radius: 0 5px 5px 0;
+  background: color-mix(in srgb, var(--reported) 7%, transparent);
+}
+
+.reported__item--high { border-left-color: var(--del); }
+
+.reported__where {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  font-size: 0.7rem;
+  color: var(--fg-dim);
+}
+
+/* The rule id, verbatim, in monospace: it is the thing you paste into the
+   tool's own config to silence it, or into a search to read about it. */
+.reported__rule { font-family: var(--mono); color: var(--fg); }
+.reported__line { font-family: var(--mono); }
+
+.reported__msg {
+  color: var(--fg);
+  font-family: var(--sans);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.reported__judge { margin-top: 0.1rem; }
+
+/* Pre-existing findings are behind a fold and drained of colour. They are here
+   so the count is honest, not so anybody reads them today. */
+.reported--standing .reported__item {
+  border-left-color: var(--fg-dim);
+  background: none;
+  opacity: 0.75;
+}
+
+.prexisting { margin: 0 0 0.5rem; }
