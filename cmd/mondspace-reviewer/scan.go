@@ -101,6 +101,12 @@ func scanTarget(ctx context.Context, targetID string) {
 
 	// Which of these this change actually caused, and which were already here.
 	found = usecase.MarkNew(found, units, diffs)
+
+	// And msr's own rules, which were always a hand-rolled static analyser and
+	// are now one of the analysers rather than a mechanism running beside them
+	// (ADR 0043). Appended after MarkNew because they are derived from the
+	// change's own diff: there is no version of them that was already there.
+	found = append(found, usecase.FlagFindings(units, diffs)...)
 	if rulings, err := jsonl.New(entry.out).LoadDismissals(targetID); err == nil {
 		found = usecase.ApplyDismissals(found, rulings)
 	}

@@ -298,3 +298,47 @@ func TestFlagNoTest(t *testing.T) {
 		})
 	}
 }
+
+// ── The flags, absorbed (ADR 0043) ──────────────────────────────────────────
+
+func TestOnlyTheFlagsThatMeanStopBecomeFindings(t *testing.T) {
+	// `no-test` is true of half the files in a normal review. Making it a
+	// finding would put "12 of 14 files have findings" on every page, which is
+	// exactly what ADR 0041 stopped the flag colours from saying.
+	units := []domain.Unit{{ID: "u1", Files: []string{"api/handler.go"}}}
+	diffs := map[string]domain.Diff{"u1": {Text: "@@\n+\t_ = f.Close()\n"}}
+
+	got := usecase.FlagFindings(units, diffs)
+	if len(got) != 1 {
+		t.Fatalf("got %+v, want just the swallowed error", got)
+	}
+	if got[0].Tool != "msr" || got[0].Rule != string(domain.FlagSwallowedErr) {
+		t.Errorf("finding = %+v; msr's own rules still have to name themselves", got[0])
+	}
+	if got[0].Ref() != "msr/swallowed-err" {
+		t.Errorf("Ref() = %q", got[0].Ref())
+	}
+	if got[0].File != "api/handler.go" {
+		t.Errorf("file = %q", got[0].File)
+	}
+	if !got[0].New {
+		t.Error("a flag is derived from this change's own diff; there is no version of it that was already there")
+	}
+	if got[0].Message == "" {
+		t.Error("a finding is a sentence, not a word — the word is the chip")
+	}
+}
+
+func TestAQuietFlagStaysAChip(t *testing.T) {
+	units := []domain.Unit{{ID: "u1", Files: []string{"api/handler.go"}}}
+	diffs := map[string]domain.Diff{"u1": {Text: "@@\n+// TODO: later\n"}}
+
+	// The flag is still produced — one producer, two renderings.
+	flags := usecase.Flags(units[0], diffs["u1"])
+	if len(flags) == 0 {
+		t.Fatal("the flag rules should still fire")
+	}
+	if got := usecase.FlagFindings(units, diffs); len(got) != 0 {
+		t.Errorf("got %+v; a todo is a fact about the change, not a warning", got)
+	}
+}

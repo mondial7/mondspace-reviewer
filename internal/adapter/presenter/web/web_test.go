@@ -3075,14 +3075,28 @@ func TestAReviewWithNothingReportedStillSaysSo(t *testing.T) {
 	}
 }
 
-func TestAnAnalyserThatIsNotInstalledIsNotReportedAsClean(t *testing.T) {
-	// The distinction this layer is least able to survive getting wrong.
+func TestAnAnalyserThatIsNotInstalledIsNotListedAsHavingLooked(t *testing.T) {
+	// The distinction this layer is least able to survive getting wrong:
+	// "gosec found nothing" and "gosec is not installed" are not the same
+	// sentence, and only one of them is about the code.
 	h := web.NewServer(testSession(), nil).
 		WithReported(func(string) []domain.Reported { return nil }, nil).
-		WithTools(func() []web.ToolStatus { return []web.ToolStatus{{Name: "gosec"}} })
+		WithTools(func() []web.ToolStatus {
+			return []web.ToolStatus{{Name: "gosec"}, {Name: "go vet", Present: true}}
+		})
 
-	if strings.Contains(get(t, h, "/").Body.String(), "Nothing to report") {
-		t.Error("a tool that is not installed found nothing because it never ran")
+	body := get(t, h, "/").Body.String()
+	tools := body[strings.Index(body, "reportbar__tools"):]
+	tools = tools[:min(len(tools), 200)]
+	if strings.Contains(tools, "gosec") {
+		t.Errorf("gosec is not installed and did not look:\n%s", tools)
+	}
+	if !strings.Contains(tools, "go vet") {
+		t.Errorf("go vet did look and should be named:\n%s", tools)
+	}
+	// msr's own rules are a static analyser that happens to be compiled in.
+	if !strings.Contains(tools, "msr") {
+		t.Errorf("msr's own rules always run and should be named:\n%s", tools)
 	}
 }
 

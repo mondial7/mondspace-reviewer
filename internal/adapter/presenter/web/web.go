@@ -2803,12 +2803,12 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 	s.mu.RUnlock()
 
 	var reported usecase.ReportedView
-	if ran := installedTools(s.tools()); reportedOf != nil && len(ran) > 0 {
+	if reportedOf != nil {
 		reported = usecase.GroupReported(reportedOf(sess.ID), sess.Units)
 		// The tools that are *here*, not the ones that happened to find
 		// something. "gosec found nothing" and "gosec is not installed" are the
 		// two states this layer must never confuse.
-		reported.Tools = ran
+		reported.Tools = installedTools(s.tools())
 	}
 
 	for _, g := range usecase.GroupChanges(ordered, sess.Diffs) {
@@ -3194,9 +3194,19 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	s.render(w, "settings.html", data)
 }
 
-// installedTools names the analysers that are actually on this machine.
+// installedTools names the analysers that actually ran.
+//
+// msr's own rules are always among them: they are a static analyser that
+// happens to be compiled in rather than found on PATH, and leaving them off the
+// list would mean a page reporting nothing with nothing named as having looked
+// (ADR 0043).
+//
+// Naming the ones that are *here* rather than the ones that found something is
+// the point of the list. "gosec found nothing" and "gosec is not installed" are
+// the two states this layer must never confuse, and the settings page says
+// which of the two it is.
 func installedTools(all []ToolStatus) []string {
-	var out []string
+	out := []string{"msr"}
 	for _, t := range all {
 		if t.Present {
 			out = append(out, t.Name)
