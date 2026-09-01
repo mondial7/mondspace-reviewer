@@ -5,3 +5,6 @@
 dist/
 /tmp/
 .mondspace-reviewer/
+
+# Scratch files used while looking at the interface. Never committed.
+zz_scratch*.go

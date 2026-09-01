@@ -13,17 +13,28 @@ produce four groups, several flags and a story worth reading.
 | `cockpit-status.png` | the model, what it has cost, and the workspace |
 | `tutorial.png` | the built-in tour at `/tutorial` |
 | `cockpit-analyses.png` | the three analysis cards, with real findings |
+| `cockpit-reported.png` | what the deterministic analysers found, against the file |
 | `cockpit-log.png` | the history card, with a colleague's commit incoming |
 | `branches.png` | every branch on the remote, with what there is to review |
 
 To recapture: run `msr web`, narrate a target, then screenshot at 1600×1000.
-Headless Chrome works:
+Headless Chrome works, with two flags that are not optional:
 
 ```sh
 "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
-  --headless=new --hide-scrollbars --window-size=1600,1000 \
-  --screenshot=out.png http://127.0.0.1:7777/
+  --headless=new --no-first-run --disable-component-update \
+  --hide-scrollbars --window-size=1600,1000 --virtual-time-budget=5000 \
+  --screenshot=out.png "http://127.0.0.1:7777/?still=1"
 ```
+
+`?still=1` serves the page without its live stream. The cockpit holds a
+server-sent-events connection open for as long as it is on screen, which is an
+HTTP request that never finishes — and a headless browser waits for it forever.
+Without it this command hangs rather than failing, which is how it went unnoticed.
+
+`--no-first-run --disable-component-update` stops Chrome running its updater
+instead of the browser on a machine where it has not been launched headless
+before.
 
 The page follows the viewer's theme, so pass `data-theme="dark"` on `<html>` (or
 run with a dark system setting) to match the ones committed here.
