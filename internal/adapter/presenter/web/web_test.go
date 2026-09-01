@@ -3034,7 +3034,7 @@ func TestDeterministicFindingsAppearAgainstTheirFile(t *testing.T) {
 		WithReported(func(string) []domain.Reported {
 			return []domain.Reported{{
 				Tool: "gosec", Rule: "G404", File: "auth/token.go", Line: 2,
-				Message: "Use of weak random number generator",
+				Message:  "Use of weak random number generator",
 				Severity: domain.SeverityMedium, New: true,
 			}, {
 				Tool: "staticcheck", Rule: "SA4006", File: "auth/token.go", Line: 9,
