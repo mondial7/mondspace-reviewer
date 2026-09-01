@@ -610,3 +610,34 @@ if (onlyToggle) {
     }
   });
 }
+
+
+// ── Linking to a file ───────────────────────────────────────────────────────
+//
+// The tree view links every file to `#unit-…`, and a <details> does not open
+// because something scrolled to it — so following one of those links landed on
+// a folded file with the diff you were looking for still shut. The same is true
+// of a link shared with a colleague.
+//
+// On load and on every hash change, because both are the same act.
+
+function openLinked() {
+  const id = decodeURIComponent(window.location.hash.slice(1));
+  if (!id) return;
+  const post = document.getElementById(id);
+  if (!(post instanceof HTMLDetailsElement)) return;
+
+  post.open = true;
+  // Scrolled *after* opening, and only then. The browser's own scroll happens
+  // while the file is still folded, so it lands on a summary line with the
+  // diff you followed the link for unfolding somewhere below the viewport.
+  // Instant, not smooth: the column sets `scroll-behavior: smooth`, which is
+  // right when a reader clicks something and wrong when the page is arriving
+  // at where it was told to be.
+  post.scrollIntoView({ block: 'start', behavior: 'instant' });
+}
+
+// After a frame, so the column has laid out with the file open and the scroll
+// lands where the file actually is rather than where it was while folded.
+requestAnimationFrame(openLinked);
+window.addEventListener('hashchange', openLinked);
