@@ -2503,6 +2503,19 @@ a.toast:hover { border-color: var(--kind, var(--accent)); }
   .acard__finding > .acard__judge { grid-column: 1; grid-row: auto; justify-self: start; }
 }
 
+/* The report is not a card in a column: its findings run the full width of a
+   62rem page, and an end-justified control there ends up marooned half a screen
+   from the sentence it belongs to. The viewport query above cannot see that,
+   because the constraint is the container. There is room here for the
+   judgement to sit under what it is about. */
+.report__findings .acard__finding { grid-template-columns: minmax(0, 1fr); }
+.report__findings .acard__finding > .acard__judge {
+  grid-column: 1;
+  grid-row: auto;
+  justify-self: start;
+  margin-top: 0.25rem;
+}
+
 .acard__file {
   color: var(--hunk);
   font-family: var(--mono);
