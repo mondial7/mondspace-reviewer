@@ -160,13 +160,18 @@ it, so the intent behind a commit is one click away ([ADR 0017](ADR/0017-git-fir
 
 ![The msr cockpit](docs/img/cockpit.png)
 
-One page, three columns. Only the two right-hand ones scroll.
+One page, three columns. The log is the product, so it takes the middle; the
+other two are sized around it ([ADR 0040](ADR/0040-the-log-gets-the-middle.md)).
 
 | | |
 | --- | --- |
-| **panel** (fixed) | what this change is, in a sentence; a live isometric field; the numbers |
-| **story** | the change as chapters of prose, and the reviewer assistant |
-| **changes** | every file, folded, with its diff, history and annotation |
+| **story** (folds to a strip) | the change as chapters of prose, and the reviewer assistant |
+| **changes** | every file, folded, with its diff, findings, history and annotation |
+| **panel** (fixed) | what this change is, in a sentence; the history; the numbers |
+
+Two actions carry real button weight — **start review** and **mark this
+reviewed** — and everything else is housekeeping you do while you are already
+here.
 
 A card across the top says whether the assistant has read what you are looking
 at, how long ago, how far it got, and gives you the button to read it again —
@@ -193,9 +198,72 @@ no severity: a small local model rating something "critical" is false precision,
 so the card says `inferred — worth a look, not a verdict`
 ([ADR 0024](ADR/0024-analyses-as-independent-cards.md)).
 
-A card is never ambiguous about which of these it means: *nobody has run this*,
-*it could not run*, and *it ran and found nothing* look different, which on a
-security card is the difference between information and a false sense of safety.
+A card is never ambiguous about which of these it means. Five states, and the
+result is a separate axis from them, so a stale reading can still say what it
+found while saying plainly that the code has moved
+([ADR 0037](ADR/0037-four-things-a-card-can-be.md)):
+
+| | |
+| --- | --- |
+| **absent** | nobody has run this |
+| **running** | with what it is reading |
+| **fresh** | this is the change on screen |
+| **stale** | the code has moved since; the old answer is still here |
+| **failed** | it could not run — which must never look like "found nothing" |
+
+Results are stored per diff, so leaving a review and coming back to an unchanged
+one costs nothing. A rerun re-reads only the files that moved and carries the
+rest forward, dismissals intact
+([ADR 0038](ADR/0038-read-what-moved.md)).
+
+### A fourth reading, and it is not a model
+
+msr detects the deterministic analysers already on your `PATH` and runs them
+over the files a change touched. It ships none of them, installs none of them,
+and says nothing at all on a machine that has none
+([ADR 0043](ADR/0043-a-fourth-reading-that-is-not-a-model.md)).
+
+`golangci-lint`, `go vet`, `staticcheck`, `gosec`, `semgrep`, `gitleaks`,
+`osv-scanner`, `ruff`, `eslint` are recognised out of the box. Findings appear
+against the file they are about, with one line for the review — *3 of 14 files
+have findings* — and a control to skip to just those files.
+
+They are `reported`, a third class beside `stated` and `inferred`. A reported
+finding names its tool and its rule, is the same answer every time it is asked,
+and is the only one of the three you can act on without checking it first.
+
+Findings are scoped to the lines your change added, with the pre-existing ones
+counted and folded away rather than hidden. **compare against the base** is the
+accurate answer, on demand: the same tools over the code as it was, exported
+with `git archive` into a temporary directory — never a registered worktree.
+
+Adding an analyser is a block of `.msr.toml` in the repository, not a commit
+here:
+
+```toml
+# Add one to the defaults.
+[[extra]]
+name    = "house-lint"
+detect  = ["house-lint", "--version"]
+run     = ["house-lint", "--sarif", "{files}"]
+format  = "sarif"          # or "lines", for file:line:col: message
+on      = [".go"]
+scope   = "files"          # or "dirs" for whole-package tools
+
+[extra.severity]
+error   = "high"
+warning = "medium"
+
+# Leave a built-in alone.
+off = ["semgrep"]
+```
+
+`{files}` expands to the changed files, one argument each; `{dirs}` to the
+directories holding them, for tools that cannot analyse one file of a package;
+`{dir}` to the repository root; `{base}` to the ref the review is measured
+against. Listing `[[analyser]]` instead of `[[extra]]` replaces the defaults
+outright. The settings page names every analyser it looked for, which are here,
+and which broke.
 
 **Keep an eye on the rest of the team.** A history card in the panel shows where
 you are against everything that has landed — the commit you are reviewing, what
@@ -340,6 +408,32 @@ a flag you passed  →  MSR_SUMMARIZER_URL / MSR_MODEL  →  the stored settings
 
 A flag left at its default does **not** override what you configured — passing
 `--model` means it for that run, not merely running `msr web` at all.
+
+**Two engines, one table.** If the Claude Code CLI is installed, msr sends the
+three readings you act on — the story, the security pass, the breaking-change
+pass — to it, and keeps the per-file and per-group descriptions on your local
+model. That split is one table in one file,
+[`internal/domain/routing.go`](internal/domain/routing.go), and it is the answer
+to "which model reads my security pass"
+([ADR 0039](ADR/0039-one-table-decides-where-a-question-goes.md)):
+
+| job | engine | fallback |
+| --- | --- | --- |
+| story, security pass, breaking changes | claude cli | local model |
+| group descriptions, file descriptions, questions | local model | — |
+
+Judgement goes to the CLI because a 4B model gets exactly those three wrong
+expensively — a security card that invents a finding sends you to look at
+nothing. Volume stays local because the descriptions are one call per changed
+file, and a paid call each is a bill nobody asked for.
+
+Nothing blocks on either engine, and a result that came from the fallback says
+so on the card rather than borrowing the confidence of the engine it stood in
+for. `/settings` reports both separately: present or not, answering or not, and
+what each has cost.
+
+`MSR_CLAUDE_CLI=0` turns the CLI off entirely and puts everything back on your
+own machine. A per-workload override on `/settings` still beats the table.
 
 ### The other pages
 
