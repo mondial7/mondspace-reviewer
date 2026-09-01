@@ -104,8 +104,16 @@
               <input type="hidden" name="note" value="{{ .Note }}">
               <input type="hidden" name="verdict"
                      value="{{ if eq (printf "%s" .Verdict) "dismissed" }}confirmed{{ else }}dismissed{{ end }}">
-              <button class="acard__judgebtn" type="submit">
-                {{ if eq (printf "%s" .Verdict) "dismissed" }}put it back{{ else }}not a problem{{ end }}
+              <!-- "not a problem" read as a label on the finding rather than
+                   as something you could press, which on the one page where it
+                   is the only control is the whole page not working. It says
+                   what it does now, and looks like a control (ADR 0041). -->
+              <button class="act act--secondary acard__judgebtn" type="submit">
+                {{ if eq (printf "%s" .Verdict) "dismissed" }}
+                <svg class="ico" aria-hidden="true"><use href="#i-run"/></svg> raise it again
+                {{ else }}
+                <svg class="ico" aria-hidden="true"><use href="#i-close"/></svg> dismiss — not a problem
+                {{ end }}
               </button>
             </form>
           </span>
@@ -115,6 +123,12 @@
       </ul>
       <p class="acard__caveat"><span class="why why--inferred">inferred</span>
         including how bad — worth a look, not a verdict</p>
+      <p class="acard__caveat">
+        Dismissing a finding greys it out and stops it counting towards this
+        card, here and on the cockpit. It stays on the list rather than
+        disappearing, so the next run of this audit does not raise it again as
+        though nobody had ever looked at it.
+      </p>
       {{ else }}
       <p class="queue__empty">Nothing to report.</p>
       {{ end }}

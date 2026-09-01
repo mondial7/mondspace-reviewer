@@ -2522,29 +2522,36 @@ a.toast:hover { border-color: var(--kind, var(--accent)); }
    Three levels, coloured only as far as they earn it: the model is suggesting
    weight, not rating a vulnerability (ADR 0024). */
 
+/* A severity is meant to be scanned down a column of findings, and at 0.62rem
+   in a 22%-mixed tint it could not be: MEDIUM and LOW were two greys (ADR
+   0041). Bigger, bolder, and on a ground solid enough to read. */
 .sev {
   flex: none;
-  padding: 0.02rem 0.34rem;
+  padding: 0.06rem 0.42rem;
   border-radius: 999px;
   font-family: var(--mono);
-  font-size: 0.62rem;
+  font-size: 0.68rem;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
 
 .sev--high {
-  background: color-mix(in srgb, var(--del) 22%, transparent);
-  color: var(--del);
+  background: var(--del);
+  color: var(--bg);
 }
 
 .sev--medium {
-  background: color-mix(in srgb, var(--inferred) 22%, transparent);
-  color: var(--inferred);
+  background: var(--inferred);
+  color: var(--bg);
 }
 
+/* Low is the one that should not shout, but it still has to be findable: an
+   outline reads as a level rather than as an absence of one. */
 .sev--low {
-  background: color-mix(in srgb, var(--fg-dim) 20%, transparent);
-  color: var(--fg-dim);
+  background: transparent;
+  color: var(--fg);
+  box-shadow: inset 0 0 0 1px var(--fg-dim);
 }
 
 .acard__where {
@@ -3108,26 +3115,18 @@ a.log__branch:hover { text-decoration: underline; }
 .report__back { margin: 0.7rem 0 0; font-size: 0.82rem; }
 .report__findings { gap: 0.9rem; display: flex; flex-direction: column; }
 
+/* The only control on the report page, so it has to look like one. It carried
+   the weight of a footnote and the wording of a label (ADR 0041). */
 .acard__judgebtn {
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--fg-dim);
-  font: inherit;
-  font-size: 0.64rem;
   white-space: nowrap;
-  opacity: 0.6;
   text-decoration: none;
   cursor: pointer;
 }
 
-/* Quiet until wanted, and never hidden: a control only hover can find is one a
-   keyboard cannot. */
 .acard__judgebtn:hover,
 .acard__judgebtn:focus-visible {
+  border-color: var(--accent);
   color: var(--accent);
-  opacity: 1;
-  text-decoration: underline dotted;
 }
 
 /* ── Search ─────────────────────────────────────────────────────────────────

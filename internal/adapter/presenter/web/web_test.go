@@ -3001,3 +3001,27 @@ func TestANoteRecordsTheFileItWasAbout(t *testing.T) {
 		t.Errorf("File = %q, want the file the unit covers", kept.notes[0].File)
 	}
 }
+
+func TestTheReportSaysWhatDismissingDoes(t *testing.T) {
+	// It is the only control on that page, and it read as a label on the
+	// finding rather than as something you could press (ADR 0041).
+	h := web.NewServer(testSession(), nil).
+		WithAnalyses(nil, func(target string, k domain.AnalysisKind, print string) domain.Analysis {
+			return domain.Analysis{
+				TargetID: target, Kind: k, At: time.Now(), Print: print,
+				Verdict:  "One thing.",
+				Findings: []domain.Finding{{File: "a.go", Note: "n", Severity: domain.SeverityMedium}},
+			}
+		}).
+		WithJudge(func(context.Context, string, domain.AnalysisKind, string, string, domain.Verdict) error {
+			return nil
+		})
+
+	body := get(t, h, "/analysis/security?target=s").Body.String()
+	if !strings.Contains(body, "dismiss — not a problem") {
+		t.Errorf("the control should say what it does:\n%s", body)
+	}
+	if !strings.Contains(body, "stops it counting towards this") {
+		t.Error("the page should say what dismissing actually does")
+	}
+}
