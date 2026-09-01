@@ -1011,9 +1011,11 @@ button .ico, a .ico, summary .ico { margin-right: 0.35em; }
 .post__why { margin: 0 0 0.5rem; display: flex; gap: 0.5rem; align-items: baseline; flex-wrap: wrap; font-size: 0.8rem; }
 
 .post__more { margin-top: 0.5rem; }
+/* A disclosure summary is a sentence you read, not a key beside a value —
+   "why this may do nothing" was being shouted (ADR 0041). */
 .post__moresummary {
-  cursor: pointer; font-size: 0.72rem; color: var(--fg-dim);
-  text-transform: uppercase; letter-spacing: 0.07em;
+  cursor: pointer; font-size: 0.76rem; color: var(--fg-dim);
+  letter-spacing: 0.02em;
 }
 .post__moresummary:hover { color: var(--accent); }
 
