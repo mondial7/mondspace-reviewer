@@ -3108,3 +3108,29 @@ func TestWithNoAnalysersWiredThePageSaysNothingAboutThem(t *testing.T) {
 		t.Error("nothing wired should mean nothing shown")
 	}
 }
+
+func TestOpeningAReviewIsWhatMakesItsFindingsAppear(t *testing.T) {
+	// The deterministic layer used to run only for whichever review msr
+	// started on, so every commit a reviewer navigated to reported nothing
+	// (ADR 0043). The loader is where a target is first built, and it is where
+	// the analysers have to be told about it.
+	opened := make(chan string, 4)
+	h := web.NewServer(testSession(), nil).
+		WithLoader(func(_ context.Context, id string) (web.Session, error) {
+			opened <- id
+			sess := testSession()
+			sess.ID = id
+			return sess, nil
+		})
+
+	get(t, h, "/?target=abc123def4567890")
+
+	select {
+	case got := <-opened:
+		if got != "abc123def4567890" {
+			t.Errorf("loaded %q", got)
+		}
+	default:
+		t.Fatal("opening a target the server did not start on must reach the loader")
+	}
+}

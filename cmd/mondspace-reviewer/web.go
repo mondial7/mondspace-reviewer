@@ -1175,6 +1175,24 @@ func targetLoader() web.Loader {
 			stored.Fingerprint == usecase.Fingerprint(units) && len(stored.Chapters) > 0 {
 			view.Narrative = stored
 		}
+
+		// The deterministic analysers, on the review that was just opened.
+		//
+		// Opening a target must never trigger a model call (ADR 0014) and this
+		// is not one: it is the tools already on this machine, capped, and
+		// cached against what each file says — so a target opened twice runs
+		// nothing the second time. Without it the fourth reading only ever
+		// happened for whichever review msr started on, and every commit a
+		// reviewer navigated to reported nothing (ADR 0043).
+		//
+		// In the background and on its own context: nothing on the page waits
+		// for it, and it must outlive the request that happened to trigger it.
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			defer cancel()
+			scanTarget(ctx, targetID)
+		}()
+
 		return view, nil
 	}
 }
