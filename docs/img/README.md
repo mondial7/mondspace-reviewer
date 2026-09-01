@@ -23,8 +23,17 @@ have something to say — and why golangci-lint does too.
 
 ## Retaking them
 
-Run `msr web` against the demo repo, open the second commit, narrate it and run
-both audits, then capture at 1600×1000 with a 2× scale factor. Headless Chrome
+`demo.sh` beside this file builds that repository, including the remote, the two
+unmerged branches and the commit a colleague pushed after you — every date is
+pinned, so it rebuilds to the same hashes and the screenshots stay comparable:
+
+```sh
+sh docs/img/demo.sh /tmp/ledger
+msr web --repo=/tmp/ledger --out=/tmp/ledger-store --addr=127.0.0.1:7777
+```
+
+Then open the second commit (`4d56f585`), press start review, run both audits,
+and capture at 1600×1000 with a 2× scale factor. Headless Chrome
 works, with three flags that are not optional:
 
 ```sh
