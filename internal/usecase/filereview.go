@@ -2,6 +2,8 @@ package usecase
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
@@ -30,6 +32,20 @@ type BulkDiffer interface {
 // changed file — the retroactive review model of ADR 0002. An empty `until`
 // diffs against the working tree. Files for which exclude reports true are
 // skipped. It returns the units and their diffs.
+// FileUnitID names the unit for one file in one review.
+//
+// Derived from the path, not from the file's position in the list. Positional
+// ids were stable for exactly as long as the file list was: an agent adding
+// `api/handler.go` to a review that already had `web/page.go` renumbered every
+// unit after it, and a note anchored to `-f001` silently became a note about a
+// different file. Unit ids are what annotations, chapters and findings are
+// pinned to, and the one promise every one of those rests on is that an id
+// means the same thing tomorrow (ADR 0038).
+func FileUnitID(reviewID, file string) string {
+	sum := sha256.Sum256([]byte(file))
+	return fmt.Sprintf("%s-f%s", reviewID, hex.EncodeToString(sum[:4]))
+}
+
 func BuildFileUnits(
 	ctx context.Context,
 	differ RangeDiffer,
@@ -67,7 +83,7 @@ func BuildFileUnits(
 			}
 		}
 		u := domain.Unit{
-			ID:        fmt.Sprintf("%s-f%03d", reviewID, len(units)+1),
+			ID:        FileUnitID(reviewID, f),
 			SessionID: reviewID,
 			Files:     []string{f},
 			From:      baseline,

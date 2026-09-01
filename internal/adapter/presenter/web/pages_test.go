@@ -47,7 +47,7 @@ func wiredServer(t *testing.T) *web.Server {
 		WithAgent(web.AgentStatus{Model: "m", Endpoint: "http://e/v1", Online: true}).
 		WithAnalyses(
 			func(context.Context, string, domain.AnalysisKind) error { return nil },
-			func(_ string, k domain.AnalysisKind) domain.Analysis {
+			func(_ string, k domain.AnalysisKind, _ string) domain.Analysis {
 				return domain.Analysis{TargetID: "s", Kind: k, At: time.Now(),
 					Verdict: "one thing", Print: usecase.Fingerprint(testSession().Units),
 					Findings: []domain.Finding{{File: "a.go", Note: "look", Severity: domain.SeverityMedium}}}
@@ -233,7 +233,7 @@ func TestAReviewWithNothingInItSaysSoAndOffersNothing(t *testing.T) {
 		WithNarrate(func(context.Context, string) {}).
 		WithAnalyses(
 			func(context.Context, string, domain.AnalysisKind) error { return nil },
-			func(string, domain.AnalysisKind) domain.Analysis { return domain.Analysis{} }),
+			func(string, domain.AnalysisKind, string) domain.Analysis { return domain.Analysis{} }),
 		"/cockpit").Body.String()
 
 	if !strings.Contains(strings.ToLower(body), "nothing to review") {

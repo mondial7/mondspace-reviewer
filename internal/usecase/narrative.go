@@ -565,3 +565,86 @@ func Fingerprint(units []domain.Unit) string {
 	sum := sha256.Sum256([]byte(strings.Join(lines, "\n")))
 	return hex.EncodeToString(sum[:16])
 }
+
+// ── Reading it again, but only the part that moved ──────────────────────────
+
+// NarrateChanges re-narrates the chapters whose files moved and leaves the rest
+// exactly as they were (ADR 0038).
+//
+// Narrating a review costs a model call per chapter. In a live review two files
+// change and fourteen do not, and re-reading all sixteen chapters to learn about
+// two is most of a minute on a local model for prose that comes back saying what
+// it said before — differently phrased, because that is what these models do,
+// so the reviewer's place in the story moves under them for no reason.
+//
+// It reports whether it managed it. Anything it cannot do incrementally — no
+// story yet, a story from before per-file prints existed, a change where
+// everything moved — comes back false, and the caller reads the whole thing.
+func NarrateChanges(ctx context.Context, n Narrator, sess domain.Session, units []domain.Unit,
+	diffs map[string]domain.Diff, earlier domain.Narrative,
+	onProgress func(domain.Narrative)) (domain.Narrative, bool) {
+
+	prints := FilePrints(units, diffs)
+	if n == nil || len(units) == 0 || len(earlier.Prints) == 0 ||
+		earlier.Source != domain.NarrativeModel || len(earlier.Chapters) == 0 {
+		return domain.Narrative{}, false
+	}
+
+	moved, _ := MovedFiles(earlier.Prints, prints)
+	if len(moved) >= len(prints) {
+		return domain.Narrative{}, false // everything moved; there is nothing to keep
+	}
+
+	out := earlier
+	out.SessionID = sess.ID
+	out.Prints = prints
+	// reconcileChapters is what handles the arrivals and departures: a file that
+	// joined the review lands in a chapter of its own rather than being written
+	// about by prose that predates it, and one that left stops being referred to.
+	out.Chapters, _ = reconcileChapters(earlier.Chapters, units)
+	if len(moved) == 0 {
+		return out, true // nothing to ask about; the story already tells it
+	}
+
+	byID := map[string]domain.Unit{}
+	for _, u := range units {
+		byID[u.ID] = u
+	}
+	touched := Touched(moved)
+	stale := map[string]bool{}
+	for _, u := range UnitsTouching(units, touched) {
+		stale[u.ID] = true
+	}
+
+	rewritten := 0
+	for i, c := range out.Chapters {
+		if !chapterTouches(c, stale) {
+			continue
+		}
+		reply, err := ask(ctx, n, chapterPrompt(sess, c, byID), chapterSchema())
+		if err != nil {
+			continue // this chapter keeps what it said; the rest of the story stands
+		}
+		m, ok := parseChapter(reply)
+		if !ok {
+			continue
+		}
+		out.Chapters[i].Title = firstNonEmpty(m.Title, c.Title)
+		out.Chapters[i].Prose = firstNonEmpty(m.Prose, c.Prose)
+		rewritten++
+		if onProgress != nil {
+			onProgress(out)
+		}
+	}
+	return out, true
+}
+
+// chapterTouches reports whether any of a chapter's files moved.
+func chapterTouches(c domain.Chapter, stale map[string]bool) bool {
+	for _, id := range c.UnitIDs {
+		if stale[id] {
+			return true
+		}
+	}
+	return false
+}

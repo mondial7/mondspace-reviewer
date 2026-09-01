@@ -35,6 +35,15 @@ type Narrative struct {
 	// Fingerprint identifies the review this story was written for. A stored
 	// story is reused while it matches, so opening the page again costs nothing.
 	Fingerprint string `json:"fingerprint,omitempty"`
+	// Prints is what each file looked like when this was written, keyed by
+	// path. The fingerprint says whether the story is out of date; this says
+	// which chapters of it are, which is what makes re-reading two files
+	// cheaper than re-reading the review (ADR 0038).
+	Prints map[string]string `json:"prints,omitempty"`
+	// Engine is what actually answered, and Fallback says it was not the engine
+	// the story is routed to (ADR 0039).
+	Engine   Engine `json:"engine,omitempty"`
+	Fallback bool   `json:"fallback,omitempty"`
 }
 
 // Chapter is one theme of the session.

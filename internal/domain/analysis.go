@@ -101,9 +101,29 @@ type Analysis struct {
 	Findings []Finding `json:"findings,omitempty"`
 	// Print is what the review looked like when this ran, so a later visit can
 	// say the code has moved rather than presenting a stale reading as current
-	// (ADR 0021).
+	// (ADR 0021, ADR 0037).
 	Print string `json:"print,omitempty"`
+	// Prints is what each file looked like when this ran, keyed by path. It is
+	// the finer version of the same question: not "has anything moved" but
+	// "which of these findings is this still about" (ADR 0038).
+	Prints map[string]string `json:"prints,omitempty"`
+	// Read is how many files the last run actually put in front of the model,
+	// and Of how many there were. Equal means it read the whole change; fewer
+	// means the rest was carried forward from an earlier run of this same audit,
+	// and the card says so rather than implying a fresh whole-change reading.
+	Read int `json:"read,omitempty"`
+	Of   int `json:"of,omitempty"`
+	// Engine is what actually answered, and Fallback says it was not the engine
+	// this reading is routed to. A verdict from a 4B model shown with the same
+	// confidence as one from the CLI is worse than no verdict, because the
+	// reviewer has no way to know how much of it to believe (ADR 0039).
+	Engine   Engine `json:"engine,omitempty"`
+	Fallback bool   `json:"fallback,omitempty"`
 }
+
+// Partial reports that the last run of this audit re-read only part of the
+// change and carried the rest forward.
+func (a Analysis) Partial() bool { return a.Of > 0 && a.Read > 0 && a.Read < a.Of }
 
 // Done reports whether this audit has actually run.
 func (a Analysis) Done() bool { return !a.At.IsZero() }

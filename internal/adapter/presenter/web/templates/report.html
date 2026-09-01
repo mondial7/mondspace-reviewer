@@ -65,7 +65,23 @@
     </section>
 
     <section class="board__panel">
-      <h2 class="board__title">{{ .Card.State }} · {{ .Card.When }}</h2>
+      <h2 class="board__title">
+        {{ if eq .Card.State "stale" }}was {{ .Card.Tally }} · {{ .Card.When }}
+        {{ else if .Card.When }}{{ .Card.Tally }}{{ if .Card.Tally }} · {{ end }}{{ .Card.When }}
+        {{ else }}{{ .Card.State }}{{ end }}
+      </h2>
+      {{ if eq .Card.State "stale" }}
+      <p class="acard__moved">the code has moved since this ran — what follows describes an
+        earlier version of the change</p>
+      {{ else if eq .Card.State "fresh" }}
+      <p class="acard__current">this is the change on screen</p>
+      {{ end }}
+      {{ with .Card.Scope }}<p class="acard__scope">{{ . }}</p>{{ end }}
+      {{ if .Card.Fallback }}
+      <p class="acard__fallback">read by the {{ .Card.Engine }} — the engine this is
+        routed to was not available, so these findings are worth less than usual</p>
+      {{ else }}{{ with .Card.Engine }}<p class="acard__engine">read by the {{ . }}</p>{{ end }}
+      {{ end }}
       {{ with .Card.Verdict }}<p class="acard__verdict">{{ . }}</p>{{ end }}
       {{ with .Card.Err }}<p class="acard__err">{{ . }}</p>{{ end }}
 

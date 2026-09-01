@@ -97,7 +97,11 @@ func TestFindingsAreCappedSoTheCardStaysReadable(t *testing.T) {
 	}
 }
 
-func TestALongFindingIsTrimmedRatherThanShown(t *testing.T) {
+func TestALongFindingIsBoundedButKeptWholeEnoughToRead(t *testing.T) {
+	// Bounded, because a model that ignored the schema can return an essay.
+	// Not cut to the card's width, because a card cuts what it shows and the
+	// report shows the rest — an ellipsis that expands to nothing is a dead end
+	// (ADR 0041).
 	long := strings.Repeat("this is a very long explanation that nobody reads ", 12)
 	d := &describer{reply: `{"verdict":"one thing","findings":[{"file":"a.go","note":"` + long + `"}]}`}
 	units, diffs := auditReview()
@@ -108,8 +112,13 @@ func TestALongFindingIsTrimmedRatherThanShown(t *testing.T) {
 	if len(got.Findings) != 1 {
 		t.Fatalf("got %+v", got.Findings)
 	}
-	if n := len([]rune(got.Findings[0].Note)); n > 160 {
-		t.Errorf("note is %d characters; the card cannot hold that", n)
+	n := len([]rune(got.Findings[0].Note))
+	if n > 210 {
+		t.Errorf("note is %d characters; nothing should reach the store unbounded", n)
+	}
+	if n <= 140 {
+		t.Errorf("note is %d characters — it was cut to the card's width in the store, "+
+			"so the report has nothing to expand", n)
 	}
 }
 
@@ -437,5 +446,162 @@ func TestDismissingEverythingLeavesACleanCard(t *testing.T) {
 	}}
 	if !a.Clean() {
 		t.Error("with everything dismissed, nothing stands")
+	}
+}
+
+// ── Reading only what moved (ADR 0038) ──────────────────────────────────────
+
+// recordingNarrator answers with a fixed reply and remembers every prompt, so a
+// test can assert on what the model was actually shown.
+type recordingNarrator struct {
+	reply  string
+	asked  []string
+	prompt func(int) string
+}
+
+func (n *recordingNarrator) Answer(_ context.Context, question string, _ domain.AskContext) (string, error) {
+	n.asked = append(n.asked, question)
+	if n.prompt != nil {
+		return n.prompt(len(n.asked) - 1), nil
+	}
+	return n.reply, nil
+}
+
+func TestAPartialRerunOnlyShowsTheModelWhatMoved(t *testing.T) {
+	units, diffs := auditReview()
+	audit, _ := usecase.AuditFor(usecase.AuditSecurity)
+	ctx := context.Background()
+
+	// A first, whole-change reading that found something in each file.
+	first := &recordingNarrator{reply: `{"verdict":"Two things.","findings":[
+		{"file":"auth/token.go","note":"timing-unsafe comparison","severity":"high"},
+		{"file":"api/handler.go","note":"route added without auth","severity":"medium"}]}`}
+	earlier, err := usecase.RunAudit(ctx, first, audit, "t", units, diffs)
+	if err != nil {
+		t.Fatalf("RunAudit: %v", err)
+	}
+	if len(earlier.Prints) != 2 {
+		t.Fatalf("a run should record what each file said, got %d", len(earlier.Prints))
+	}
+
+	// The reviewer decides one of them is not a problem.
+	earlier = usecase.Judge(earlier, "api/handler.go", "route added without auth",
+		domain.VerdictDismissed)
+
+	// One file moves.
+	moved := map[string]domain.Diff{
+		"u1": diffs["u1"],
+		"u2": {Text: "@@\n-func Routes() *http.ServeMux {\n+func Routes(v auth.Validator, l log.Logger) *http.ServeMux {\n"},
+	}
+
+	second := &recordingNarrator{reply: `{"verdict":"One thing.","findings":[
+		{"file":"api/handler.go","note":"logger takes the request body","severity":"low"}]}`}
+	got, err := usecase.RunAuditIncremental(ctx, second, audit, "t", units, moved, earlier)
+	if err != nil {
+		t.Fatalf("RunAuditIncremental: %v", err)
+	}
+
+	if len(second.asked) != 1 {
+		t.Fatalf("a partial rerun is one call, got %d", len(second.asked))
+	}
+	if strings.Contains(second.asked[0], "auth/token.go") {
+		t.Error("the model was shown a file that had not changed")
+	}
+	if !strings.Contains(second.asked[0], "api/handler.go") {
+		t.Error("the model was not shown the file that changed")
+	}
+	if got.Read != 1 || got.Of != 2 {
+		t.Errorf("read %d of %d, want 1 of 2", got.Read, got.Of)
+	}
+	if !got.Partial() {
+		t.Error("a merged result should say it was merged")
+	}
+
+	// The finding on the file nobody touched is carried across untouched. The
+	// one on the file that moved is replaced by what the fresh reading said.
+	notes := map[string]domain.Finding{}
+	for _, f := range got.Findings {
+		notes[f.Note] = f
+	}
+	if _, kept := notes["timing-unsafe comparison"]; !kept {
+		t.Errorf("a finding about an untouched file must survive: %+v", got.Findings)
+	}
+	if _, gone := notes["route added without auth"]; gone {
+		t.Error("a finding about a file that moved must not be carried as though it still held")
+	}
+	if _, fresh := notes["logger takes the request body"]; !fresh {
+		t.Error("the fresh reading's finding is missing")
+	}
+}
+
+func TestADismissalSurvivesAPartialRerun(t *testing.T) {
+	// The reason incremental exists at all: a whole rerun produces findings
+	// whose text no longer matches, and takes the reviewer's judgements with it.
+	units, diffs := auditReview()
+	audit, _ := usecase.AuditFor(usecase.AuditSecurity)
+	ctx := context.Background()
+
+	first := &recordingNarrator{reply: `{"verdict":"One thing.","findings":[
+		{"file":"auth/token.go","note":"timing-unsafe comparison","severity":"high"}]}`}
+	earlier, _ := usecase.RunAudit(ctx, first, audit, "t", units, diffs)
+	earlier = usecase.Judge(earlier, "auth/token.go", "timing-unsafe comparison",
+		domain.VerdictDismissed)
+
+	moved := map[string]domain.Diff{"u1": diffs["u1"], "u2": {Text: "@@\n+// a comment\n"}}
+	second := &recordingNarrator{reply: `{"verdict":"Nothing.","findings":[]}`}
+	got, err := usecase.RunAuditIncremental(ctx, second, audit, "t", units, moved, earlier)
+	if err != nil {
+		t.Fatalf("RunAuditIncremental: %v", err)
+	}
+
+	if len(got.Standing()) != 0 {
+		t.Errorf("the dismissal did not survive: %+v", got.Findings)
+	}
+	if len(got.Findings) != 1 {
+		t.Errorf("the dismissed finding should stay on the card, got %+v", got.Findings)
+	}
+}
+
+func TestNothingMovedCostsNoModelCall(t *testing.T) {
+	units, diffs := auditReview()
+	audit, _ := usecase.AuditFor(usecase.AuditSecurity)
+	ctx := context.Background()
+
+	first := &recordingNarrator{reply: `{"verdict":"Nothing.","findings":[]}`}
+	earlier, _ := usecase.RunAudit(ctx, first, audit, "t", units, diffs)
+
+	silent := &recordingNarrator{reply: `{"verdict":"should never be asked","findings":[]}`}
+	got, err := usecase.RunAuditIncremental(ctx, silent, audit, "t", units, diffs, earlier)
+	if err != nil {
+		t.Fatalf("RunAuditIncremental: %v", err)
+	}
+	if len(silent.asked) != 0 {
+		t.Errorf("an unchanged review must not be re-read: %d call(s)", len(silent.asked))
+	}
+	if got.Verdict != earlier.Verdict {
+		t.Errorf("verdict = %q, want the earlier one %q", got.Verdict, earlier.Verdict)
+	}
+}
+
+func TestEverythingMovingIsAWholeReading(t *testing.T) {
+	units, diffs := auditReview()
+	audit, _ := usecase.AuditFor(usecase.AuditSecurity)
+	ctx := context.Background()
+
+	first := &recordingNarrator{reply: `{"verdict":"Nothing.","findings":[]}`}
+	earlier, _ := usecase.RunAudit(ctx, first, audit, "t", units, diffs)
+
+	all := map[string]domain.Diff{"u1": {Text: "@@\n+one\n"}, "u2": {Text: "@@\n+two\n"}}
+	second := &recordingNarrator{reply: `{"verdict":"Nothing.","findings":[]}`}
+	got, err := usecase.RunAuditIncremental(ctx, second, audit, "t", units, all, earlier)
+	if err != nil {
+		t.Fatalf("RunAuditIncremental: %v", err)
+	}
+	if got.Partial() {
+		t.Error("a reading that saw everything must not call itself partial")
+	}
+	if !strings.Contains(second.asked[0], "auth/token.go") ||
+		!strings.Contains(second.asked[0], "api/handler.go") {
+		t.Error("a whole reading should have been shown both files")
 	}
 }

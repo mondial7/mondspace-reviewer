@@ -65,6 +65,17 @@ func (s *Summarizer) AnswerSchema(ctx context.Context, question string, c domain
 	return current.Answer(ctx, question, c)
 }
 
+// Answered forwards the attribution of the last call, so a result can be
+// labelled with the engine that produced it. A summarizer that does not account
+// for itself reports nothing, which reads as "unattributed" rather than as a
+// claim about which engine answered.
+func (s *Summarizer) Answered() (domain.Engine, bool, string) {
+	if reporter, ok := s.Current().(port.EngineReporter); ok {
+		return reporter.Answered()
+	}
+	return "", false, ""
+}
+
 // Usage is what the current summarizer has spent. A summarizer that does not
 // account for itself reports nothing, which is the truth rather than a zero.
 func (s *Summarizer) Usage() port.TokenUsage {

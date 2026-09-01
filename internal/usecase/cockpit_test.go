@@ -254,3 +254,31 @@ func TestSessionAskContextStaysWithinItsBudget(t *testing.T) {
 		t.Errorf("the digest should say how much it omitted:\n%s", got.Diff.Text[:300])
 	}
 }
+
+// The whole reason ChangeFingerprint exists beside ReviewFingerprint: a file
+// edited so that its added and removed counts land where they were.
+func TestChangeFingerprintSeesWhatChurnCannot(t *testing.T) {
+	units := []domain.Unit{{ID: "u1", Files: []string{"a.go"}}}
+	before := map[string]domain.Diff{"u1": {Text: "@@\n-old\n+new\n"}}
+	after := map[string]domain.Diff{"u1": {Text: "@@\n-old\n+other\n"}}
+
+	stats := []domain.FileStat{{Path: "a.go", Added: 1, Removed: 1}}
+	if usecase.ReviewFingerprint(stats) != usecase.ReviewFingerprint(stats) {
+		t.Fatal("ReviewFingerprint is not stable")
+	}
+
+	if usecase.ChangeFingerprint(units, before) == usecase.ChangeFingerprint(units, after) {
+		t.Fatal("a rewritten line did not move the fingerprint")
+	}
+	if usecase.ChangeFingerprint(units, before) != usecase.ChangeFingerprint(units, before) {
+		t.Fatal("the same review fingerprinted differently twice")
+	}
+
+	// Order is git's business, not the review's.
+	two := []domain.Unit{{ID: "u1", Files: []string{"a.go"}}, {ID: "u2", Files: []string{"b.go"}}}
+	flipped := []domain.Unit{two[1], two[0]}
+	diffs := map[string]domain.Diff{"u1": {Text: "one"}, "u2": {Text: "two"}}
+	if usecase.ChangeFingerprint(two, diffs) != usecase.ChangeFingerprint(flipped, diffs) {
+		t.Fatal("file order changed the fingerprint")
+	}
+}

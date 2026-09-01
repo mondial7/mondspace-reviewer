@@ -160,6 +160,30 @@
         {{ end }}
       </div>
 
+      <!-- The first impression, designed rather than left over (ADR 0040).
+           Everything below the button is already true and already usable: the
+           diffs are there, the flags are there, annotation works. Saying so is
+           what stops the page reading as though it were waiting for something
+           before it becomes useful. -->
+      {{ if eq .Review.State "unread" }}
+      <div class="firstrun">
+        <p class="firstrun__lead">
+          {{ len .Session.Units }} file(s) changed, and none of it has been read
+          by a model yet. Nothing here needs one: the diffs below are git's, the
+          flags are mechanical, and you can annotate any line right now.
+        </p>
+        <ul class="firstrun__list">
+          <li><strong>start review</strong> writes the story — what changed and
+            why, in chapters — and describes each group of files.</li>
+          <li>The <a href="#analyses">readings</a> beside it are separate and
+            asked for one at a time: a security pass and a breaking-change pass,
+            each run only when you press it.</li>
+          <li><strong>j</strong> and <strong>k</strong> walk the files;
+            <strong>?</strong> is the rest of the keys.</li>
+        </ul>
+      </div>
+      {{ end }}
+
       <div class="reviewcard__progress">
         {{ if .Review.Chapters }}<span>{{ .Review.Chapters }} chapter(s)</span>{{ end }}
         {{ if .Review.Groups }}
@@ -175,8 +199,8 @@
         <!-- "start review", not "ask it to read this": it is the button that
              begins the thing this page is for, and the sentence describing what
              happens underneath belongs in the card, not on the control. -->
-        <button class="hero__retrybtn" type="submit"
-                {{ if eq .Review.State "reading" }}disabled{{ end }}>
+        <button class="act {{ if eq .Review.State "read" }}act--quiet{{ else }}act--primary{{ end }}"
+                type="submit" {{ if eq .Review.State "reading" }}disabled{{ end }}>
           <svg class="ico" aria-hidden="true"><use href="#i-read"/></svg>
           {{ if eq .Review.State "reading" }}reading…
           {{ else if eq .Review.State "read" }}review again
@@ -196,7 +220,11 @@
 
         {{ if .CanSignoff }}
         <details class="signoff__form">
-          <summary class="post__moresummary">
+          <!-- The other action that matters. It was small text behind a
+               disclosure triangle, which is where you put a footnote, not the
+               verdict this whole page exists to record (ADR 0040). -->
+          <summary class="act act--summary {{ if .Signoff.Done }}act--quiet{{ else }}act--primary{{ end }}">
+            <svg class="ico" aria-hidden="true"><use href="#i-done"/></svg>
             {{ if .Signoff.Done }}review it again{{ else }}mark this reviewed{{ end }}
           </summary>
           <form method="post" action="/review/signoff?target={{ .Session.ID }}">
@@ -244,8 +272,8 @@
         <p class="acard__purpose">what changed here, and why — as chapters</p>
         {{ if .Review.CanRead }}
         <form method="post" action="/story/narrate?target={{ .Session.ID }}">
-          <button class="acard__run" type="submit"
-                  {{ if eq .Review.State "reading" }}disabled{{ end }}>
+          <button class="act {{ if eq .Review.State "read" }}act--quiet{{ else }}act--secondary{{ end }}"
+                  type="submit" {{ if eq .Review.State "reading" }}disabled{{ end }}>
             <svg class="ico" aria-hidden="true"><use href="#i-run"/></svg> {{ if eq .Review.State "reading" }}running
             {{ else if eq .Review.State "read" }}run again
             {{ else }}run{{ end }}
@@ -255,25 +283,49 @@
       </article>
 
       {{ range $card := .Analyses }}
-      <article class="acard acard--{{ .State }}{{ with .Worst }} acard--worst-{{ . }}{{ end }}">
+      <!-- Two classes, two questions. The state is where this reading stands
+           against the code on screen; the result is what it found. A stale
+           reading still found something, and is still worth colouring by. -->
+      <article class="acard acard--{{ .State }}{{ with .Result }} acard--{{ . }}{{ end }}{{ with .Worst }} acard--worst-{{ . }}{{ end }}">
         <header class="acard__head">
           <h2 class="acard__title">{{ .Title }}</h2>
           <span class="acard__state">
             {{ if eq .State "running" }}<span class="ask__spinner" aria-hidden="true"></span>running…
-            {{ else if eq .State "clean" }}clean · {{ .When }}
-            {{ else if eq .State "found" }}{{ .Tally }} · {{ .When }}
-            {{ else if eq .State "stale" }}changed since · {{ .When }}
             {{ else if eq .State "failed" }}could not run
+            {{ else if eq .State "stale" }}was {{ if eq .Result "clean" }}clean{{ else }}{{ .Tally }}{{ end }} · {{ .When }}
+            {{ else if eq .Result "clean" }}clean · {{ .When }}
+            {{ else if eq .Result "found" }}{{ .Tally }} · {{ .When }}
             {{ else }}not run yet{{ end }}
           </span>
         </header>
+
+        <!-- The one sentence that says whether this card is about what is on
+             screen. It is worth a line of its own on both sides: an audit
+             nobody has run and an audit of code that no longer exists are the
+             two ways a card can quietly mean nothing. -->
+        {{ if eq .State "running" }}<p class="acard__doing">{{ .Doing }}</p>
+        {{ else if eq .State "stale" }}<p class="acard__moved">the code has moved since this ran</p>
+        {{ else if eq .State "fresh" }}<p class="acard__current">this is the change on screen</p>
+        {{ end }}
+        {{ with .Scope }}<p class="acard__scope">{{ . }}</p>{{ end }}
+        {{ if .Fallback }}
+        <!-- Where this came from, when it did not come from where it should
+             have. The standby is a smaller model and its verdicts are worth
+             less; a card that hides that is asking to be believed on the
+             strength of an engine that never ran. -->
+        <p class="acard__fallback">read by the {{ .Engine }} — the engine this
+          is routed to was not available</p>
+        {{ else }}{{ with .Engine }}<p class="acard__engine">read by the {{ . }}</p>{{ end }}
+        {{ end }}
         <!-- The purpose says what the card *would* answer. Once it has
              answered, it is a line explaining a question nobody is asking any
              more. -->
         {{ if not .Verdict }}<p class="acard__purpose">{{ .Purpose }}</p>{{ end }}
 
         {{ with .Err }}<p class="acard__err">{{ . }}</p>{{ end }}
-        {{ with .Verdict }}<p class="acard__verdict">{{ . }}</p>{{ end }}
+        <!-- Cut to what the card holds. The whole sentence is on the report,
+             which is what the ellipsis leads to. -->
+        {{ with .Verdict }}<p class="acard__verdict">{{ brief . 110 }}</p>{{ end }}
 
         <!-- One row of actions at the foot of every card. Reading the report
              is a thing you do, like running the audit again, so it is a button
@@ -288,14 +340,18 @@
           {{ if $.CanRunAnalysis }}
           <form method="post" action="/analysis/{{ .Kind }}?target={{ $.Session.ID }}">
             <input type="hidden" name="target" value="{{ $.Session.ID }}">
-            <button class="acard__run" type="submit" {{ if eq .State "running" }}disabled{{ end }}>
-              <svg class="ico" aria-hidden="true"><use href="#i-run"/></svg> {{ if eq .State "idle" }}run{{ else if eq .State "running" }}running{{ else }}run again{{ end }}
+            <!-- Running an audit nobody has run, and re-running one whose code
+                 has moved, are both things worth doing. Running one again over
+                 a diff it already describes is not, and reads as quiet. -->
+            <button class="act {{ if eq .State "fresh" }}act--quiet{{ else }}act--secondary{{ end }}{{ if eq .State "stale" }} acard__run--wanted{{ end }}"
+                    type="submit" {{ if eq .State "running" }}disabled{{ end }}>
+              <svg class="ico" aria-hidden="true"><use href="#i-run"/></svg> {{ if eq .State "absent" }}run{{ else if eq .State "running" }}running{{ else if eq .State "stale" }}re-run on this change{{ else }}run again{{ end }}
             </button>
           </form>
           {{ end }}
 
           {{ if .Findings }}
-          <a class="acard__run acard__run--report" href="/analysis/{{ .Kind }}?target={{ $.Session.ID }}">
+          <a class="act act--quiet" href="/analysis/{{ .Kind }}?target={{ $.Session.ID }}">
             <svg class="ico" aria-hidden="true"><use href="#i-expand"/></svg> read the report
           </a>
           {{ end }}
@@ -307,9 +363,25 @@
     {{ end }}
     </div>
 
-    <!-- Middle: the session read as prose. Text only — the files each chapter
-         covers are in the column beside it, and the two scroll together. -->
+    <!-- Left rail: the session read as prose. It is narration — worth having,
+         not what the page is for — so it folds out of the way and gives its
+         width to the log, which is the product (ADR 0040). -->
     <section class="cockpit__story" id="story-col">
+      <header class="storyrail__head">
+        <button class="storyrail__fold" type="button" data-story-toggle
+                aria-controls="story-col" aria-expanded="true"
+                title="Fold the story away">&#8249;</button>
+        <h2 class="storyrail__title">story</h2>
+        {{ with .Chapters }}<span class="storyrail__count">{{ len . }}</span>{{ end }}
+      </header>
+
+      <!-- Folded, the rail is a strip you can still read and still click. -->
+      <button class="storyrail__strip" type="button" data-story-toggle
+              title="Bring the story back" aria-label="Bring the story back">
+        <span class="storyrail__stripword">story{{ with .Chapters }} · {{ len . }}{{ end }}</span>
+      </button>
+
+      <div class="storyrail__body">
       {{ range $i, $c := .Chapters }}
       <article class="chron__chapter" data-anchor="{{ $c.Anchor }}">
         <div class="chron__index" aria-hidden="true">{{ printf "%02d" (add $i 1) }}</div>
@@ -365,6 +437,7 @@
         {{ end }}
       </section>
       {{ end }}
+      </div>
     </section>
 
     <!-- Right: the changes themselves, newest first, with everything needed to
@@ -377,6 +450,15 @@
         <button class="viewswitch__btn" type="button" data-view="tree" aria-pressed="false">tree</button>
       </div>
 
+      <!-- Every flag in this review, counted once. Thirty files each wearing an
+           identical `no-test` chip is one fact repeated thirty times; this is
+           the fact, with a number (ADR 0041). -->
+      {{ with .Flags }}
+      <p class="flagtally">
+        {{ range . }}<span class="flag{{ if .Loud }} flag--loud{{ end }}">{{ .Count }} {{ .Flag }}</span>{{ end }}
+      </p>
+      {{ end }}
+
       <ol class="tree" id="tree-view" hidden>
         {{ range .Tree }}
         <li class="tree__row tree__row--{{ if .IsDir }}dir{{ else }}file{{ end }}"
@@ -387,7 +469,7 @@
           <a class="tree__file" href="#unit-{{ .UnitID }}">{{ .Name }}</a>
           <span class="unit__stat unit__stat--add">+{{ .Added }}</span>
           <span class="unit__stat unit__stat--del">-{{ .Removed }}</span>
-          {{ range .Flags }}<span class="flag">{{ . }}</span>{{ end }}
+          {{ range .Flags }}<span class="flag flag--{{ . }}">{{ . }}</span>{{ end }}
           {{ end }}
         </li>
         {{ end }}
@@ -427,7 +509,7 @@
               <span class="unit__stat unit__stat--add">+{{ .Added }}</span>
               <span class="unit__stat unit__stat--del">-{{ .Removed }}</span>
             </span>
-            {{ range .Flags }}<span class="flag">{{ . }}</span>{{ end }}
+            {{ range .Flags }}<span class="flag flag--{{ . }}">{{ . }}</span>{{ end }}
             <!-- A note count survives the fold: an annotated file must still be
                  findable without opening every one. -->
             {{ with .Notes }}<span class="post__notecount">{{ len . }} note(s)</span>{{ end }}

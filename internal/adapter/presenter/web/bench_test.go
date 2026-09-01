@@ -43,7 +43,7 @@ func BenchmarkCockpitWired(b *testing.B) {
 				WithStats(domain.SessionStats{Files: n}).
 				WithAnalyses(
 					func(context.Context, string, domain.AnalysisKind) error { return nil },
-					func(string, domain.AnalysisKind) domain.Analysis { return domain.Analysis{} }).
+					func(string, domain.AnalysisKind, string) domain.Analysis { return domain.Analysis{} }).
 				WithSignoff(
 					func(context.Context, domain.Signoff) error { return nil },
 					func(string) domain.Signoff { return domain.Signoff{} }).

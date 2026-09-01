@@ -4,8 +4,6 @@
 // changed. Scroll position, open <details>, and anything being typed are
 // preserved, because a review you are reading must not jump under you.
 
-const stream = new EventSource('/events');
-
 // Which parts of the page each event can affect.
 //
 // #refs is the picker's option list. It is swapped on its own rather than with
@@ -16,6 +14,30 @@ const REGIONS = ['.cockpit__story', '.cockpit__changes', '.cockpit__stats',
   '.storynav', '#refs', '#pending', '#analyses', '#hidden'];
 
 let pending = false;
+
+// ── The stream ──────────────────────────────────────────────────────────────
+//
+// One connection, opened while somebody is here and closed while they are not.
+// A closed stream is what tells the server to stop polling git on behalf of a
+// tab nobody is looking at; reopening it is what tells the server to look now.
+
+const EVENTS = ['narrative', 'note', 'headline', 'answer', 'targets', 'pending',
+  'analysis', 'work', 'units', 'stats'];
+
+let stream = null;
+
+function connect() {
+  if (stream) return;
+  stream = new EventSource('/events');
+  for (const event of EVENTS) stream.addEventListener(event, refresh);
+  stream.addEventListener('pulse', onPulse);
+}
+
+function disconnect() {
+  if (!stream) return;
+  stream.close();
+  stream = null;
+}
 
 async function refresh() {
   if (pending || document.hidden) return; // don't fight the network or work unseen
@@ -62,10 +84,6 @@ async function refresh() {
   } finally {
     pending = false;
   }
-}
-
-for (const event of ['narrative', 'note', 'headline', 'answer', 'targets', 'pending', 'analysis', 'work']) {
-  stream.addEventListener(event, refresh);
 }
 
 // ── Pulses ──────────────────────────────────────────────────────────────────
@@ -142,7 +160,7 @@ function toast(pulse) {
   setTimeout(() => dismiss(el), TOAST_LIFE);
 }
 
-stream.addEventListener('pulse', (e) => {
+function onPulse(e) {
   let pulses = [];
   try {
     pulses = JSON.parse(e.data);
@@ -159,7 +177,7 @@ stream.addEventListener('pulse', (e) => {
   // wall of stale toasts on return is worse than none.
   if (document.hidden) return;
   for (const p of pulses) toast(p);
-});
+}
 
 // ── Work that arrived mid-review ────────────────────────────────────────────
 //
@@ -186,7 +204,17 @@ document.addEventListener('click', (e) => {
   applyDismissal();
 });
 
-// Catch up on anything missed while the tab was in the background.
+// Catch up on anything missed while the tab was in the background — and, going
+// the other way, stop asking. Nothing was lost by disconnecting: reconnecting
+// re-fetches the whole page, which is a stronger guarantee than replaying the
+// events that would have arrived.
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) refresh();
+  if (document.hidden) {
+    disconnect();
+    return;
+  }
+  connect();
+  refresh();
 });
+
+if (!document.hidden) connect();

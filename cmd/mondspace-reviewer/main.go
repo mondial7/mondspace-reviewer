@@ -517,7 +517,7 @@ func runFileReview(ctx context.Context, store port.Store, snap *gitsnap.Snapshot
 		return err
 	}
 	sess.Units = units
-	notes := usecase.MarkSuperseded(units, sess.Notes)
+	notes := usecase.PlaceNotes(units, sess.Notes)
 
 	model := tui.New(units, notes, store).
 		RelativeTo(repo).
@@ -674,7 +674,7 @@ func runSinceReview(ctx context.Context, store port.Store, snap *gitsnap.Snapsho
 		return err
 	}
 	sess.Units = units
-	notes := usecase.MarkSuperseded(units, sess.Notes)
+	notes := usecase.PlaceNotes(units, sess.Notes)
 
 	model := tui.New(units, notes, store).
 		RelativeTo(repo).

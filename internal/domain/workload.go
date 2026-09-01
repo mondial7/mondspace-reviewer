@@ -30,12 +30,20 @@ type ModelRef struct {
 
 // For resolves which model answers a workload.
 //
+// Three sources, most deliberate first. An override is the reviewer saying so,
+// and wins outright. Otherwise the routing table decides, and a workload it
+// sends to the CLI goes there whenever the CLI is configured. Everything else
+// is the shared local model.
+//
 // Overrides fall back field by field, not whole. Two models behind one
 // llama-server is a real arrangement — same port, different model name — and
 // making the endpoint be repeated in order to change the model only invites it
 // being repeated wrongly.
 func (c AgentConfig) For(w Workload) ModelRef {
-	out := ModelRef{Endpoint: c.Endpoint, Model: c.Model}
+	out := c.Local()
+	if EngineOn(w) == EngineCLI && c.UsesCLI() {
+		out = c.CLI
+	}
 	over, ok := c.Overrides[w]
 	if !ok {
 		return out
@@ -49,11 +57,15 @@ func (c AgentConfig) For(w Workload) ModelRef {
 	return out
 }
 
+// Local is the shared model: the endpoint and model the reviewer configured for
+// the engine running on their own machine.
+func (c AgentConfig) Local() ModelRef { return ModelRef{Endpoint: c.Endpoint, Model: c.Model} }
+
 // Split reports whether more than one model is actually answering. An override
 // that repeats the default is not a split: the status page has to say how many
 // models are in play, and that is easy to get wrong by eye.
 func (c AgentConfig) Split() bool {
-	base := ModelRef{Endpoint: c.Endpoint, Model: c.Model}
+	base := c.Local()
 	for _, w := range Workloads {
 		if c.For(w) != base {
 			return true

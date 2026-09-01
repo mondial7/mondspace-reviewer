@@ -11,7 +11,9 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
+	"time"
 
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
 )
@@ -247,7 +249,7 @@ func (s *Store) LoadSignoff(targetID string) (domain.Signoff, error) {
 	return v, nil
 }
 
-// analysisFile is where one audit's result lives, one file per kind.
+// analysisFile is where one audit's latest result lives, one file per kind.
 //
 // Per kind rather than one file holding all of them: two audits can be running
 // at once, and a single file would mean read-modify-write races between two
@@ -256,7 +258,25 @@ func analysisFile(kind domain.AnalysisKind) string {
 	return "analysis-" + string(kind) + ".json"
 }
 
+// analysisAtFile is where the result for one *particular* diff lives, so a
+// reviewer who leaves a review and comes back to it unchanged is shown the
+// answer they already paid for rather than being invited to buy it again
+// (ADR 0037).
+func analysisAtFile(kind domain.AnalysisKind, print string) string {
+	return "analysis-" + string(kind) + "-" + print + ".json"
+}
+
+// keptPrints is how many past diffs' results are kept per audit. An audit only
+// runs when somebody clicks, so this is generous; it exists so a review worked
+// on all week does not accumulate a file per click forever.
+const keptPrints = 12
+
 // SaveAnalysis stores one audit's result for one target.
+//
+// It is written twice: once under the diff it was actually about, and once as
+// the latest result for this audit whatever diff that was. The first is what
+// makes coming back to an unchanged review free; the second is what lets a card
+// show the previous answer while saying the code has moved since.
 func (s *Store) SaveAnalysis(a domain.Analysis) error {
 	dir := filepath.Join(s.root, a.TargetID)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -267,7 +287,19 @@ func (s *Store) SaveAnalysis(a domain.Analysis) error {
 		return err
 	}
 
-	name := analysisFile(a.Kind)
+	if a.Print != "" {
+		if err := writeFileAtomic(dir, analysisAtFile(a.Kind, a.Print), body); err != nil {
+			return err
+		}
+		pruneAnalyses(dir, a.Kind)
+	}
+	return writeFileAtomic(dir, analysisFile(a.Kind), body)
+}
+
+// writeFileAtomic replaces one file in place, so a reader never sees a partial
+// result — including a reader in another process, which is the ordinary case
+// here.
+func writeFileAtomic(dir, name string, body []byte) error {
 	tmp, err := os.CreateTemp(dir, name+".*")
 	if err != nil {
 		return err
@@ -283,10 +315,71 @@ func (s *Store) SaveAnalysis(a domain.Analysis) error {
 	return os.Rename(tmp.Name(), filepath.Join(dir, name))
 }
 
-// LoadAnalysis returns one audit's result, or a zero Analysis when it has never
-// been run. Never run is the ordinary state, not a failure.
+// pruneAnalyses drops the oldest per-diff results for one audit, newest kept.
+// A failure here is ignored: it is housekeeping, and losing the housekeeping is
+// not a reason to fail a result that already ran.
+func pruneAnalyses(dir string, kind domain.AnalysisKind) {
+	prefix := "analysis-" + string(kind) + "-"
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	type aged struct {
+		name string
+		at   time.Time
+	}
+	var kept []aged
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasPrefix(e.Name(), prefix) || !strings.HasSuffix(e.Name(), ".json") {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		kept = append(kept, aged{e.Name(), info.ModTime()})
+	}
+	if len(kept) <= keptPrints {
+		return
+	}
+	sort.Slice(kept, func(i, j int) bool { return kept[i].at.After(kept[j].at) })
+	for _, old := range kept[keptPrints:] {
+		os.Remove(filepath.Join(dir, old.name))
+	}
+}
+
+// LoadAnalysisAt returns the result of one audit over one exact diff, or a zero
+// Analysis when that diff has never been audited.
+//
+// The latest file is consulted too, because it may itself be the result for
+// this diff — which is the case for every result written before results were
+// kept per diff at all.
+func (s *Store) LoadAnalysisAt(targetID string, kind domain.AnalysisKind, print string) (domain.Analysis, error) {
+	if print == "" {
+		return domain.Analysis{}, nil
+	}
+	if a, err := s.readAnalysis(filepath.Join(s.root, targetID, analysisAtFile(kind, print))); err == nil && a.Done() {
+		return a, nil
+	}
+	a, err := s.LoadAnalysis(targetID, kind)
+	if err != nil || a.Print != print {
+		return domain.Analysis{}, err
+	}
+	return a, nil
+}
+
+// LoadAnalysis returns one audit's most recent result whatever diff it was
+// about, or a zero Analysis when it has never been run. Never run is the
+// ordinary state, not a failure.
 func (s *Store) LoadAnalysis(targetID string, kind domain.AnalysisKind) (domain.Analysis, error) {
-	body, err := os.ReadFile(filepath.Join(s.root, targetID, analysisFile(kind)))
+	return s.readAnalysis(filepath.Join(s.root, targetID, analysisFile(kind)))
+}
+
+// readAnalysis is one stored result. A missing or corrupt file reads as "never
+// run", which invites running it again rather than presenting something
+// unreadable as a finding.
+func (s *Store) readAnalysis(path string) (domain.Analysis, error) {
+	body, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
 		return domain.Analysis{}, nil
 	}
@@ -295,8 +388,6 @@ func (s *Store) LoadAnalysis(targetID string, kind domain.AnalysisKind) (domain.
 	}
 	var a domain.Analysis
 	if err := json.Unmarshal(body, &a); err != nil {
-		// A corrupt result reads as "never run", which invites running it again
-		// rather than presenting something unreadable as a finding.
 		return domain.Analysis{}, nil
 	}
 	return a, nil

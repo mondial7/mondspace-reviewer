@@ -65,12 +65,13 @@ func TestPartialConfigurationIsCompletedByDefaults(t *testing.T) {
 	}
 }
 
-func TestTheDefaultIsOneServerForEveryWorkload(t *testing.T) {
+func TestWithNoClaudeCodeEverythingIsOneLocalServer(t *testing.T) {
 	// Measured, not assumed: the 4B instruct model has no thinking mode and
 	// still gets narration's enum-constrained schema right every time, while a
 	// second resident model on 24 GB made everything about four times slower
-	// (ADR 0019). So the default is one server, and the split is available
-	// rather than imposed.
+	// (ADR 0019). On a machine with no second engine, one server answers
+	// everything and always has.
+	t.Setenv("MSR_CLAUDE_CLI", "0")
 	got := resolveWorkloads(
 		resolveAgent(domain.AgentConfig{}, defaultSummarizerURL, defaultModel, nil),
 		nil, nil)
@@ -85,11 +86,49 @@ func TestTheDefaultIsOneServerForEveryWorkload(t *testing.T) {
 	}
 }
 
+func TestWithClaudeCodeTheJudgementJobsGoToIt(t *testing.T) {
+	// The routing table, read through the configuration (ADR 0039). Judgement
+	// to the CLI; volume stays local, because a paid call per changed file is a
+	// bill nobody asked for.
+	cfg := resolveWorkloads(
+		resolveAgent(domain.AgentConfig{CLI: domain.ModelRef{Endpoint: domain.ClaudeCLIEndpoint}},
+			defaultSummarizerURL, defaultModel, nil),
+		nil, nil)
+
+	if ref := cfg.For(domain.Narration); ref.Endpoint != domain.ClaudeCLIEndpoint {
+		t.Errorf("narration = %+v, want the cli", ref)
+	}
+	if ref := cfg.For(domain.Narration); ref.Model != "" {
+		t.Errorf("narration model = %q, want the cli's own default", ref.Model)
+	}
+	for _, w := range []domain.Workload{domain.Describe, domain.Ask} {
+		if ref := cfg.For(w); ref.Endpoint != defaultSummarizerURL {
+			t.Errorf("%s = %+v, want the local model", w, ref)
+		}
+	}
+}
+
+func TestTurningTheCLIOffPutsEverythingBackOnTheLocalModel(t *testing.T) {
+	// It costs money on somebody's subscription, so there has to be one switch
+	// that stops it, and it has to beat a stored setting.
+	t.Setenv("MSR_CLAUDE_CLI", "0")
+	cfg := resolveAgent(domain.AgentConfig{CLI: domain.ModelRef{Endpoint: domain.ClaudeCLIEndpoint}},
+		defaultSummarizerURL, defaultModel, nil)
+
+	if cfg.UsesCLI() {
+		t.Fatalf("got %+v, want the cli out of the arrangement entirely", cfg)
+	}
+	if ref := cfg.For(domain.Narration); ref.Endpoint != defaultSummarizerURL {
+		t.Errorf("narration = %+v, want the local model", ref)
+	}
+}
+
 func TestNamingYourOwnEndpointGivesYouOneServer(t *testing.T) {
 	// The default split is a package deal. Someone who points msr at a single
 	// llama-server must not silently keep a narration override pointing at a
 	// port they never started — the failure would be one workload quietly
 	// falling back to mechanical prose.
+	t.Setenv("MSR_CLAUDE_CLI", "0")
 	cfg := resolveAgent(domain.AgentConfig{}, "http://127.0.0.1:8080/v1", defaultModel,
 		map[string]bool{"summarizer-url": true})
 

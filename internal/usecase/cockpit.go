@@ -217,6 +217,30 @@ func ReviewFingerprint(files []domain.FileStat) string {
 	return hex.EncodeToString(sum[:16])
 }
 
+// ChangeFingerprint identifies what a review currently *says*, down to the
+// content of every diff in it.
+//
+// ReviewFingerprint above is churn per file, which is cheap and is what a
+// snapshot ref cannot give. It has one blind spot: a file edited so that its
+// added and removed counts land where they were reads as though nothing
+// happened, and an agent rewriting the same function is exactly that shape.
+//
+// This is the expensive, exact answer, and it is only ever asked once the cheap
+// probe has already said something moved — so the page redraws when, and only
+// when, a reader would see a different diff.
+//
+// Order does not affect it: git may list files in any order.
+func ChangeFingerprint(units []domain.Unit, diffs map[string]domain.Diff) string {
+	lines := make([]string, 0, len(units))
+	for _, u := range units {
+		lines = append(lines, u.ID+"\x00"+strings.Join(u.Files, ",")+"\x00"+diffs[u.ID].Text)
+	}
+	sort.Strings(lines)
+
+	sum := sha256.Sum256([]byte(strings.Join(lines, "\n")))
+	return hex.EncodeToString(sum[:16])
+}
+
 // WithChanges adds a bounded digest of what actually changed to an ask context.
 //
 // Without it a session-scoped question carries only file names and note text,

@@ -4,6 +4,8 @@ import (
 	"context"
 	"sync"
 
+	"github.com/mondial7/mondspace-reviewer/internal/adapter/summarizer/claudecli"
+	"github.com/mondial7/mondspace-reviewer/internal/adapter/summarizer/routed"
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/summarizer/switchable"
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
 	"github.com/mondial7/mondspace-reviewer/internal/port"
@@ -145,6 +147,81 @@ func (p *agentPool) Usage() port.TokenUsage {
 		total.Millis += u.Millis
 	}
 	return total
+}
+
+// engines is every distinct adapter in the pool, grouped by the engine it is.
+//
+// A routed handle holds two, and the same local adapter may stand behind the
+// CLI and answer the volume jobs directly — so instances are collected into a
+// set before anything is totalled. Counting one server twice is how a status
+// page comes to report double what a review actually cost.
+func (p *agentPool) engines() map[domain.Engine]map[port.Summarizer]bool {
+	p.mu.RLock()
+	adapters := make([]port.Summarizer, 0, len(p.adapters))
+	for _, a := range p.adapters {
+		adapters = append(adapters, a)
+	}
+	p.mu.RUnlock()
+
+	out := map[domain.Engine]map[port.Summarizer]bool{
+		domain.EngineCLI:   {},
+		domain.EngineLocal: {},
+	}
+	add := func(engine domain.Engine, sum port.Summarizer) {
+		if sum != nil {
+			out[engine][sum] = true
+		}
+	}
+	for _, a := range adapters {
+		if pair, ok := a.(*routed.Summarizer); ok {
+			primary, standby := pair.Engines()
+			add(domain.EngineCLI, primary)
+			add(domain.EngineLocal, standby)
+			continue
+		}
+		if _, isCLI := a.(*claudecli.Summarizer); isCLI {
+			add(domain.EngineCLI, a)
+			continue
+		}
+		add(domain.EngineLocal, a)
+	}
+	return out
+}
+
+// UsageOf is what one engine has spent, across every workload routed to it.
+func (p *agentPool) UsageOf(engine domain.Engine) port.TokenUsage {
+	var total port.TokenUsage
+	for sum := range p.engines()[engine] {
+		reporter, ok := sum.(port.UsageReporter)
+		if !ok {
+			continue
+		}
+		u := reporter.Usage()
+		total.Calls += u.Calls
+		total.Failures += u.Failures
+		total.Prompt += u.Prompt
+		total.Completion += u.Completion
+		total.Reasoning += u.Reasoning
+		total.Millis += u.Millis
+	}
+	return total
+}
+
+// PingEngine reports whether one engine answers right now, on its own. The
+// combined Ping below says whether the assistant works; this says which half of
+// it does, which is the question the settings page asks (ADR 0039).
+func (p *agentPool) PingEngine(ctx context.Context, engine domain.Engine) (present bool, err error) {
+	for sum := range p.engines()[engine] {
+		present = true
+		pinger, ok := sum.(port.Pinger)
+		if !ok {
+			continue
+		}
+		if e := pinger.Ping(ctx); e != nil {
+			return true, e
+		}
+	}
+	return present, nil
 }
 
 // Ping reports whether every model in the pool answers. One being down is the

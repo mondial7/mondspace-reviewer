@@ -98,15 +98,25 @@ func (s *Store) migrate(ctx context.Context) error {
 			updated_at  timestamptz NOT NULL DEFAULT now(),
 			payload     jsonb NOT NULL
 		)`,
-		// One row per (target, audit), because two audits run independently and
-		// must not overwrite each other (ADR 0024).
+		// One row per (target, audit, diff), because two audits run
+		// independently and must not overwrite each other (ADR 0024), and
+		// because coming back to a review that has not moved should not cost a
+		// model call for an answer already on disk (ADR 0037).
 		`CREATE TABLE IF NOT EXISTS ` + s.table("analyses") + ` (
 			target_id   text NOT NULL,
 			kind        text NOT NULL,
+			print       text NOT NULL DEFAULT '',
 			updated_at  timestamptz NOT NULL DEFAULT now(),
 			payload     jsonb NOT NULL,
-			PRIMARY KEY (target_id, kind)
+			PRIMARY KEY (target_id, kind, print)
 		)`,
+		// And the same for a table created before the diff was part of the key.
+		// Dropping and re-adding the constraint is the idempotent spelling; the
+		// table holds one row per click on an audit button, so rebuilding its
+		// index at start-up is not a cost worth writing dynamic SQL to avoid.
+		`ALTER TABLE ` + s.table("analyses") + ` ADD COLUMN IF NOT EXISTS print text NOT NULL DEFAULT ''`,
+		`ALTER TABLE ` + s.table("analyses") + ` DROP CONSTRAINT IF EXISTS analyses_pkey`,
+		`ALTER TABLE ` + s.table("analyses") + ` ADD CONSTRAINT analyses_pkey PRIMARY KEY (target_id, kind, print)`,
 		`CREATE TABLE IF NOT EXISTS ` + s.table("exchanges") + ` (
 			id          text PRIMARY KEY,
 			session_id  text NOT NULL,
@@ -252,27 +262,49 @@ func (s *Store) LoadSignoff(targetID string) (domain.Signoff, error) {
 	return v, nil
 }
 
-// SaveAnalysis stores one audit's result for one target.
+// SaveAnalysis stores one audit's result for one target, against the diff it
+// was actually about.
 func (s *Store) SaveAnalysis(a domain.Analysis) error {
 	payload, err := json.Marshal(a)
 	if err != nil {
 		return err
 	}
 	_, err = s.pool.Exec(context.Background(),
-		`INSERT INTO `+s.table("analyses")+` (target_id, kind, payload)
-		 VALUES ($1, $2, $3)
-		 ON CONFLICT (target_id, kind) DO UPDATE SET payload = EXCLUDED.payload, updated_at = now()`,
-		a.TargetID, string(a.Kind), payload)
+		`INSERT INTO `+s.table("analyses")+` (target_id, kind, print, payload)
+		 VALUES ($1, $2, $3, $4)
+		 ON CONFLICT (target_id, kind, print) DO UPDATE SET payload = EXCLUDED.payload, updated_at = now()`,
+		a.TargetID, string(a.Kind), a.Print, payload)
 	return err
 }
 
-// LoadAnalysis returns one audit's result, or a zero Analysis when it has never
-// been run. Never run is the ordinary state, not a failure.
+// LoadAnalysis returns one audit's most recent result whatever diff it was
+// about, or a zero Analysis when it has never been run. Never run is the
+// ordinary state, not a failure.
 func (s *Store) LoadAnalysis(targetID string, kind domain.AnalysisKind) (domain.Analysis, error) {
+	return s.readAnalysis(
+		`SELECT payload FROM `+s.table("analyses")+`
+		 WHERE target_id = $1 AND kind = $2 ORDER BY updated_at DESC LIMIT 1`,
+		targetID, string(kind))
+}
+
+// LoadAnalysisAt returns the result of one audit over one exact diff, or a zero
+// Analysis when that diff has never been audited (ADR 0037).
+func (s *Store) LoadAnalysisAt(targetID string, kind domain.AnalysisKind, print string) (domain.Analysis, error) {
+	if print == "" {
+		return domain.Analysis{}, nil
+	}
+	return s.readAnalysis(
+		`SELECT payload FROM `+s.table("analyses")+`
+		 WHERE target_id = $1 AND kind = $2 AND print = $3`,
+		targetID, string(kind), print)
+}
+
+// readAnalysis runs one of the two queries above. No row reads as "never run",
+// and so does a corrupt payload: both invite running it again rather than
+// presenting something unreadable as a finding.
+func (s *Store) readAnalysis(query string, args ...any) (domain.Analysis, error) {
 	var payload []byte
-	err := s.pool.QueryRow(context.Background(),
-		`SELECT payload FROM `+s.table("analyses")+` WHERE target_id = $1 AND kind = $2`,
-		targetID, string(kind)).Scan(&payload)
+	err := s.pool.QueryRow(context.Background(), query, args...).Scan(&payload)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return domain.Analysis{}, nil
 	}
@@ -281,8 +313,6 @@ func (s *Store) LoadAnalysis(targetID string, kind domain.AnalysisKind) (domain.
 	}
 	var a domain.Analysis
 	if err := json.Unmarshal(payload, &a); err != nil {
-		// A corrupt result reads as "never run", which invites running it again
-		// rather than presenting something unreadable as a finding.
 		return domain.Analysis{}, nil
 	}
 	return a, nil

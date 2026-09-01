@@ -105,11 +105,20 @@ func RunAudit(ctx context.Context, n Narrator, a Audit, targetID string,
 		TargetID: targetID,
 		Kind:     a.Kind,
 		At:       time.Now(),
-		Verdict:  Brief(out.Verdict, verdictChars),
-		Print:    Fingerprint(units),
+		// Stored whole. The card has room for a hundred characters and cuts
+		// what it shows to fit; storing the cut version made the ellipsis on
+		// the card a dead end, because there was no longer anything for the
+		// report to expand it to (ADR 0041). The schema already bounds this.
+		Verdict: Brief(out.Verdict, verdictChars+60),
+		// Fingerprinted over the diff text, not the unit list. A live review
+		// diffs against the working tree, so its units' refs never move: an
+		// audit keyed on those would call itself current for the rest of the
+		// afternoon however much the agent rewrote (ADR 0037).
+		Print:  ChangeFingerprint(units, diffs),
+		Prints: FilePrints(units, diffs),
 	}
 	for _, f := range out.Findings {
-		note := Brief(strings.TrimSpace(f.Note), findingChars)
+		note := Brief(strings.TrimSpace(f.Note), findingChars+60)
 		if note == "" {
 			continue
 		}
@@ -137,6 +146,117 @@ func RunAudit(ctx context.Context, n Narrator, a Audit, targetID string,
 	}
 	return result, nil
 }
+
+// RunAuditIncremental re-reads only the part of a change that moved, and folds
+// the answer into what the same audit already found (ADR 0038).
+//
+// A live review moves two files at a time. Re-reading fourteen to learn about
+// two costs seven times what it needs to, takes seven times as long on a local
+// model, and — because a rerun produces fresh findings that no longer match the
+// old ones by text — quietly loses whatever the reviewer had already dismissed.
+//
+// It falls back to a whole-change reading whenever it cannot do better: no
+// earlier result, an earlier result from before per-file prints existed, or a
+// change where everything moved anyway.
+func RunAuditIncremental(ctx context.Context, n Narrator, a Audit, targetID string,
+	units []domain.Unit, diffs map[string]domain.Diff, earlier domain.Analysis) (domain.Analysis, error) {
+
+	prints := FilePrints(units, diffs)
+	if !earlier.Done() || len(earlier.Prints) == 0 {
+		return RunAudit(ctx, n, a, targetID, units, diffs)
+	}
+
+	moved, gone := MovedFiles(earlier.Prints, prints)
+	if len(moved) == 0 {
+		// Nothing to ask about. Re-stamping is not the same as re-running: the
+		// findings, the verdict and the reviewer's judgements are all still
+		// exactly what this audit last said, and the only thing out of date is
+		// the record of which files that was about.
+		out := earlier
+		out.Print, out.Prints = ChangeFingerprint(units, diffs), prints
+		out.Read, out.Of = 0, len(prints)
+		if len(gone) > 0 {
+			out.Findings = keepFindings(out.Findings, Touched(gone))
+		}
+		return out, nil
+	}
+	if len(moved) >= len(prints) {
+		// Everything moved. There is nothing to carry, so this is a full run
+		// with extra steps.
+		return RunAudit(ctx, n, a, targetID, units, diffs)
+	}
+
+	changed := UnitsTouching(units, Touched(moved))
+	fresh, err := RunAudit(ctx, n, a, targetID, changed, DiffsOf(changed, diffs))
+	if err != nil {
+		return domain.Analysis{}, err
+	}
+
+	// What the fresh reading was not shown, it cannot speak for. Findings about
+	// files it did not see are carried across exactly as they were, dismissals
+	// and all; findings about files that moved are gone, because the reading
+	// that just ran is the current answer for those.
+	merged := fresh
+	merged.Findings = append(
+		CarryJudgements(fresh, earlier).Findings,
+		keepFindings(earlier.Findings, Touched(moved, gone))...,
+	)
+	merged.Findings = rankFindings(merged.Findings)
+
+	merged.Print, merged.Prints = ChangeFingerprint(units, diffs), prints
+	merged.Read, merged.Of = len(moved), len(prints)
+	return merged, nil
+}
+
+// keepFindings drops the findings about files in the given set.
+//
+// A finding that names no file at all is kept. It was a claim about the change
+// as a whole, and a reading that saw two files out of fourteen is in no position
+// to say it has stopped being true — dropping it would be a partial reading
+// silently clearing a security finding, which is the one thing this must never
+// do. A whole-change run is what clears it.
+func keepFindings(findings []domain.Finding, drop map[string]bool) []domain.Finding {
+	var out []domain.Finding
+	for _, f := range findings {
+		if f.File != "" && drop[f.File] {
+			continue
+		}
+		out = append(out, f)
+	}
+	return out
+}
+
+// rankFindings puts a merged set in the order a card reads it, and bounds it.
+//
+// Worst first, as everywhere else. The cap counts only what still stands: a
+// dismissal costs nothing to keep and dropping one would invite the next run to
+// raise the same thing as though nobody had ever looked at it.
+func rankFindings(findings []domain.Finding) []domain.Finding {
+	sort.SliceStable(findings, func(i, j int) bool {
+		return findings[i].Severity.Rank() < findings[j].Severity.Rank()
+	})
+
+	out := make([]domain.Finding, 0, len(findings))
+	standing := 0
+	for _, f := range findings {
+		if f.Stands() {
+			if standing == maxFindings {
+				continue
+			}
+			standing++
+		}
+		out = append(out, f)
+		if len(out) == maxCarried {
+			break
+		}
+	}
+	return out
+}
+
+// maxCarried bounds a merged card overall, dismissals included. Without it a
+// review worked on all afternoon accumulates a judgement history nobody reads
+// on a card that has room for five lines.
+const maxCarried = 4 * maxFindings
 
 // defaultVerdict covers a model that filled in the findings and forgot the
 // sentence. A card with an empty headline looks broken.

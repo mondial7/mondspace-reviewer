@@ -168,6 +168,41 @@
       </div>
       {{ end }}
       {{ end }}
+    </section>
+
+    <!-- Each engine on its own. Summing two into one green light is how a
+         review running entirely on the fallback comes to look identical to one
+         running as intended (ADR 0039). -->
+    <section class="board__panel">
+      <h2 class="board__title">engines</h2>
+      {{ range .Agent.Engines }}
+      <article class="engine">
+        <header class="engine__head">
+          <h3 class="engine__name">{{ .Name }}</h3>
+          <span class="engine__state engine__state--{{ if not .Present }}absent{{ else if .Healthy }}up{{ else }}down{{ end }}">
+            {{ if not .Present }}not here{{ else if .Healthy }}answering{{ else }}not answering{{ end }}
+          </span>
+        </header>
+        <p class="engine__where">
+          <code>{{ if .Where }}{{ .Where }}{{ else }}—{{ end }}</code>
+          {{ with .Model }} · {{ . }}{{ end }}
+        </p>
+        {{ with .Why }}<p class="engine__why">{{ . }}</p>{{ end }}
+        {{ if .Jobs }}
+        <p class="engine__jobs">reads: {{ range $i, $j := .Jobs }}{{ if $i }}, {{ end }}{{ $j }}{{ end }}</p>
+        {{ else }}
+        <p class="engine__jobs">nothing is routed here</p>
+        {{ end }}
+        <p class="engine__cost">
+          {{ if .Usage.Calls }}{{ .Usage.Calls }} call(s) · {{ .Usage.Prompt }} in · {{ .Usage.Completion }} out
+            {{ if .Usage.Failures }} · {{ .Usage.Failures }} failed{{ end }}
+          {{ else }}nothing spent yet{{ end }}
+        </p>
+      </article>
+      {{ end }}
+      {{ if not .Agent.Engines }}
+      <p class="queue__empty">No engine is configured.</p>
+      {{ end }}
 
       {{ if .CanConfigure }}
       <!-- Pointing msr at another machine or another model, without editing a

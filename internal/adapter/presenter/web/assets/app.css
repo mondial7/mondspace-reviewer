@@ -42,6 +42,11 @@
   --nebula-b: #06182b;
 
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  /* The page is monospace because most of it is git talking. A model's
+     sentences are set in this instead — see "Narration" below. System faces
+     only: msr is offline software and must not fetch a font from anywhere. */
+  --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
   --panel-glow: inset 0 1px 0 rgba(167, 139, 250, 0.06);
   --gutter: clamp(0.75rem, 1.6vw, 1.25rem);
 }
@@ -210,9 +215,31 @@
 .unit__id { color: var(--fg-dim); font-size: 0.85em; margin: 0.75rem 0 0; }
 
 /* Flags */
+/* A flag is a deterministic signal that a file is worth a closer look. Most of
+   them are worth *knowing* — `no-test`, `large`, `todo`, `new-dep` — and they
+   are on half the files in a normal review. Painting all of them the same red
+   is how a warning colour comes to mean nothing, and how `no-test` became the
+   thing you learn to skip past (ADR 0041).
+
+   Neutral by default. Colour is reserved for the two that mean stop. */
 .flag {
-  color: var(--del); border: 1px solid currentColor; border-radius: 3px;
+  color: var(--fg-dim); border: 1px solid var(--rule); border-radius: 3px;
   padding: 0 0.35rem; font-size: 0.85em;
+}
+
+.flag--loud,
+.flag--swallowed-err,
+.flag--public-api,
+.flag--failed {
+  color: var(--del);
+  border-color: currentColor;
+}
+
+/* The whole review's flags, counted once, above the files they are about. */
+.flagtally {
+  display: flex; flex-wrap: wrap; gap: 0.3rem;
+  margin: 0 0 0.6rem;
+  font-size: 0.72rem;
 }
 
 /* Detail list */
@@ -769,11 +796,18 @@ button .ico, a .ico, summary .ico { margin-right: 0.35em; }
   /* The rail used to supply the space above the first card. It is beside the
      page now, so the page provides its own. */
   padding: var(--gutter);
-  /* Story, changes, instruments — the panel last, because it is a thing you
-     glance at and the diff is the thing you read. Same widths as before, in
-     the order the eye wants them. */
-  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr) minmax(260px, 21rem);
+  /* Story, changes, instruments. The log is the product, so the diffs and the
+     annotation take the middle and everything else is sized around them: the
+     story is a rail that folds, and the panel is a fixed strip of instruments
+     you glance at (ADR 0040). */
+  grid-template-columns: minmax(0, 17rem) minmax(0, 1fr) minmax(260px, 21rem);
   align-items: stretch;
+}
+
+/* Folded, the story is a strip: still legible, still one click from coming
+   back, and out of the way of the thing you are actually reading. */
+.page--cockpit[data-story="folded"] .cockpit {
+  grid-template-columns: 2.1rem minmax(0, 1fr) minmax(260px, 21rem);
 }
 
 /* The instrument panel is one fixed column: it never scrolls away. */
@@ -792,6 +826,18 @@ button .ico, a .ico, summary .ico { margin-right: 0.35em; }
    only the field could grow ended in a column of dead space. */
 .cockpit__panel > * { flex: 0 0 auto; }
 .cockpit__panel > .cockpit__pulse { flex: 0 0 auto; height: clamp(9rem, 22vh, 15rem); }
+
+/* Idle, the field is a picture of something that stopped happening, and it was
+   taking premium room to say so. It keeps a strip — enough to see that it is
+   there and that nothing is moving — and hands the rest of its height to the
+   history below it, which is the one thing in this column that can always use
+   more (ADR 0040). */
+.page--cockpit[data-live="false"] .cockpit__panel > .cockpit__pulse {
+  height: 3.4rem;
+  padding: 0.45rem 0.7rem;
+}
+
+.page--cockpit[data-live="false"] .cockpit__pulse .pulseinfo { top: 0.35rem; }
 
 /* Moving between sessions and repositories. */
 .switcher { display: flex; gap: 0.4rem; min-width: 0; }
@@ -842,6 +888,80 @@ button .ico, a .ico, summary .ico { margin-right: 0.35em; }
   background: var(--panel); box-shadow: var(--panel-glow);
   padding: 0.9rem 1rem;
   scroll-behavior: smooth;
+}
+
+/* ── The story rail ─────────────────────────────────────────────────────────
+   Narration is worth having beside the code; it is not what the page is for.
+   It folds, and folded it keeps saying what it is and how many chapters are in
+   it, so bringing it back is a decision rather than a rediscovery. */
+
+.storyrail__head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: -0.2rem 0 0.6rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+.storyrail__title {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-dim);
+}
+
+.storyrail__count {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--fg-dim);
+}
+
+.storyrail__fold {
+  font: inherit; font-size: 0.85rem; line-height: 1;
+  padding: 0.1rem 0.35rem; cursor: pointer;
+  color: var(--fg-dim); background: transparent;
+  border: 1px solid var(--rule); border-radius: 6px;
+}
+
+.storyrail__fold:hover { color: var(--accent); border-color: var(--accent); }
+
+/* The strip only exists while the rail is folded. */
+.storyrail__strip { display: none; }
+
+.page--cockpit[data-story="folded"] .cockpit__story {
+  padding: 0.5rem 0;
+  overflow: hidden;
+}
+
+.page--cockpit[data-story="folded"] .storyrail__head,
+.page--cockpit[data-story="folded"] .storyrail__body { display: none; }
+
+.page--cockpit[data-story="folded"] .storyrail__strip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+  color: var(--fg-dim);
+  background: transparent;
+  border: 0;
+}
+
+.page--cockpit[data-story="folded"] .storyrail__strip:hover { color: var(--accent); }
+
+.storyrail__stripword {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  font-size: 0.7rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
 }
 
 .chron__chapter {
@@ -1204,6 +1324,67 @@ button:disabled:hover, .btn:disabled:hover {
 .btn:hover { border-color: var(--accent); color: var(--accent); }
 .btn--go { background: var(--accent); border-color: var(--accent); color: var(--bg); }
 .btn--go:hover { color: var(--bg); filter: brightness(1.08); }
+
+/* ── Weight ─────────────────────────────────────────────────────────────────
+   Two actions on the cockpit matter: start the review, and say you have
+   reviewed it. Everything else — run it again, read the report, re-describe,
+   re-analyse — is housekeeping you do while you are already here. Every one of
+   them used to be the same outlined chip, so nothing led (ADR 0040).
+
+   Three weights, and a control gets exactly one. */
+
+.act {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font: inherit;
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+  border: 1px solid transparent;
+  border-radius: 8px;
+}
+
+/* Primary: the thing this card exists to let you do. At most one per card. */
+.act--primary {
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0.5rem 1rem;
+  color: var(--bg);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.act--primary:hover { color: var(--bg); filter: brightness(1.1); }
+
+/* Secondary: a real action, just not the one you came for. */
+.act--secondary {
+  font-size: 0.78rem;
+  padding: 0.36rem 0.75rem;
+  color: var(--fg);
+  border-color: var(--rule);
+}
+
+.act--secondary:hover { border-color: var(--accent); color: var(--accent); }
+
+/* Quiet: housekeeping. It reads as a link because that is what it is. */
+.act--quiet {
+  font-size: 0.74rem;
+  padding: 0.3rem 0.2rem;
+  color: var(--fg-dim);
+  background: none;
+}
+
+.act--quiet:hover { color: var(--accent); }
+
+.act:disabled { opacity: 0.55; cursor: default; filter: none; }
+
+/* A <details> summary carrying a real action. The disclosure triangle is what
+   made "mark this reviewed" read as a footnote; the markup stays, because it
+   works with no JavaScript, and only the triangle goes. */
+.act--summary { list-style: none; }
+.act--summary::-webkit-details-marker { display: none; }
+.act--summary::marker { content: ""; }
 
 /* ── Settings ───────────────────────────────────────────────────────────────*/
 /* A sidebar and one pane. Most of this page is configuration you set once, and
@@ -2158,13 +2339,21 @@ a.toast:hover { border-color: var(--kind, var(--accent)); }
 }
 
 /* The top edge carries the state, so a glance across the row says which have
-   run and which found something — without reading a word. */
+   run and which found something — without reading a word.
+
+   Two axes, and the lifecycle wins where they disagree. A stale card is grey
+   however alarming its findings were: they are about code that is no longer
+   here, and colouring them as though they were current is the whole failure
+   the state exists to prevent. */
 .acard--clean { border-top-color: var(--stated); }
 .acard--found { border-top-color: var(--inferred); }
-.acard--stale { border-top-color: var(--fg-dim); }
 .acard--running { border-top-color: var(--accent); }
 .acard--read { border-top-color: var(--stated); }
 .acard--reading { border-top-color: var(--accent); }
+.acard--absent { border-top-color: var(--rule); }
+.acard--stale,
+.acard--stale.acard--clean,
+.acard--stale.acard--found { border-top-color: var(--fg-dim); }
 
 .acard__head {
   display: flex;
@@ -2193,6 +2382,62 @@ a.toast:hover { border-color: var(--kind, var(--accent)); }
 
 .acard--clean .acard__state { color: var(--stated); }
 .acard--found .acard__state { color: var(--inferred); }
+.acard--stale .acard__state { color: var(--fg-dim); }
+
+/* Whether this card is about the code on screen. One line, always in the same
+   place, so the answer is found rather than looked for. */
+.acard__doing,
+.acard__moved,
+.acard__current {
+  margin: 0;
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
+.acard__doing { color: var(--fg-dim); }
+
+/* Which engine answered. Quiet when it was the one it should have been, and
+   not quiet at all when it was the standby: the whole point of the label is
+   that a smaller model's verdict is worth less. */
+.acard__engine,
+.acard__fallback {
+  margin: 0;
+  font-size: 0.7rem;
+  line-height: 1.4;
+}
+
+.acard__engine { color: var(--fg-dim); }
+
+.acard__fallback {
+  color: var(--inferred);
+  font-weight: 600;
+}
+
+/* A merged result. Not a warning — carrying findings forward is the point —
+   but a card that read two files must not imply it read fourteen. */
+.acard__scope {
+  margin: 0;
+  color: var(--fg-dim);
+  font-size: 0.7rem;
+  line-height: 1.4;
+  font-family: var(--mono);
+}
+.acard__current { color: var(--stated); }
+
+/* The stale line is the loudest thing on a stale card on purpose: everything
+   below it is a claim about a version of the code that no longer exists. */
+.acard__moved {
+  color: var(--inferred);
+  font-weight: 600;
+}
+
+/* And the way out of it. This is the one place a "run again" is not optional
+   housekeeping — the card in front of the reviewer is out of date — so the
+   secondary weight is coloured rather than promoted. */
+.act.acard__run--wanted {
+  border-color: var(--inferred);
+  color: var(--inferred);
+}
 
 .acard__purpose {
   margin: 0;
@@ -2258,21 +2503,7 @@ a.toast:hover { border-color: var(--kind, var(--accent)); }
   font-size: 0.7rem;
 }
 
-.acard__run {
-  align-self: flex-start;
-  margin-top: 0.15rem;
-  padding: 0.24rem 0.7rem;
-  border: 1px solid var(--rule);
-  border-radius: 6px;
-  background: var(--bg-raised);
-  color: var(--fg);
-  font: inherit;
-  font-size: 0.74rem;
-  cursor: pointer;
-}
 
-.acard__run:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
-.acard__run:disabled { opacity: 0.55; cursor: default; }
 
 /* An audit that could not run says why on its own card. Silence here would be
    read as "nothing found", which is the one thing it must never mean. */
@@ -2476,12 +2707,20 @@ a.toast:hover { border-color: var(--kind, var(--accent)); }
   text-transform: uppercase;
 }
 
+/* Two lines, wrapped at a word, rather than one line cut wherever the column
+   happened to end. This is the picker: it is where a reviewer chooses what to
+   look at next, and choosing from `Put tags and recorded runs in the his…` is
+   choosing from a fragment (ADR 0041). */
 .log__subject {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   font-size: 0.76rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
 }
 
 .log__meta {
@@ -2861,10 +3100,6 @@ a.log__branch:hover { text-decoration: underline; }
    The second was a link in the prose, which is not what it is — it is the same
    kind of thing as the first. */
 .acard__actions { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-top: 0.2rem; }
-.acard__run--report {
-  display: inline-flex; align-items: center;
-  text-decoration: none;
-}
 
 .report { display: flex; flex-direction: column; gap: var(--gutter); max-width: 62rem; }
 .report__context .brief__kind { margin-top: 0; }
@@ -2968,3 +3203,145 @@ a.log__branch:hover { text-decoration: underline; }
 
 .search__where { color: var(--hunk); font-family: var(--mono); font-size: 0.7rem; }
 .search__text { min-width: 0; overflow-wrap: anywhere; }
+
+/* ── Engines ────────────────────────────────────────────────────────────────
+   Two engines answer msr's questions and they fail independently (ADR 0039).
+   One combined state would say "half working" as though it were a single fact,
+   and which half it is decides whether a verdict on a card is worth reading. */
+
+.engine {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.65rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.engine:last-child { border-bottom: 0; }
+
+.engine__head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.engine__name {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.engine__state {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 0.7rem;
+}
+
+.engine__state--up { color: var(--stated); }
+.engine__state--down { color: var(--del); }
+.engine__state--absent { color: var(--fg-dim); }
+
+.engine__where,
+.engine__jobs,
+.engine__cost {
+  margin: 0;
+  color: var(--fg-dim);
+  font-size: 0.72rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.engine__where code { font-family: var(--mono); }
+
+/* An engine that is configured and silent is a thing to fix, and says why. */
+.engine__why {
+  margin: 0;
+  color: var(--del);
+  font-size: 0.72rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+/* ── First run ──────────────────────────────────────────────────────────────
+   The state before anything has been read is the actual first impression of
+   msr, and it used to be four words and a button (ADR 0040). What it has to
+   say is that the page already works: git's diffs, mechanical flags and
+   annotation are all there before a model is involved at all. */
+
+.firstrun {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0.2rem 0 0.1rem;
+  padding: 0.7rem 0.85rem;
+  border: 1px dashed var(--rule);
+  border-radius: 9px;
+  background: var(--bg-raised, transparent);
+}
+
+.firstrun__lead {
+  margin: 0;
+  color: var(--fg);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.firstrun__list {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  color: var(--fg-dim);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.firstrun__list strong { color: var(--fg); font-weight: 600; }
+
+/* ── Narration ──────────────────────────────────────────────────────────────
+   Everything on this page used to be monospace, which said that a chapter a
+   model wrote and a line count git measured were the same kind of thing. They
+   are not, and the distinction is the one msr is built on (ADR 0003).
+
+   So: sentences a model wrote are set in a proportional face, and everything
+   measured stays in the monospace the rest of the page is in. It reads better
+   — prose in monospace always reads worse — and it doubles as the answer to
+   "did somebody count this or did something guess it", without a label
+   (ADR 0041). */
+
+.chron__prose,
+.chron__chaptertitle,
+.brief__title,
+.brief__text,
+.brief__task,
+.brief__sub,
+.acard__verdict,
+.acard__purpose,
+.acard__note,
+.acard__doing,
+.group__meaning,
+.post__meaning,
+.ask__q,
+.ask__a,
+.signoff__state,
+.signoff__comment,
+.firstrun__lead,
+.firstrun__list,
+.report__what,
+.pulseinfo__note {
+  font-family: var(--sans);
+}
+
+/* …except the parts of a sentence that are facts. A path inside a chapter
+   title, a file name inside a finding, a hash quoted in an answer: those are
+   the things the monospace was for in the first place. */
+.chron__chaptertitle .path,
+.acard__file,
+.acard__scope,
+.ask__a code,
+.ask__a .md__code,
+.report__stats {
+  font-family: var(--mono);
+}

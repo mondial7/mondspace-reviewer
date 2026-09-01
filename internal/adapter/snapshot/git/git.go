@@ -6,6 +6,8 @@ package git
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -1008,4 +1010,115 @@ func splitByFile(text string) map[string]domain.Diff {
 		}
 	}
 	return out
+}
+
+// ── The cheap question ──────────────────────────────────────────────────────
+
+// Probe is a cheap answer to "has anything moved in this repository?", meant to
+// be asked every few seconds and to return the same string almost every time.
+//
+// It hashes three signals, in the order they cost: where HEAD points, when the
+// index was last written, and what `git status` says together with the size and
+// mtime of every path it names. The first two are file reads; the third is one
+// git process that consults the index's stat cache rather than diffing anything.
+//
+// It is deliberately not a diff. A probe that moved is a reason to do real work;
+// a probe that did not is the common case, and the point of it is that the
+// common case costs nothing. Every value is opaque — only equality means
+// anything, and a probe is never compared across repositories.
+func (s *Snapshotter) Probe(ctx context.Context) (string, error) {
+	h := sha256.New()
+	gitDir := s.gitDir()
+	fmt.Fprintln(h, readTrim(filepath.Join(gitDir, "HEAD")))
+	fmt.Fprintln(h, headTarget(gitDir))
+	fmt.Fprintln(h, stamp(filepath.Join(gitDir, "index")))
+
+	// `--no-optional-locks` earns its length twice over here. It stops git
+	// rewriting the index to refresh its stat cache, which would move the stamp
+	// above on every single probe and make the whole thing useless; and it keeps
+	// a poll running every few seconds from ever taking the index lock out from
+	// under an agent that is working in the same repository.
+	out, err := s.run(ctx, os.Environ(), "--no-optional-locks", "status",
+		"--porcelain", "--untracked-files=all")
+	if err != nil {
+		return "", err
+	}
+	fmt.Fprintln(h, out)
+
+	// `git status` reports *that* a file is modified, not how: a file edited
+	// twice reads `. M` both times. The stat of each named path is what
+	// separates one edit from the next, which is exactly the case a live review
+	// exists for — an agent rewriting the same file over and over.
+	for _, line := range nonEmptyLines(out) {
+		fmt.Fprintln(h, stamp(filepath.Join(s.repoDir, statusPath(line))))
+	}
+	return hex.EncodeToString(h.Sum(nil)[:16]), nil
+}
+
+// gitDir is where this repository keeps its metadata. Usually `.git`, but a
+// linked worktree has a `.git` *file* pointing elsewhere, and reading HEAD out
+// of it would silently probe nothing.
+func (s *Snapshotter) gitDir() string {
+	dot := filepath.Join(s.repoDir, ".git")
+	info, err := os.Stat(dot)
+	if err != nil || info.IsDir() {
+		return dot
+	}
+	if rest, ok := strings.CutPrefix(readTrim(dot), "gitdir: "); ok {
+		if filepath.IsAbs(rest) {
+			return rest
+		}
+		return filepath.Join(s.repoDir, rest)
+	}
+	return dot
+}
+
+// headTarget is the contents of whatever ref HEAD points at, so a commit on the
+// current branch moves the probe. A detached HEAD holds the hash itself and this
+// finds nothing, which is correct: the HEAD file already carried the change.
+func headTarget(gitDir string) string {
+	ref, ok := strings.CutPrefix(readTrim(filepath.Join(gitDir, "HEAD")), "ref: ")
+	if !ok {
+		return ""
+	}
+	// A packed ref has no file of its own. The index stamp and the status hash
+	// still move on a commit, so nothing is missed by coming back empty here.
+	return readTrim(filepath.Join(gitDir, filepath.FromSlash(ref)))
+}
+
+// statusPath is the path out of one `--porcelain` line: two status columns, a
+// space, then the name — or `orig -> name` for a rename.
+//
+// A path with a space or a quote in it comes back quoted and is not unquoted
+// here. Stat'ing the wrong name returns "missing" consistently, so the probe
+// stays stable; it simply learns nothing extra about that one file.
+func statusPath(line string) string {
+	if len(line) < 4 {
+		return ""
+	}
+	name := line[3:]
+	if _, after, ok := strings.Cut(name, " -> "); ok {
+		name = after
+	}
+	return strings.Trim(name, `"`)
+}
+
+// stamp is a file's size and modification time, or a fixed word when it is not
+// there. A missing file must hash to something stable, or the probe would move
+// every tick on a repository with a deleted file in it.
+func stamp(path string) string {
+	info, err := os.Stat(path)
+	if err != nil {
+		return "-"
+	}
+	return fmt.Sprintf("%d:%d", info.Size(), info.ModTime().UnixNano())
+}
+
+// readTrim is a small file's contents, or empty when it cannot be read.
+func readTrim(path string) string {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(b))
 }

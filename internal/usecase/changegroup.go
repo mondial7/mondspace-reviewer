@@ -149,6 +149,67 @@ func DescribeGroupsReporting(ctx context.Context, n Narrator, sess domain.Sessio
 	return meanings, failed, first
 }
 
+// DescribeChangedGroups describes only the groups whose files moved, and keeps
+// what was already said about the rest (ADR 0038).
+//
+// One model call per group is the highest-volume thing msr does with a model.
+// In a live review most groups are exactly what they were a minute ago, and
+// asking again buys a differently-worded sentence about an identical diff.
+//
+// A group with no earlier description is always described, moved or not: it has
+// nothing to keep.
+func DescribeChangedGroups(ctx context.Context, n Narrator, sess domain.Session,
+	groups []domain.ChangeGroup, earlier map[string]string, touched map[string]bool,
+	onProgress func(map[string]string)) (map[string]string, int, error) {
+
+	kept := map[string]string{}
+	var ask []domain.ChangeGroup
+	for _, g := range groups {
+		was, known := earlier[g.ID]
+		if known && !groupTouches(g, touched) {
+			kept[g.ID] = was
+			continue
+		}
+		ask = append(ask, g)
+	}
+	if len(ask) == 0 {
+		return kept, 0, nil
+	}
+
+	// Progress carries the kept descriptions too, or the page would empty out
+	// and refill while this runs.
+	fresh, failed, why := DescribeGroupsReporting(ctx, n, sess, ask, func(partial map[string]string) {
+		if onProgress != nil {
+			onProgress(mergeMeanings(kept, partial))
+		}
+	})
+	return mergeMeanings(kept, fresh), failed, why
+}
+
+// groupTouches reports whether any file in this group moved.
+func groupTouches(g domain.ChangeGroup, touched map[string]bool) bool {
+	for _, u := range g.Units {
+		for _, f := range u.Files {
+			if touched[f] {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// mergeMeanings folds fresh descriptions over kept ones without mutating either.
+func mergeMeanings(kept, fresh map[string]string) map[string]string {
+	out := make(map[string]string, len(kept)+len(fresh))
+	for id, text := range kept {
+		out[id] = text
+	}
+	for id, text := range fresh {
+		out[id] = text
+	}
+	return out
+}
+
 func meaningSchema() port.JSONSchema {
 	return port.JSONSchema{
 		Name: "change_meaning",

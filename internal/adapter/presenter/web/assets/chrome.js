@@ -68,6 +68,32 @@ for (const b of document.querySelectorAll('[data-sidenav-toggle]')) {
   b.addEventListener('click', () => setFolded(!folded));
 }
 
+// ── Folding the story ───────────────────────────────────────────────────────
+//
+// The log is the product, so the diffs and the annotation get the middle. The
+// story is narration about them: worth having open, not worth a third of the
+// screen when you are reading code. Folded it is a strip you can still read and
+// still click, and the state is remembered like every other one here.
+
+const STORY_KEY = 'msr:story';
+let storyFolded = stored(STORY_KEY) === 'off';
+
+function applyStory() {
+  body.dataset.story = storyFolded ? 'folded' : 'open';
+  for (const b of document.querySelectorAll('[data-story-toggle]')) {
+    b.setAttribute('aria-expanded', String(!storyFolded));
+  }
+}
+
+applyStory();
+for (const b of document.querySelectorAll('[data-story-toggle]')) {
+  b.addEventListener('click', () => {
+    storyFolded = !storyFolded;
+    remember(STORY_KEY, storyFolded ? 'off' : 'on');
+    applyStory();
+  });
+}
+
 // ── Theme ───────────────────────────────────────────────────────────────────
 //
 // Following the operating system is a state of its own, not the absence of a

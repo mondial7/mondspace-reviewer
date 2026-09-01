@@ -62,6 +62,18 @@ type UsageReporter interface {
 	Usage() TokenUsage
 }
 
+// EngineReporter is an optional capability of a Summarizer: naming what
+// actually answered the most recent call, and whether that was the engine the
+// job was routed to or the one standing behind it.
+//
+// It exists so a result can be labelled with the thing that produced it. An
+// answer from a small local model presented with the same confidence as one
+// from a much larger engine is worse than no answer, because the reviewer has
+// no way to know how much of it to believe (ADR 0039).
+type EngineReporter interface {
+	Answered() (engine domain.Engine, fellBack bool, why string)
+}
+
 // Pinger is an optional capability of a Summarizer: answering, right now,
 // whether its endpoint is reachable. Liveness is a live question — a probe at
 // start-up says nothing about the model five minutes later.

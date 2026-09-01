@@ -11,6 +11,7 @@ import (
 	gitsnap "github.com/mondial7/mondspace-reviewer/internal/adapter/snapshot/git"
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/store/jsonl"
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
+	"github.com/mondial7/mondspace-reviewer/internal/port"
 	"github.com/mondial7/mondspace-reviewer/internal/usecase"
 )
 
@@ -210,29 +211,41 @@ func runAnalysis(pool *agentPool, model string) web.RunAnalysisFunc {
 		if err != nil {
 			return err
 		}
-		// An audit is a judgement about a change, so it uses the model that
-		// answers the hardest questions rather than the quick per-file one.
-		result, err := usecase.RunAudit(ctx, pool.For(domain.Narration), audit, targetID, units, diffs)
+
+		// What this audit said last time, so it can be asked about the
+		// difference rather than about the whole change again (ADR 0038). A
+		// rerun would otherwise produce fresh findings that no longer match the
+		// old ones by text, and take the reviewer's dismissals with them
+		// (ADR 0030).
+		store := jsonl.New(entry.out)
+		earlier, _ := store.LoadAnalysis(targetID, kind)
+
+		// An audit is a judgement about a change, so it goes where the routing
+		// table sends judgement (ADR 0039).
+		reader := pool.For(domain.Narration)
+		result, err := usecase.RunAuditIncremental(ctx, reader,
+			audit, targetID, units, diffs, earlier)
 		if err != nil {
 			return err
 		}
-
 		result.Model = model
+		result.Engine, result.Fallback = answeredBy(reader)
+		result = usecase.CarryJudgements(result, earlier)
 
-		// A rerun produces the same findings from the same diff, so whatever the
-		// reviewer already decided is carried onto them (ADR 0030).
-		if earlier, err := jsonl.New(entry.out).LoadAnalysis(targetID, kind); err == nil {
-			result = usecase.CarryJudgements(result, earlier)
+		how := "read in full"
+		if result.Partial() {
+			how = fmt.Sprintf("re-read %d of %d files", result.Read, result.Of)
 		}
-
+		if result.Fallback {
+			how += ", on the fallback engine"
+		}
 		handlerRef().Record(web.AuditEntry{
 			SessionID: targetID, Action: string(kind), Model: model,
 			Millis: time.Since(started).Milliseconds(),
-			Detail: fmt.Sprintf("%s: %d finding(s) — %s",
-				audit.Title, len(result.Findings), usecase.Brief(result.Verdict, 60)),
+			Detail: fmt.Sprintf("%s: %d finding(s), %s — %s",
+				audit.Title, len(result.Findings), how, usecase.Brief(result.Verdict, 60)),
 		})
 
-		store := jsonl.New(entry.out)
 		if err := store.SaveAnalysis(result); err != nil {
 			// It ran and the reviewer will see it; it simply will not survive a
 			// restart.
@@ -242,15 +255,39 @@ func runAnalysis(pool *agentPool, model string) web.RunAnalysisFunc {
 	}
 }
 
-// analysisOf reads back what an audit last found. A store that cannot answer
-// reads as "never run", which invites running it rather than showing nothing.
+// answeredBy names the engine behind a result, so a card can say where it came
+// from and whether that was the engine the job was routed to (ADR 0039).
+//
+// A summarizer that does not account for itself reports nothing, which the page
+// reads as "unattributed" rather than as a claim about either engine.
+func answeredBy(sum port.Summarizer) (domain.Engine, bool) {
+	reporter, ok := sum.(port.EngineReporter)
+	if !ok {
+		return "", false
+	}
+	engine, fellBack, _ := reporter.Answered()
+	return engine, fellBack
+}
+
+// analysisOf reads back what an audit found. A store that cannot answer reads
+// as "never run", which invites running it rather than showing nothing.
+//
+// The result for the diff on screen is preferred, and the most recent result is
+// the fallback. That order is the whole of ADR 0037: a reviewer who audited a
+// review, left, and came back to it unchanged is shown the answer they already
+// paid for, and a reviewer whose code has moved since is shown the old answer
+// with the card saying so.
 func analysisOf() web.AnalysisOf {
-	return func(targetID string, kind domain.AnalysisKind) domain.Analysis {
+	return func(targetID string, kind domain.AnalysisKind, print string) domain.Analysis {
 		entry, known := lookupTarget(targetID)
 		if !known {
 			return domain.Analysis{}
 		}
-		got, err := jsonl.New(entry.out).LoadAnalysis(targetID, kind)
+		store := jsonl.New(entry.out)
+		if got, err := store.LoadAnalysisAt(targetID, kind, print); err == nil && got.Done() {
+			return got
+		}
+		got, err := store.LoadAnalysis(targetID, kind)
 		if err != nil {
 			return domain.Analysis{}
 		}

@@ -398,3 +398,141 @@ func contains(xs []string, want string) bool {
 	}
 	return false
 }
+
+// ── Re-reading only the chapters that moved (ADR 0038) ──────────────────────
+
+// countingChapterNarrator answers every chapter prompt and remembers which
+// areas it was asked about.
+type countingChapterNarrator struct{ asked []string }
+
+func (n *countingChapterNarrator) Answer(_ context.Context, question string, _ domain.AskContext) (string, error) {
+	n.asked = append(n.asked, question)
+	return `{"title":"rewritten","prose":"Something changed here."}`, nil
+}
+
+func incrementalStory() (domain.Session, []domain.Unit, map[string]domain.Diff, domain.Narrative) {
+	units := []domain.Unit{
+		{ID: "u1", Files: []string{"auth/token.go"}},
+		{ID: "u2", Files: []string{"api/handler.go"}},
+	}
+	diffs := map[string]domain.Diff{
+		"u1": {Text: "@@\n+one\n"},
+		"u2": {Text: "@@\n+two\n"},
+	}
+	earlier := domain.Narrative{
+		SessionID: "s", Title: "the story", Intro: "an intro",
+		Source: domain.NarrativeModel,
+		Chapters: []domain.Chapter{
+			{Title: "auth", Prose: "The original auth prose.", UnitIDs: []string{"u1"}},
+			{Title: "api", Prose: "The original api prose.", UnitIDs: []string{"u2"}},
+		},
+		Prints: usecase.FilePrints(units, diffs),
+	}
+	return domain.Session{ID: "s", Prompt: "do the thing"}, units, diffs, earlier
+}
+
+func TestOnlyTheChapterWhoseFilesMovedIsRewritten(t *testing.T) {
+	sess, units, diffs, earlier := incrementalStory()
+	moved := map[string]domain.Diff{"u1": diffs["u1"], "u2": {Text: "@@\n+two\n+three\n"}}
+
+	n := &countingChapterNarrator{}
+	got, ok := usecase.NarrateChanges(context.Background(), n, sess, units, moved, earlier, nil)
+	if !ok {
+		t.Fatal("a story with prints and one moved file should be re-readable incrementally")
+	}
+	if len(n.asked) != 1 {
+		t.Fatalf("one chapter moved, so one call: got %d", len(n.asked))
+	}
+	if !strings.Contains(n.asked[0], "api") {
+		t.Errorf("the wrong chapter was re-read:\n%s", n.asked[0])
+	}
+
+	by := map[string]domain.Chapter{}
+	for _, c := range got.Chapters {
+		for _, id := range c.UnitIDs {
+			by[id] = c
+		}
+	}
+	if by["u1"].Prose != "The original auth prose." {
+		t.Errorf("an untouched chapter was rewritten: %q", by["u1"].Prose)
+	}
+	if by["u2"].Prose == "The original api prose." {
+		t.Errorf("the moved chapter was not rewritten: %q", by["u2"].Prose)
+	}
+	if got.Title != "the story" || got.Intro != "an intro" {
+		t.Error("the title and intro should carry across a partial re-reading")
+	}
+}
+
+func TestAStoryWithNothingToCompareAgainstIsReadInFull(t *testing.T) {
+	sess, units, diffs, earlier := incrementalStory()
+	earlier.Prints = nil // written before per-file prints existed
+
+	n := &countingChapterNarrator{}
+	if _, ok := usecase.NarrateChanges(context.Background(), n, sess, units, diffs, earlier, nil); ok {
+		t.Error("without prints there is nothing to be incremental about")
+	}
+	if len(n.asked) != 0 {
+		t.Error("it should decline rather than half-run")
+	}
+}
+
+func TestGroupDescriptionsAreKeptForGroupsThatDidNotMove(t *testing.T) {
+	units := []domain.Unit{
+		{ID: "u1", Files: []string{"auth/token.go"}},
+		{ID: "u2", Files: []string{"api/handler.go"}},
+	}
+	diffs := map[string]domain.Diff{"u1": {Text: "@@\n+one\n"}, "u2": {Text: "@@\n+two\n"}}
+	groups := usecase.GroupChanges(units, diffs)
+	if len(groups) != 2 {
+		t.Fatalf("want a group per directory, got %d", len(groups))
+	}
+
+	earlier := map[string]string{groups[0].ID: "what auth is for", groups[1].ID: "what the api is for"}
+	n := &countingChapterNarrator{}
+	got, _, _ := usecase.DescribeChangedGroups(context.Background(), n,
+		domain.Session{}, groups, earlier, usecase.Touched([]string{"api/handler.go"}), nil)
+
+	if len(n.asked) != 1 {
+		t.Fatalf("one group moved, so one call: got %d", len(n.asked))
+	}
+	if got[groups[0].ID] != "what auth is for" {
+		t.Errorf("an untouched group's description was not kept: %q", got[groups[0].ID])
+	}
+	if got[groups[1].ID] == "what the api is for" {
+		t.Error("the moved group's description was not refreshed")
+	}
+}
+
+func TestARebuiltReviewKeepsItsNotesOnTheRightFiles(t *testing.T) {
+	// Unit ids used to be positional, so a file arriving at the top of the list
+	// renumbered every unit under it and every note with them (ADR 0038).
+	units := []domain.Unit{
+		{ID: usecase.FileUnitID("t", "api/handler.go"), Files: []string{"api/handler.go"}},
+		{ID: usecase.FileUnitID("t", "auth/token.go"), Files: []string{"auth/token.go"}},
+	}
+	notes := []domain.Note{
+		{ID: "n1", UnitID: "t-f002", File: "auth/token.go", Kind: domain.NoteObjection, Text: "wrong layer"},
+		{ID: "n2", UnitID: "t-f001", File: "api/handler.go", Kind: domain.NoteOK},
+	}
+
+	got := usecase.PlaceNotes(units, notes)
+	if got[0].UnitID != usecase.FileUnitID("t", "auth/token.go") {
+		t.Errorf("the objection lost its file: %s", got[0].UnitID)
+	}
+	if got[0].Text != "wrong layer" {
+		t.Error("re-anchoring must not touch what the reviewer wrote")
+	}
+	if got[1].UnitID != usecase.FileUnitID("t", "api/handler.go") {
+		t.Errorf("the approval lost its file: %s", got[1].UnitID)
+	}
+
+	// And a note about a file nobody can find is left exactly where it was
+	// rather than moved somewhere plausible.
+	orphan := usecase.PlaceNotes(units, []domain.Note{
+		{ID: "n3", UnitID: "gone", File: "deleted/thing.go", Kind: domain.NoteNote},
+	})
+	if orphan[0].UnitID != "gone" {
+		t.Errorf("a note with nowhere to go was moved anyway: %s", orphan[0].UnitID)
+	}
+}

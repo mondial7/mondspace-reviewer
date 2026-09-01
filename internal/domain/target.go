@@ -64,5 +64,20 @@ type AgentConfig struct {
 	// Overrides send a particular workload to a different model, or a different
 	// server, or both. Absent means every workload shares the settings above,
 	// which is the common case and stays the simple one.
+	//
+	// An override is the reviewer saying where this job goes, and it outranks
+	// the routing table. The table is a default, not a policy.
 	Overrides map[Workload]ModelRef `json:"overrides,omitempty"`
+	// CLI is where the Claude Code CLI lives, for the jobs the routing table
+	// sends there. An empty Model means the CLI's own default, which is almost
+	// always what is wanted: the Model field above is about the other engine
+	// and handing its name to the CLI fails the call (ADR 0035).
+	//
+	// An empty Endpoint means the CLI is not in play at all, and everything
+	// stays on the local model — which is what msr does on a machine that has
+	// never heard of Claude Code.
+	CLI ModelRef `json:"cli,omitempty"`
 }
+
+// UsesCLI reports whether the Claude Code CLI is configured as an engine here.
+func (c AgentConfig) UsesCLI() bool { return c.CLI.Endpoint != "" }

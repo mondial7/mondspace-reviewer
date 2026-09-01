@@ -1264,3 +1264,63 @@ func TestAnAnnotatedTagReportsTheCommitItPointsAt(t *testing.T) {
 		}
 	}
 }
+
+// A probe is only worth anything if it is stable when nothing happened and
+// moves when something did — including the case a live review exists for, an
+// agent editing the same file twice.
+func TestProbeMovesOnlyWhenTheRepositoryDoes(t *testing.T) {
+	dir := t.TempDir()
+	gitCmd(t, dir, "init", "-q")
+	gitCmd(t, dir, "config", "user.email", "t@t")
+	gitCmd(t, dir, "config", "user.name", "t")
+	write := func(name, body string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("a.txt", "v1\n")
+	gitCmd(t, dir, "add", "-A")
+	gitCommitAt(t, dir, "2026-01-01T00:00:00", "init")
+
+	s := gitsnap.New(dir, "sess")
+	ctx := context.Background()
+	probe := func(what string) string {
+		t.Helper()
+		got, err := s.Probe(ctx)
+		if err != nil {
+			t.Fatalf("Probe (%s): %v", what, err)
+		}
+		if got == "" {
+			t.Fatalf("Probe (%s) returned nothing", what)
+		}
+		return got
+	}
+
+	quiet := probe("clean tree")
+	if again := probe("clean tree again"); again != quiet {
+		t.Fatalf("probe moved with nothing happening: %s then %s", quiet, again)
+	}
+
+	// A new untracked file, which is exactly what an agent creates first.
+	write("b.txt", "new\n")
+	added := probe("untracked file")
+	if added == quiet {
+		t.Fatal("probe did not move when a file appeared")
+	}
+
+	// The same file edited again. `git status` reads the same both times, so
+	// this is the case the stat of each named path is there for.
+	write("b.txt", "new\nnewer\n")
+	edited := probe("same file edited again")
+	if edited == added {
+		t.Fatal("probe did not move when an already-changed file changed again")
+	}
+
+	// A commit moves HEAD and the index even though the tree ends up clean.
+	gitCmd(t, dir, "add", "-A")
+	gitCommitAt(t, dir, "2026-02-01T00:00:00", "work")
+	if committed := probe("after a commit"); committed == edited {
+		t.Fatal("probe did not move when the work was committed")
+	}
+}

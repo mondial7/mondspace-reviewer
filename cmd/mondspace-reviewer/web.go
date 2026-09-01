@@ -23,6 +23,7 @@ import (
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/store/jsonl"
 	pgstore "github.com/mondial7/mondspace-reviewer/internal/adapter/store/postgres"
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/summarizer/openai"
+	"github.com/mondial7/mondspace-reviewer/internal/adapter/summarizer/routed"
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
 	"github.com/mondial7/mondspace-reviewer/internal/port"
 	"github.com/mondial7/mondspace-reviewer/internal/usecase"
@@ -139,10 +140,6 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 	defer closeStore()
 
 	snap := gitsnap.New(repo, initial)
-	firstStats, err := snap.Numstat(ctx, entry.target.From, entry.target.To)
-	if err != nil {
-		firstStats = nil // a review that cannot be measured still renders
-	}
 
 	// One handle per workload, so narration can be answered by a bigger model
 	// than the per-file descriptions without anything downstream knowing (ADR
@@ -206,13 +203,14 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 
 	// A cockpit left open on a second screen must not go stale: what it watches
 	// may still be moving, so the numbers are recomputed on a tick and pushed to
-	// open pages. Reading git every 15s is cheap; a model is never involved.
+	// open pages. It costs one `git status` every five seconds while somebody is
+	// reading, nothing at all while nobody is, and a model is never involved.
 	go refreshReview(ctx, reviewRefresher{
 		handler: handler, snap: snap, store: store, sum: pool.For(domain.Narration),
 		sessionID: initial, repo: repo,
 		storeRel: storeRelativeTo(repo, storeRoot),
 		baseline: entry.target.From, model: agent.Model,
-		fingerprint: usecase.ReviewFingerprint(firstStats), narrate: narrate,
+		fingerprint: usecase.ChangeFingerprint(view.Units, view.Diffs), narrate: narrate,
 	})
 	go refreshAgent(ctx, handler, pool, &agent)
 
@@ -520,6 +518,7 @@ type signoffStore interface {
 type analysisStore interface {
 	SaveAnalysis(domain.Analysis) error
 	LoadAnalysis(targetID string, kind domain.AnalysisKind) (domain.Analysis, error)
+	LoadAnalysisAt(targetID string, kind domain.AnalysisKind, print string) (domain.Analysis, error)
 }
 
 // Every store must remember stories. This is asserted rather than left to the
@@ -551,9 +550,14 @@ type reviewRefresher struct {
 	narrate     func(context.Context, string)
 }
 
-// reviewTick is how often the review is checked for movement. One `git diff
-// --numstat` per tick is cheap; nothing else runs unless something changed.
-const reviewTick = 15 * time.Second
+// reviewTick is how often the review is checked for movement.
+//
+// Five seconds, because the thing being watched is an agent writing files, and
+// a reviewer who has to reload the page to find out has been given a screenshot
+// rather than a live review. It is affordable because what runs on a tick is a
+// probe — one `git status` and a handful of stat calls — and everything after
+// it runs only when the probe says something moved.
+const reviewTick = 5 * time.Second
 
 // renarrateEvery bounds how often the model is asked to re-read a session that
 // is still moving. Without it an active agent would trigger a narration every
@@ -562,77 +566,111 @@ const reviewTick = 15 * time.Second
 const renarrateEvery = 5 * time.Minute
 
 // refreshReview keeps a cockpit current while the session it watches is still
-// being worked on. Each tick asks git one cheap question — has anything changed?
-// — and does the expensive work only when the answer is yes.
+// being worked on.
+//
+// Three gates, cheapest first. Nobody watching: do nothing at all. Probe
+// unchanged: do nothing at all. Content unchanged: update the numbers and leave
+// the page alone. Only a change a reader could actually see gets as far as
+// rebuilding units and waking open pages — which is what lets this run every
+// five seconds without the review jumping under whoever is reading it.
 func refreshReview(ctx context.Context, r reviewRefresher) {
 	ticker := time.NewTicker(reviewTick)
 	defer ticker.Stop()
 
-	lastNarration := time.Now()
+	state := refreshState{lastNarration: time.Now()}
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
+		case <-r.handler.Attention():
+			// A page just attached its event stream. Whatever it is showing was
+			// rendered from however stale this became while nobody was looking,
+			// so a returning reader gets a check now rather than in five
+			// seconds' time.
 		case <-ticker.C:
-			// A pinned review is deliberately still (ADR 0020). Rebuilding it
-			// against the working tree here would undo the pin every fifteen
-			// seconds — the page would hold still between ticks and then jump.
-			far := domain.SnapshotRef{}
-			if p, pinned := pinnedAt(r.sessionID); pinned {
-				far = p.ref
-			}
-
-			stats, err := r.snap.Numstat(ctx, r.baseline, far)
-			if err != nil {
-				continue // a transient git failure must not kill the ticker
-			}
-			print := usecase.ReviewFingerprint(stats)
-			changed := print != r.fingerprint
-
-			sess, err := r.store.Load(r.sessionID)
-			if err != nil {
+			if r.handler.Subscribers() == 0 {
+				// Polling git on behalf of a page nobody has open is work with
+				// no reader. The moment one arrives, the branch above brings
+				// the check forward.
 				continue
-			}
-
-			units, diffs, err := usecase.BuildFileUnits(ctx, r.snap, r.sessionID,
-				r.baseline, far, usecase.InStore(r.storeRel))
-			if err != nil {
-				continue
-			}
-
-			if changed {
-				// The review moved. Say so in the log: a page that redraws itself
-				// with different content and no record of why is impossible to
-				// reason about afterwards.
-				r.handler.Record(web.AuditEntry{
-					SessionID: r.sessionID, Action: "review-changed",
-					Detail: fmt.Sprintf("%d files now changed (%s → %s)",
-						len(units), short(r.fingerprint), short(print)),
-				})
-				r.fingerprint = print
-
-				r.handler.SetSession(web.Session{
-					ID: r.sessionID, Prompt: sess.Prompt, Repo: r.repo,
-					Units: units, Notes: usecase.MarkSuperseded(units, sess.Notes),
-					Diffs: diffs,
-				}, usecase.FileHistories(sess.Events, units))
-			}
-
-			commits, _ := r.snap.CommitsSince(ctx, firstEventTime(sess))
-			r.handler.SetStats(usecase.ComputeStats(sess, units, diffs, commits, time.Now()))
-
-			// Re-reading the session costs several model calls, so it is bounded
-			// however fast the agent works.
-			if changed && time.Since(lastNarration) >= renarrateEvery {
-				lastNarration = time.Now()
-				r.handler.Record(web.AuditEntry{
-					SessionID: r.sessionID, Action: "renarrate-queued",
-					Detail: "the review changed; asking the model to re-read it",
-				})
-				r.handler.NarrateNow(ctx, r.sessionID)
 			}
 		}
+		refreshOnce(ctx, &r, &state)
+	}
+}
+
+// refreshState is what one pass has to remember from the last.
+type refreshState struct {
+	// probe is the cheap answer from the previous pass. Equality with the
+	// current one is the whole idle path.
+	probe         string
+	lastNarration time.Time
+}
+
+// refreshOnce is one pass of the loop above. It returns nothing: every outcome
+// is either recorded on the handler or deliberately dropped, because a transient
+// git failure must leave the ticker running.
+func refreshOnce(ctx context.Context, r *reviewRefresher, state *refreshState) {
+	// The cheap question, and where almost every pass ends.
+	probe, err := r.snap.Probe(ctx)
+	if err != nil || probe == state.probe {
+		return
+	}
+
+	// A pinned review is deliberately still (ADR 0020). Rebuilding it against
+	// the working tree here would undo the pin every few seconds — the page
+	// would hold still between ticks and then jump.
+	far := domain.SnapshotRef{}
+	if p, pinned := pinnedAt(r.sessionID); pinned {
+		far = p.ref
+	}
+
+	sess, err := r.store.Load(r.sessionID)
+	if err != nil {
+		return
+	}
+	units, diffs, err := usecase.BuildFileUnits(ctx, r.snap, r.sessionID,
+		r.baseline, far, usecase.InStore(r.storeRel))
+	if err != nil {
+		return
+	}
+	// Only past the probe is it worth asking the exact question. The repository
+	// moved; that is not the same as this review reading differently, and a
+	// touched file with identical contents must not redraw anybody's page.
+	state.probe = probe
+	print := usecase.ChangeFingerprint(units, diffs)
+	changed := print != r.fingerprint
+
+	if changed {
+		// Say so in the log: a page that redraws itself with different content
+		// and no record of why is impossible to reason about afterwards.
+		r.handler.Record(web.AuditEntry{
+			SessionID: r.sessionID, Action: "review-changed",
+			Detail: fmt.Sprintf("%d files now changed (%s → %s)",
+				len(units), short(r.fingerprint), short(print)),
+		})
+		r.fingerprint = print
+
+		r.handler.SetSession(web.Session{
+			ID: r.sessionID, Prompt: sess.Prompt, Repo: r.repo,
+			Units: units, Notes: usecase.PlaceNotes(units, sess.Notes),
+			Diffs: diffs,
+		}, usecase.FileHistories(sess.Events, units))
+	}
+
+	commits, _ := r.snap.CommitsSince(ctx, firstEventTime(sess))
+	r.handler.SetStats(usecase.ComputeStats(sess, units, diffs, commits, time.Now()))
+
+	// Re-reading the session costs several model calls, so it is bounded
+	// however fast the agent works.
+	if changed && time.Since(state.lastNarration) >= renarrateEvery {
+		state.lastNarration = time.Now()
+		r.handler.Record(web.AuditEntry{
+			SessionID: r.sessionID, Action: "renarrate-queued",
+			Detail: "the review changed; asking the model to re-read it",
+		})
+		r.handler.NarrateNow(ctx, r.sessionID)
 	}
 }
 
@@ -647,19 +685,50 @@ func short(fingerprint string) string {
 // summarizerFor builds a summarizer for one model, probing once so an
 // unreachable endpoint degrades to mechanical rather than hanging.
 //
+// A ref pointing at the Claude Code CLI comes back with the local model standing
+// behind it, because a review must never block on an engine (ADR 0039). The
+// pair reports which of the two actually answered, so a result from the standby
+// is not presented as though it came from the engine it was routed to.
+//
 // NoThinking is a property of the settings as a whole rather than of one model:
 // it asks the chat template to skip the reasoning phase, and under llama-server
 // the real switch is --reasoning-budget 0 on the server itself (ADR 0019).
 func summarizerFor(agent domain.AgentConfig) buildFunc {
-	return func(ref domain.ModelRef) port.Summarizer {
+	// Memoised, because the local model is reached twice — once as the engine
+	// for the volume jobs, and once as the thing standing behind the CLI. Two
+	// adapters for one server would be two connections, two liveness answers
+	// and two halves of a usage total that is supposed to be one number.
+	var mu sync.Mutex
+	made := map[domain.ModelRef]port.Summarizer{}
+	build := func(ref domain.ModelRef) port.Summarizer {
+		mu.Lock()
+		defer mu.Unlock()
+		if have, ok := made[ref]; ok {
+			return have
+		}
 		chosen := chooseSummarizer(ref.Endpoint, ref.Model)
 		if agent.NoThinking {
 			if adapter, ok := chosen.(*openai.Summarizer); ok {
-				return adapter.WithoutThinking()
+				chosen = adapter.WithoutThinking()
 			}
 		}
+		made[ref] = chosen
 		return chosen
 	}
+
+	return func(ref domain.ModelRef) port.Summarizer {
+		primary := build(ref)
+		if !isCLI(ref.Endpoint) || agent.Local().Endpoint == "" {
+			return primary
+		}
+		return routed.New(primary, domain.EngineCLI, build(agent.Local()), domain.EngineLocal)
+	}
+}
+
+// isCLI reports whether an endpoint names the Claude Code CLI rather than an
+// HTTP server.
+func isCLI(endpoint string) bool {
+	return strings.HasPrefix(strings.TrimSpace(endpoint), "claude:")
 }
 
 // configureAgent applies new settings and remembers them. It refuses settings it
@@ -727,7 +796,60 @@ func agentStatus(ctx context.Context, pool *agentPool, agent *domain.AgentConfig
 			})
 		}
 	}
+	status.Engines = engineStatus(ctx, pool, agent)
 	return status
+}
+
+// engineStatus reports each engine separately: whether it is there, whether it
+// answers, what the routing table sends to it, and what it has cost (ADR 0039).
+//
+// Two engines summed into one green light is the one thing this panel must not
+// do. A review running entirely on the fallback works, and looks identical to
+// one running as intended, unless the page says which is which.
+func engineStatus(ctx context.Context, pool *agentPool, agent *domain.AgentConfig) []web.EngineStatus {
+	rows := []web.EngineStatus{
+		{Name: string(domain.EngineCLI), Where: agent.CLI.Endpoint, Model: agent.CLI.Model,
+			Present: agent.UsesCLI()},
+		{Name: string(domain.EngineLocal), Where: agent.Endpoint, Model: agent.Model,
+			Present: agent.Endpoint != ""},
+	}
+	engines := []domain.Engine{domain.EngineCLI, domain.EngineLocal}
+
+	for i, engine := range engines {
+		for _, w := range domain.Workloads {
+			// What is *actually* routed here, overrides included — the table is
+			// the default and the reviewer may have moved a job off it.
+			if isCLI(agent.For(w).Endpoint) != (engine == domain.EngineCLI) {
+				continue
+			}
+			for _, job := range domain.JobsOn(w) {
+				rows[i].Jobs = append(rows[i].Jobs, string(job))
+			}
+		}
+		if !rows[i].Present {
+			continue
+		}
+		probe, cancel := context.WithTimeout(ctx, 2*time.Second)
+		reached, err := pool.PingEngine(probe, engine)
+		cancel()
+		rows[i].Healthy = reached && err == nil
+		if err != nil {
+			rows[i].Why = err.Error()
+		} else if !reached {
+			// Configured, routed nothing, built nothing. Saying "healthy" for
+			// something that has never been asked a question would be a claim
+			// nobody checked.
+			rows[i].Why = "configured, but nothing is routed to it"
+		}
+		rows[i].Usage = pool.UsageOf(engine)
+	}
+	// The CLI is only worth a row when it is part of the arrangement. On a
+	// machine that has never heard of Claude Code, an empty panel saying so is
+	// a thing to fix rather than a fact (ADR 0035).
+	if !rows[0].Present && len(rows[0].Jobs) == 0 {
+		return rows[1:]
+	}
+	return rows
 }
 
 // refreshAgent re-probes the model while the page is open. "Is it online" is a
@@ -1014,7 +1136,7 @@ func targetLoader() web.Loader {
 
 		view := web.Session{
 			ID: targetID, Prompt: t.Title, Repo: filepath.Base(mustAbs(entry.repo)),
-			Units: units, Notes: usecase.MarkSuperseded(units, sess.Notes), Diffs: diffs,
+			Units: units, Notes: usecase.PlaceNotes(units, sess.Notes), Diffs: diffs,
 			Hidden:    hidden,
 			Stats:     usecase.ComputeStats(sess, units, diffs, commits, time.Now()),
 			Histories: usecase.FileHistories(sess.Events, units),
@@ -1089,7 +1211,7 @@ func sessionLoader(workspace []web.SessionSummary, out string) web.Loader {
 
 		return web.Session{
 			ID: sessionID, Prompt: sess.Prompt, Repo: filepath.Base(mustAbs(entry.repo)),
-			Units: units, Notes: usecase.MarkSuperseded(units, sess.Notes), Diffs: diffs,
+			Units: units, Notes: usecase.PlaceNotes(units, sess.Notes), Diffs: diffs,
 			Hidden:    hidden,
 			Stats:     usecase.ComputeStats(sess, units, diffs, commits, time.Now()),
 			Histories: usecase.FileHistories(sess.Events, units),
@@ -1223,21 +1345,41 @@ func narrateTarget(ctx context.Context, handler *web.Server, sum port.Summarizer
 		return
 	}
 	started := time.Now()
-	// With the diffs: a chapter is written from what the change did, and it
-	// cannot be if the model never sees it (ADR 0034).
-	narrative, err := usecase.NarrateProgressively(ctx, sum, domain.Session{
-		ID: targetID, Prompt: entry.target.Title,
-	}, units, diffs, func(partial domain.Narrative) { handler.SetNarrativeFor(targetID, partial) })
+	sess := domain.Session{ID: targetID, Prompt: entry.target.Title}
+	publish := func(partial domain.Narrative) { handler.SetNarrativeFor(targetID, partial) }
+
+	// What the last reading knew, so this one can ask about the difference
+	// rather than about everything (ADR 0038).
+	stored, _ := jsonl.New(entry.out).LoadNarrative(targetID)
+	moved, _ := usecase.MovedFiles(stored.Prints, usecase.FilePrints(units, diffs))
+	touched := usecase.Touched(moved)
+
+	narrative, partial := usecase.NarrateChanges(ctx, sum, sess, units, diffs, stored, publish)
+	if !partial {
+		// With the diffs: a chapter is written from what the change did, and it
+		// cannot be if the model never sees it (ADR 0034).
+		narrative, err = usecase.NarrateProgressively(ctx, sum, sess, units, diffs, publish)
+		// A whole reading speaks for every file in the review, so nothing is
+		// carried and everything below is re-described.
+		touched = usecase.Touched(pathsOf(units))
+		stored.Meanings = nil
+	}
 	narrative.Fingerprint = usecase.Fingerprint(units)
+	narrative.Prints = usecase.FilePrints(units, diffs)
 	narrative.Model = model
+	narrative.Engine, narrative.Fallback = answeredBy(sum)
 	narrative.WrittenAt = time.Now()
 
+	how := "read in full"
+	if partial {
+		how = fmt.Sprintf("re-read %d of %d files", len(moved), len(units))
+	}
 	record := web.AuditEntry{
 		SessionID: targetID, Action: "narrate", Model: model,
 		Millis: time.Since(started).Milliseconds(),
-		Detail: fmt.Sprintf("%s %q: %d chapters, %s",
+		Detail: fmt.Sprintf("%s %q: %d chapters, %s, %s",
 			entry.target.Kind, usecase.Brief(entry.target.Title, 40),
-			len(narrative.Chapters), narrative.Source),
+			len(narrative.Chapters), narrative.Source, how),
 	}
 	if err != nil {
 		record.Failed = true
@@ -1245,8 +1387,8 @@ func narrateTarget(ctx context.Context, handler *web.Server, sum port.Summarizer
 	}
 
 	groups := usecase.GroupChanges(units, diffs)
-	meanings, failed, why := usecase.DescribeGroupsReporting(ctx, sum,
-		domain.Session{Prompt: entry.target.Title}, groups,
+	meanings, failed, why := usecase.DescribeChangedGroups(ctx, sum, sess, groups,
+		stored.Meanings, touched,
 		func(partial map[string]string) {
 			live := narrative
 			live.Meanings = partial

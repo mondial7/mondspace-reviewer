@@ -2112,7 +2112,7 @@ func TestTheAnalysisCardsAreOfferedAndRunOnDemand(t *testing.T) {
 	h := web.NewServer(testSession(), nil).
 		WithAnalyses(
 			func(context.Context, string, domain.AnalysisKind) error { return nil },
-			func(string, domain.AnalysisKind) domain.Analysis { return domain.Analysis{} })
+			func(string, domain.AnalysisKind, string) domain.Analysis { return domain.Analysis{} })
 
 	body := get(t, h, "/").Body.String()
 
@@ -2143,7 +2143,7 @@ func TestRunningOneAuditAsksForThatOneOnly(t *testing.T) {
 				ran <- k
 				return nil
 			},
-			func(string, domain.AnalysisKind) domain.Analysis { return domain.Analysis{} })
+			func(string, domain.AnalysisKind, string) domain.Analysis { return domain.Analysis{} })
 
 	req := httptest.NewRequest(http.MethodPost, "/analysis/security", strings.NewReader("target=s"))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -2177,7 +2177,7 @@ func TestAnUnknownAuditIsNotFound(t *testing.T) {
 				t.Error("an audit that does not exist must not be run")
 				return nil
 			},
-			func(string, domain.AnalysisKind) domain.Analysis { return domain.Analysis{} })
+			func(string, domain.AnalysisKind, string) domain.Analysis { return domain.Analysis{} })
 
 	req := httptest.NewRequest(http.MethodPost, "/analysis/astrology", strings.NewReader("target=s"))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -2193,7 +2193,7 @@ func TestACleanAuditReadsAsAnAnswer(t *testing.T) {
 	// The common result. It has to look like the audit ran and found nothing,
 	// not like it failed to run.
 	h := web.NewServer(testSession(), nil).
-		WithAnalyses(nil, func(_ string, k domain.AnalysisKind) domain.Analysis {
+		WithAnalyses(nil, func(_ string, k domain.AnalysisKind, _ string) domain.Analysis {
 			if k != usecase.AuditSecurity {
 				return domain.Analysis{}
 			}
@@ -2217,7 +2217,7 @@ func TestACleanAuditReadsAsAnAnswer(t *testing.T) {
 
 func TestFindingsAreShownWithTheirFile(t *testing.T) {
 	h := web.NewServer(testSession(), nil).
-		WithAnalyses(nil, func(_ string, k domain.AnalysisKind) domain.Analysis {
+		WithAnalyses(nil, func(_ string, k domain.AnalysisKind, _ string) domain.Analysis {
 			if k != usecase.AuditBreaking {
 				return domain.Analysis{}
 			}
@@ -2262,16 +2262,60 @@ func TestAnAuditRunBeforeTheCodeMovedSaysSo(t *testing.T) {
 	// Same discipline as a sign-off: a reading of a version that no longer
 	// exists must not present itself as current (ADR 0021).
 	h := web.NewServer(testSession(), nil).
-		WithAnalyses(nil, func(_ string, k domain.AnalysisKind) domain.Analysis {
+		WithAnalyses(
+			func(context.Context, string, domain.AnalysisKind) error { return nil },
+			func(_ string, k domain.AnalysisKind, _ string) domain.Analysis {
+				return domain.Analysis{
+					TargetID: "s", Kind: k, At: time.Now().Add(-time.Hour),
+					Verdict: "Nothing found.", Print: "a-stale-print",
+				}
+			})
+
+	body := get(t, h, "/").Body.String()
+	if !strings.Contains(body, "the code has moved since this ran") {
+		t.Errorf("a stale audit must be qualified:\n%s", body)
+	}
+	// And it must still offer the way out of being stale.
+	if !strings.Contains(body, "re-run on this change") {
+		t.Errorf("a stale audit must offer a re-run:\n%s", body)
+	}
+}
+
+func TestAnAuditOfTheCodeOnScreenSaysThatToo(t *testing.T) {
+	// The other half of ADR 0037: "this is current" is as much a claim as "this
+	// has moved", and a card that only ever says one of them says nothing.
+	sess := testSession()
+	h := web.NewServer(sess, nil).
+		WithAnalyses(nil, func(target string, k domain.AnalysisKind, print string) domain.Analysis {
 			return domain.Analysis{
-				TargetID: "s", Kind: k, At: time.Now().Add(-time.Hour),
-				Verdict: "Nothing found.", Print: "a-stale-print",
+				TargetID: target, Kind: k, At: time.Now().Add(-time.Minute),
+				Verdict: "Nothing found.", Print: print,
 			}
 		})
 
 	body := get(t, h, "/").Body.String()
-	if !strings.Contains(body, "changed since") {
-		t.Errorf("a stale audit must be qualified:\n%s", body)
+	if !strings.Contains(body, "this is the change on screen") {
+		t.Errorf("a current audit should say so:\n%s", body)
+	}
+	if strings.Contains(body, "the code has moved since this ran") {
+		t.Error("a current audit must not be called stale")
+	}
+}
+
+func TestAnAuditNobodyHasRunSaysNothingElse(t *testing.T) {
+	// "absent" is a state, not the absence of one. It must not borrow the
+	// wording of a clean result.
+	h := web.NewServer(testSession(), nil).
+		WithAnalyses(nil, func(string, domain.AnalysisKind, string) domain.Analysis {
+			return domain.Analysis{}
+		})
+
+	body := get(t, h, "/").Body.String()
+	if !strings.Contains(body, "not run yet") {
+		t.Errorf("an audit nobody ran should say so:\n%s", body)
+	}
+	if strings.Contains(body, "this is the change on screen") {
+		t.Error("an audit nobody ran must not claim to describe anything")
 	}
 }
 
@@ -2283,7 +2327,7 @@ func TestAFailedAuditSaysSoRatherThanLookingUnrun(t *testing.T) {
 			func(context.Context, string, domain.AnalysisKind) error {
 				return errors.New("the model refused")
 			},
-			func(string, domain.AnalysisKind) domain.Analysis { return domain.Analysis{} })
+			func(string, domain.AnalysisKind, string) domain.Analysis { return domain.Analysis{} })
 
 	req := httptest.NewRequest(http.MethodPost, "/analysis/security", strings.NewReader("target=s"))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -2316,7 +2360,7 @@ func TestAnAuditCanBeAskedForByRefNotOnlyByID(t *testing.T) {
 				ran <- target
 				return nil
 			},
-			func(string, domain.AnalysisKind) domain.Analysis { return domain.Analysis{} })
+			func(string, domain.AnalysisKind, string) domain.Analysis { return domain.Analysis{} })
 
 	req := httptest.NewRequest(http.MethodPost, "/analysis/security?target=abc12345",
 		strings.NewReader("target=abc12345"))
@@ -2348,7 +2392,7 @@ func TestAnActionOnAnUnknownTargetRefusesRatherThanGuessing(t *testing.T) {
 				ran <- target
 				return nil
 			},
-			func(string, domain.AnalysisKind) domain.Analysis { return domain.Analysis{} })
+			func(string, domain.AnalysisKind, string) domain.Analysis { return domain.Analysis{} })
 
 	req := httptest.NewRequest(http.MethodPost, "/analysis/security?target=deadbeef",
 		strings.NewReader("target=deadbeef"))
@@ -2397,7 +2441,7 @@ func TestACardIsColouredByItsWorstFinding(t *testing.T) {
 	// A row of cards should be readable at a glance: which one has the thing
 	// that would stop a merge, without opening any of them.
 	h := web.NewServer(testSession(), nil).
-		WithAnalyses(nil, func(_ string, k domain.AnalysisKind) domain.Analysis {
+		WithAnalyses(nil, func(_ string, k domain.AnalysisKind, _ string) domain.Analysis {
 			if k != usecase.AuditSecurity {
 				return domain.Analysis{}
 			}

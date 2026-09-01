@@ -18,6 +18,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -161,6 +162,29 @@ type AgentStatus struct {
 	// (ADR 0019). Empty when a single model answers everything, so the common
 	// arrangement stays the quiet one on the page.
 	Workloads []WorkloadModel
+	// Engines is each engine on its own: present or not, answering or not, what
+	// it is being asked to do, and what it has cost. Two engines summed into one
+	// green light is the one thing the panel must not do — half-working is not
+	// working, and which half matters (ADR 0039).
+	Engines []EngineStatus
+}
+
+// EngineStatus is one engine as the settings page needs it.
+type EngineStatus struct {
+	Name string
+	// Where is the endpoint or the binary — what a reviewer would check.
+	Where string
+	Model string
+	// Present is whether this engine is configured at all. Absent is an
+	// ordinary state, not a fault: a machine with no Claude Code on it is the
+	// arrangement msr was built for.
+	Present bool
+	Healthy bool
+	// Why is what went wrong, for an engine that is there and not answering.
+	Why string
+	// Jobs is what the routing table sends here, in its words.
+	Jobs  []string
+	Usage port.TokenUsage
 }
 
 // WorkloadModel is one job and the model that answers it.
@@ -275,6 +299,12 @@ type Server struct {
 	pulses int
 	nextID int
 
+	// attention fires when a page attaches its event stream. A background
+	// refresh that pauses while nobody is looking needs to be told the moment
+	// somebody is, or the first thing a returning reader sees is however stale
+	// the page was when they left.
+	attention chan struct{}
+
 	newID func() string
 	now   func() time.Time
 }
@@ -291,8 +321,11 @@ func NewServer(sess Session, notes Annotator) *Server {
 		loaded: map[string]Session{},
 		thread: map[string][]Exchange{},
 		subs:   map[chan sseEvent]struct{}{},
-		newID:  func() string { return ulid.Make().String() },
-		now:    func() time.Time { return time.Now().UTC() },
+		// Buffered and never blocked on: attention is a nudge, and two readers
+		// arriving together are still one reason to go and look.
+		attention: make(chan struct{}, 1),
+		newID:     func() string { return ulid.Make().String() },
+		now:       func() time.Time { return time.Now().UTC() },
 	}
 	s.routes()
 	return s
@@ -969,11 +1002,30 @@ func (s *Server) WithStats(st domain.SessionStats) *Server {
 
 // SetStats replaces the session's numbers while the server is running, so the
 // cockpit keeps up with a session that is still being worked on.
+//
+// Open pages are only woken when a reader could actually tell. These are
+// recomputed on every poll, and a poll that runs every few seconds would
+// otherwise have every open page re-fetch itself for a duration that is
+// rendered to the nearest minute.
 func (s *Server) SetStats(st domain.SessionStats) {
 	s.mu.Lock()
+	was := s.sess.Stats
 	s.sess.Stats = st
 	s.mu.Unlock()
-	s.broadcast("stats")
+	if visiblyDifferent(was, st) {
+		s.broadcast("stats")
+	}
+}
+
+// visiblyDifferent reports whether two sets of numbers would read differently.
+//
+// Every field is compared exactly except how long the session has been open,
+// which is shown to the nearest minute and would otherwise differ on every
+// single poll (see statsFor and humanDuration).
+func visiblyDifferent(a, b domain.SessionStats) bool {
+	a.Open = a.Open.Truncate(time.Minute)
+	b.Open = b.Open.Truncate(time.Minute)
+	return a != b
 }
 
 // WithNarrative supplies the session's story, shown at /story.
@@ -1272,6 +1324,13 @@ func (s *Server) Subscribers() int {
 	defer s.mu.RUnlock()
 	return len(s.subs)
 }
+
+// Attention fires when a page attaches its event stream, which is how a poller
+// that stands down while nobody is watching learns that somebody is.
+//
+// It is a nudge, not a queue: a receive means "at least one page arrived since
+// you last looked", which is all a caller can act on anyway.
+func (s *Server) Attention() <-chan struct{} { return s.attention }
 
 // broadcast tells every live page that something changed. It never blocks: a
 // subscriber that is not keeping up simply misses this nudge, and the next one
@@ -1624,7 +1683,13 @@ func (s *Server) handleJudge(w http.ResponseWriter, r *http.Request) {
 type RunAnalysisFunc func(ctx context.Context, targetID string, kind domain.AnalysisKind) error
 
 // AnalysisOf reads one audit's stored result, zero when it has never run.
-type AnalysisOf func(targetID string, kind domain.AnalysisKind) domain.Analysis
+//
+// The print is the diff the card is about. An implementation that has a result
+// for exactly that diff returns it — which is what keeps a reviewer returning
+// to an unchanged review from being told the code has moved and invited to pay
+// for the same answer twice. Otherwise it returns the most recent result it
+// has, whatever diff that was for, and the card says so (ADR 0037).
+type AnalysisOf func(targetID string, kind domain.AnalysisKind, print string) domain.Analysis
 
 // WithAnalyses wires the audit cards: running one, and reading back what the
 // last run found (ADR 0024).
@@ -1662,8 +1727,10 @@ func (s *Server) handleAnalysis(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Registered before the goroutine starts, so the card shows "running" on
-	// the redirect rather than a tick later.
-	done := s.BeginWork(string(kind), target, audit.Title)
+	// the redirect rather than a tick later — and says what it is working on,
+	// because a local model can spend a minute on this and a spinner with no
+	// words beside it is indistinguishable from a hang.
+	done := s.BeginWork(string(kind), target, auditDoing(audit, s.openSession(r), target))
 	go func() {
 		// A panicking audit must not take the server down, and must not leave
 		// the card spinning forever.
@@ -1680,6 +1747,20 @@ func (s *Server) handleAnalysis(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	http.Redirect(w, r, backTo(r, "#analyses"), http.StatusSeeOther)
+}
+
+// auditDoing is the sentence under a spinning audit card: what this reading is
+// looking for, and how much it has been given to look at.
+//
+// The size is only added for the review actually on screen. A target the
+// reviewer navigated away from would need loading to count, and a number is not
+// worth a round trip to the store.
+func auditDoing(audit usecase.Audit, sess Session, target string) string {
+	if sess.ID != target || len(sess.Units) == 0 {
+		return audit.Purpose
+	}
+	return fmt.Sprintf("%s — reading %d %s", audit.Purpose,
+		len(sess.Units), plural("file", len(sess.Units)))
 }
 
 // SignoffFunc records that a reviewer has finished with a target; SignoffOf
@@ -1865,6 +1946,10 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	s.subs[ch] = struct{}{}
 	s.mu.Unlock()
+	select {
+	case s.attention <- struct{}{}:
+	default: // somebody is already on their way to look
+	}
 	defer func() {
 		s.mu.Lock()
 		delete(s.subs, ch)
@@ -2512,12 +2597,12 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 
 	// Which audits are in flight right now, so a card can say "running" rather
 	// than looking idle while a model is thinking about it.
-	running := map[string]bool{}
+	running := map[string]string{}
 	failedAudit := map[string]string{}
 	for _, w := range work {
 		switch {
 		case w.Running():
-			running[w.Kind] = true
+			running[w.Kind] = w.Detail
 			delete(failedAudit, w.Kind)
 		case w.Err != "":
 			failedAudit[w.Kind] = w.Err
@@ -2536,9 +2621,10 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 		gitlog = logOf(sess.ID, sess.Target.Ref)
 	}
 
-	// An audit fingerprints the units it read, so the same function decides
+	// An audit fingerprints the change it read, so the same function decides
 	// whether what it read is still what is on screen.
-	analyses := analysisCards(analysisOf, running, failedAudit, sess.ID, usecase.Fingerprint(sess.Units), s.now(), canJudgeFindings)
+	analyses := analysisCards(analysisOf, running, failedAudit, sess.ID,
+		usecase.ChangeFingerprint(sess.Units, sess.Diffs), s.now(), canJudgeFindings)
 
 	byID := map[string]unitView{}
 	for _, v := range views {
@@ -2615,6 +2701,7 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 		Chapters        []chapterView
 		Groups          []groupView
 		Tree            []domain.TreeNode
+		Flags           []flagCount
 		CanDescribe     bool
 		CanDescribeFile bool
 		Work            []Work
@@ -2658,12 +2745,67 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 		Stats:     statsFor(sess.Target.Kind, stats, sess.Target.Subtitle),
 		Narrative: narrative, Chapters: chapters, Groups: groups,
 		Tree:        usecase.FileTree(sess.Units, sess.Diffs),
+		Flags:       flagTally(sess.Units),
 		CanDescribe: canDescribe, CanDescribeFile: canDescribeFile, Work: work,
 		Thread: thread, HasAsk: hasAsk, HasReanal: hasReanal,
 		CanRetry: canRetry, Narrating: narrating,
 	}
 
 	s.render(w, "cockpit.html", data)
+}
+
+// flagCount is one flag and how many files carry it.
+type flagCount struct {
+	Flag  string
+	Count int
+	// Loud marks the flags that warrant stopping. The rest are facts about the
+	// change, not warnings about it.
+	Loud bool
+}
+
+// loudFlags are the two that mean "stop and look" rather than "worth knowing".
+//
+// A swallowed error is a bug hiding in plain sight, and a change to a public
+// API is a change to somebody else's code. `no-test`, `large`, `todo` and the
+// rest are true, useful, and on half the files in a normal review — colouring
+// them the same red is how a warning colour comes to mean nothing (ADR 0041).
+var loudFlags = map[domain.Flag]bool{
+	domain.FlagSwallowedErr: true,
+	domain.FlagPublicAPI:    true,
+	domain.FlagFailed:       true,
+}
+
+// flagTally counts each flag across the review, worst first then commonest.
+//
+// Thirty files each wearing an identical `no-test` chip is thirty repetitions
+// of one fact. The tally is that fact said once, with a number.
+func flagTally(units []domain.Unit) []flagCount {
+	counts := map[domain.Flag]int{}
+	for _, u := range units {
+		seen := map[domain.Flag]bool{}
+		for _, f := range u.Flags {
+			if seen[f] {
+				continue
+			}
+			seen[f] = true
+			counts[f]++
+		}
+	}
+
+	out := make([]flagCount, 0, len(counts))
+	for f, n := range counts {
+		out = append(out, flagCount{Flag: string(f), Count: n, Loud: loudFlags[f]})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Loud != out[j].Loud {
+			return out[i].Loud
+		}
+		if out[i].Count != out[j].Count {
+			return out[i].Count > out[j].Count
+		}
+		return out[i].Flag < out[j].Flag
+	})
+	return out
 }
 
 // tokenTotal is the tokens spent so far, or blank if no model call has happened.
@@ -2899,7 +3041,7 @@ func (s *Server) analysisCardsFor(sess Session) []analysisCard {
 	s.mu.RLock()
 	analysisOf := s.analysisOf
 	canJudge := s.judge != nil
-	running := map[string]bool{}
+	running := map[string]string{}
 	failed := map[string]string{}
 	for _, w := range s.workLocked() {
 		if w.Target != sess.ID {
@@ -2907,7 +3049,7 @@ func (s *Server) analysisCardsFor(sess Session) []analysisCard {
 		}
 		switch {
 		case w.Running():
-			running[w.Kind] = true
+			running[w.Kind] = w.Detail
 		case w.Failed():
 			failed[w.Kind] = w.Err
 		}
@@ -2915,7 +3057,7 @@ func (s *Server) analysisCardsFor(sess Session) []analysisCard {
 	s.mu.RUnlock()
 
 	return analysisCards(analysisOf, running, failed, sess.ID,
-		usecase.Fingerprint(sess.Units), s.now(), canJudge)
+		usecase.ChangeFingerprint(sess.Units, sess.Diffs), s.now(), canJudge)
 }
 
 // handleReport serves one audit in full, on its own page.
@@ -2961,11 +3103,31 @@ type analysisCard struct {
 	Kind    string
 	Title   string
 	Purpose string
-	// State is one of "idle", "running", "failed", "clean", "found" or "stale".
-	// The card is coloured and worded from this, so "never run", "could not
-	// run" and "found nothing" can never look the same — which is the
-	// distinction that matters most on a security card.
+	// State is where this reading stands against the code on screen: one of
+	// "absent", "running", "fresh", "stale" or "failed" (ADR 0037).
+	//
+	// These are four answers to one question — does this card describe what I
+	// am looking at — plus the one honest answer when nothing could be
+	// produced. "Never run", "could not run" and "found nothing" can never look
+	// the same, which is the distinction that matters most on a security card.
 	State string
+	// Result is what it found, "clean" or "found", and is empty until it has
+	// found out. It is a separate axis from State on purpose: a stale reading
+	// still has a result, and it is still worth colouring by.
+	Result string
+	// Doing is what a running audit is working on, so a card that will spin for
+	// a minute says what it is spending it on.
+	Doing string
+	// Scope is set when the last run re-read only part of the change and
+	// carried the rest forward, because a merged result presented as a fresh
+	// whole-change reading is claiming something nobody checked (ADR 0038).
+	Scope string
+	// Engine is what answered, and Fallback that it was not the engine this
+	// reading is routed to. The second is the important one: output from the
+	// standby must not be read with the confidence of the engine it stood in
+	// for (ADR 0039).
+	Engine   string
+	Fallback bool
 	// Worst is the highest severity found, so the card can be coloured from it
 	// and a row of cards read without opening any.
 	Worst string
@@ -2979,20 +3141,26 @@ type analysisCard struct {
 	CanJudge bool
 }
 
+// Fresh reports that this card describes the code currently on screen.
+func (c analysisCard) Fresh() bool { return c.State == "fresh" }
+
+// Ran reports that there is a result to read, whether or not it is current.
+func (c analysisCard) Ran() bool { return c.State == "fresh" || c.State == "stale" }
+
 // analysisCards builds one card per audit on offer, in a fixed order.
 //
 // Each is read independently and none is told about the others: two readings of
 // the same change are worth more than one reading twice.
-func analysisCards(of AnalysisOf, running map[string]bool, failed map[string]string,
+func analysisCards(of AnalysisOf, running map[string]string, failed map[string]string,
 	targetID, print string, now time.Time, canJudge bool) []analysisCard {
 
 	out := make([]analysisCard, 0, len(usecase.Audits()))
 	for _, a := range usecase.Audits() {
 		card := analysisCard{
-			Kind: string(a.Kind), Title: a.Title, Purpose: a.Purpose, State: "idle",
+			Kind: string(a.Kind), Title: a.Title, Purpose: a.Purpose, State: "absent",
 		}
-		if running[string(a.Kind)] {
-			card.State = "running"
+		if doing, is := running[string(a.Kind)]; is {
+			card.State, card.Doing = "running", doing
 			out = append(out, card)
 			continue
 		}
@@ -3006,7 +3174,7 @@ func analysisCards(of AnalysisOf, running map[string]bool, failed map[string]str
 
 		var got domain.Analysis
 		if of != nil {
-			got = of(targetID, a.Kind)
+			got = of(targetID, a.Kind, print)
 		}
 		if !got.Done() {
 			out = append(out, card)
@@ -3018,15 +3186,21 @@ func analysisCards(of AnalysisOf, running map[string]bool, failed map[string]str
 		card.When = usecase.Ago(now.Sub(got.At))
 		card.Worst = string(got.Worst())
 		card.Tally = tallyOf(got)
-		switch {
-		case got.Print != "" && print != "" && got.Print != print:
-			// A reading of a version that no longer exists must not present
-			// itself as current (ADR 0021).
+		card.Result = "found"
+		if got.Clean() {
+			card.Result = "clean"
+		}
+		if got.Partial() {
+			card.Scope = fmt.Sprintf("re-read %d of %d %s; the rest carried forward",
+				got.Read, got.Of, plural("file", got.Of))
+		}
+		card.Engine, card.Fallback = string(got.Engine), got.Fallback
+		// A reading of a version that no longer exists must not present itself
+		// as current (ADR 0021). The result stays on the card either way: an
+		// audit of the previous draft is still the best thing anybody has.
+		card.State = "fresh"
+		if got.Print != "" && print != "" && got.Print != print {
 			card.State = "stale"
-		case got.Clean():
-			card.State = "clean"
-		default:
-			card.State = "found"
 		}
 		out = append(out, card)
 	}
@@ -3333,6 +3507,10 @@ func funcs() template.FuncMap {
 	return template.FuncMap{
 		"base": filepath.Base,
 		"add":  func(a, b int) int { return a + b },
+		// Cutting a sentence to fit a card. It exists so the *store* does not
+		// have to: text is kept whole and shortened where it is shown, so the
+		// ellipsis on a card has somewhere to expand to (ADR 0041).
+		"brief": usecase.Brief,
 		// A model answers in markdown whether or not it was asked to. Rendered,
 		// not trusted: the text is escaped before any markup is added.
 		"markdown": renderMarkdown,
