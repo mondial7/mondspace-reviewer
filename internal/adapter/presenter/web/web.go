@@ -2906,28 +2906,24 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 		Reported           usecase.ReportedView
 		CanDismissReported bool
 		CanVerifyReported  bool
-		// Still is a page with no live stream: one frame, for a screenshot. An
-		// open server-sent-events connection is a request that never finishes,
-		// and a headless browser waits for it forever.
-		Still           bool
-		CanDescribe     bool
-		CanDescribeFile bool
-		Work            []Work
-		Thread          []Exchange
-		HasAsk          bool
-		HasThread       bool
-		HasReanal       bool
-		CanRetry        bool
-		Narrating       bool
-		Pending         domain.Pending
-		Signoff         usecase.SignoffView
-		HasSignoff      bool
-		CanSignoff      bool
-		Analyses        []analysisCard
-		CanAnalyse      bool
-		CanRunAnalysis  bool
-		Log             LogView
-		HasLog          bool
+		CanDescribe        bool
+		CanDescribeFile    bool
+		Work               []Work
+		Thread             []Exchange
+		HasAsk             bool
+		HasThread          bool
+		HasReanal          bool
+		CanRetry           bool
+		Narrating          bool
+		Pending            domain.Pending
+		Signoff            usecase.SignoffView
+		HasSignoff         bool
+		CanSignoff         bool
+		Analyses           []analysisCard
+		CanAnalyse         bool
+		CanRunAnalysis     bool
+		Log                LogView
+		HasLog             bool
 		// Checkpoints is the history and everything else worth reviewing, in
 		// one list in time order.
 		Checkpoints []Checkpoint
@@ -2957,7 +2953,6 @@ func (s *Server) handleCockpit(w http.ResponseWriter, r *http.Request) {
 		Reported:           reported,
 		CanDismissReported: s.dismissReported != nil,
 		CanVerifyReported:  s.verifyReported != nil,
-		Still:              r.URL.Query().Get("still") == "1",
 		CanDescribe:        canDescribe, CanDescribeFile: canDescribeFile, Work: work,
 		Thread: thread, HasAsk: hasAsk, HasReanal: hasReanal,
 		CanRetry: canRetry, Narrating: narrating,

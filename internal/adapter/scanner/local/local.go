@@ -105,7 +105,10 @@ func (s *Scanner) Detect(ctx context.Context) {
 		if err != nil {
 			s.why[a.Name] = "not installed"
 		} else {
-			s.version[a.Name] = firstLine(out)
+			// Bounded: `golangci-lint --version` is a build banner with a
+			// commit and a timestamp in it, and the settings page has a column
+			// for a version rather than a paragraph.
+			s.version[a.Name] = usecase.Brief(firstLine(out), 44)
 		}
 		s.mu.Unlock()
 	}

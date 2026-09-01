@@ -1,5 +1,11 @@
 # Screenshots
 
+> **These are from 6.2 and predate the current build.** The cockpit's columns
+> are in a different order, the story is a rail that folds, the buttons have
+> weights, narration is set in a proportional face, and there is a fourth
+> reading — the deterministic analysers — that none of these show. Retaking them
+> needs the demo repo below and a running local model.
+
 Captured from a real `msr` against a real repository, with a real local model —
 never mocked. The demo repo is a small Go service (`auth`, `api`, `store`) whose
 second commit adds bearer auth and Postgres-backed sessions, which is enough to

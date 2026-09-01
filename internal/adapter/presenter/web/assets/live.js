@@ -209,6 +209,7 @@ document.addEventListener('click', (e) => {
 // re-fetches the whole page, which is a stronger guarantee than replaying the
 // events that would have arrived.
 document.addEventListener('visibilitychange', () => {
+  if (still) return;
   if (document.hidden) {
     disconnect();
     return;
@@ -217,4 +218,13 @@ document.addEventListener('visibilitychange', () => {
   refresh();
 });
 
-if (!document.hidden) connect();
+// `?still=1` is a page with no stream: one frame, for a screenshot. An open
+// server-sent-events connection is an HTTP request that never finishes, and a
+// headless browser waits for it forever — which is why the documented way to
+// capture these pages hung rather than failing.
+//
+// Decided here rather than in the four templates that load this file, so every
+// page with a stream honours it, including the next one.
+const still = new URL(window.location.href).searchParams.get('still') === '1';
+
+if (!still && !document.hidden) connect();
