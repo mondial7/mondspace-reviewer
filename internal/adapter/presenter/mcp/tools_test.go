@@ -319,7 +319,7 @@ func TestReportedFindingsAreATooOfTheirOwn(t *testing.T) {
 		ID: "abc123", Title: "the change",
 		Reported: []domain.Reported{
 			{Tool: "gosec", Rule: "G404", File: "api/handler.go", Line: 42,
-				Message: "Use of weak random number generator",
+				Message:  "Use of weak random number generator",
 				Severity: domain.SeverityMedium, New: true},
 			{Tool: "staticcheck", Rule: "SA4006", File: "api/old.go", Line: 3,
 				Message: "this value of err is never used"},
