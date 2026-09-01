@@ -4,7 +4,19 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [7.0.0] — 2026-09-01
+
+### Changed, and worth a major
+
+- **The Claude Code CLI is used when it is installed.** msr's default is still a
+  model on your own machine, and on a machine with no Claude Code nothing here
+  applies. But if you have it, upgrading to 7.0 starts sending the story and the
+  two audits through your subscription, because that is where the readings you
+  act on belong ([ADR 0039](ADR/0039-one-table-decides-where-a-question-goes.md),
+  reversing the opt-in of [ADR 0035](ADR/0035-a-second-engine-for-the-analyses.md)).
+  It is one variable to turn off — `MSR_CLAUDE_CLI=0` — and the per-file and
+  per-group descriptions, which are the calls there are hundreds of, never leave
+  your own machine. `/settings` reports what each engine has spent.
 
 ### Added
 
@@ -787,6 +799,7 @@ First public release. Watching one agent, one session, one repo.
 - Session identifiers are validated to prevent path traversal outside the store
   root.
 
+[7.0.0]: https://github.com/mondial7/mondspace-reviewer/releases/tag/v7.0.0
 [6.2.0]: https://github.com/mondial7/mondspace-reviewer/releases/tag/v6.2.0
 [6.1.0]: https://github.com/mondial7/mondspace-reviewer/releases/tag/v6.1.0
 [6.0.0]: https://github.com/mondial7/mondspace-reviewer/releases/tag/v6.0.0

@@ -729,7 +729,7 @@ MSR_SUMMARIZER_URL=http://127.0.0.1:8081/v1 MSR_MODEL=qwen3-4b-instruct-2507 \
 
 ## Status
 
-**v6.2.0** — the page you review in.
+**v7.0.0** — the page you review in.
 
 - **Cockpit** (`msr web`) — one page: the change as a story, the diffs,
   annotation, re-analysis, a live isometric field, and a workspace spanning any
@@ -779,6 +779,22 @@ MSR_SUMMARIZER_URL=http://127.0.0.1:8081/v1 MSR_MODEL=qwen3-4b-instruct-2507 \
 - **MCP server** (`msr mcp`) — your coding agent pulls the review when it wants
   it, never interrupted. What a human wrote and what a model inferred arrive
   through separate calls ([ADR 0031](ADR/0031-an-agent-pulls-the-review.md)).
+- **A fourth reading that is not a model** — the deterministic analysers already
+  on your `PATH`, run over the files a change touched, scoped to the lines it
+  added, and rolled up against the file they are about. msr ships none of them
+  and says nothing on a machine that has none. `reported` is a third class
+  beside `stated` and `inferred`: it names its tool and its rule, and it is the
+  only one you can act on without checking it first
+  ([ADR 0043](ADR/0043-a-fourth-reading-that-is-not-a-model.md)).
+- **Two engines, one routing table** — judgement to the Claude Code CLI when it
+  is installed, volume to your local model, neither of them ever blocking the
+  review, and a fallback result labelled as one
+  ([ADR 0039](ADR/0039-one-table-decides-where-a-question-goes.md)).
+- **A five-second review** — an agent writing files shows up while you are still
+  reading, without losing your place, and costs nothing while nothing is
+  happening. A rerun reads only what moved
+  ([ADR 0036](ADR/0036-a-probe-before-the-poll.md),
+  [ADR 0038](ADR/0038-read-what-moved.md)).
 - **Deterministic flags** and the `stated`/`inferred` discipline, both offline.
 - **Storage**: append-only JSONL by default, or PostgreSQL in a dedicated schema.
 - **Ingestion** from Claude Code hooks or OpenCode, for stated intent.
