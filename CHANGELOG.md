@@ -4,6 +4,78 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **A fourth reading, and it is not a model.** msr detects the deterministic
+  analysers already on your `PATH` — golangci-lint, go vet, staticcheck, gosec,
+  semgrep, gitleaks, osv-scanner, ruff, eslint — runs them over the files a
+  change touched, and shows what they found against the file it is about. It
+  ships none of them and installs none of them; a machine with none sees no
+  mention of any of it. `reported` is a third class beside `stated` and
+  `inferred`, with its own colour: it names its tool and its rule and is the
+  only one of the three you can act on without checking it first
+  ([ADR 0043](ADR/0043-a-fourth-reading-that-is-not-a-model.md)).
+- **`.msr.toml`** — a repository says which analysers to run over it. `[[extra]]`
+  adds one to the defaults, `off = [...]` turns one off, `[[analyser]]` replaces
+  the set. SARIF is the primary format, so a tool emitting it works with
+  configuration alone.
+- **New findings, not every finding.** Scoped to the lines a change added, with
+  the pre-existing ones counted and folded away. `compare against the base` is
+  the accurate answer, on demand: the same tools over the code as it was, via
+  `git archive` into a temp directory — never a registered worktree.
+- **`reported_findings`** over MCP, beside `model_findings`, so an agent can
+  tell a linter's output from a model's guess.
+- **One routing table.** `internal/domain/routing.go` decides where every job
+  goes: the story and the two audits to the Claude Code CLI when it is
+  installed, the per-file and per-group descriptions to the local model. A
+  result from the fallback engine says so on the card, and the settings page
+  reports each engine separately with its own spend
+  ([ADR 0039](ADR/0039-one-table-decides-where-a-question-goes.md)).
+- **A designed first-run state**, and `?still=1` for screenshots.
+
+### Changed
+
+- **The review polls every five seconds instead of fifteen**, does nothing at
+  all while no page is open, and asks a cheap probe before doing any diff work
+  ([ADR 0036](ADR/0036-a-probe-before-the-poll.md)).
+- **An analysis card is in one of five states** — absent, running, fresh, stale,
+  failed — with what it found as a separate axis, and results stored per diff so
+  coming back to an unchanged review re-runs nothing
+  ([ADR 0037](ADR/0037-four-things-a-card-can-be.md)).
+- **A rerun reads only what moved.** Audits, chapters and group descriptions
+  each record what every file said when they ran; findings on untouched files
+  carry forward with their dismissals intact
+  ([ADR 0038](ADR/0038-read-what-moved.md)).
+- **The log gets the middle column.** The story is a rail that folds; the idle
+  isometric field is a strip; `start review` and `mark this reviewed` are real
+  buttons and everything else is demoted
+  ([ADR 0040](ADR/0040-the-log-gets-the-middle.md)).
+- **Narration is set in a proportional face** and everything measured stays
+  monospace. Flags are neutral except the two that mean stop, with a per-review
+  tally. One rule for heading case. Shortcuts sit beside what they move
+  ([ADR 0041](ADR/0041-narration-reads-like-prose.md)).
+- **Branches, search and the tour sit below a line** in the rail, and the
+  settings page counts what actually gets used
+  ([ADR 0042](ADR/0042-below-the-line.md)).
+
+### Fixed
+
+- An agent writing files never reached an open page: the server broadcast
+  `units` and `stats` and the page listened for neither.
+- An audit of a live review could never go stale, because it was fingerprinted
+  on snapshot refs that do not move while a review diffs against the working
+  tree.
+- Unit ids were positional, so a file arriving at the top of the list renumbered
+  every unit under it — and every note anchored to one. They are derived from
+  the path now, and a note whose file is still in the review is re-anchored.
+- A verdict was stored already cut to the card's width, so the `…` on the card
+  expanded to nothing on the report.
+- Commit subjects in the picker were cut mid-word, on the one list a reviewer
+  chooses their next target from.
+- The documented way to screenshot msr hung rather than failing.
+
 ## [6.2.0] — 2026-08-30
 
 ### Added
