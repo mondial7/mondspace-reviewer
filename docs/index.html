@@ -615,12 +615,20 @@ footer p { margin: 0.3rem 0; }
       <p>Files that changed together are grouped, and each group gets one sentence about what it is for. "edited jsonl.go" is never shown: the filename already said that.</p>
     </div>
     <div class="card">
-      <h3><code>stated</code> vs <code>inferred</code></h3>
-      <p>A rationale in the agent's own words looks different — different colour and label — from one a model guessed. A model can sharpen a headline; it can never assert a reason nobody gave.</p>
+      <h3><code>stated</code> vs <code>inferred</code> vs <code>reported</code></h3>
+      <p>Three classes, three colours. The agent's own words; a model's guess; and what a deterministic analyser said. Only the third can be acted on without checking it first, and a model can never assert a reason nobody gave.</p>
     </div>
     <div class="card">
       <h3>Flags with no model at all</h3>
-      <p><code>no-test</code>, <code>new-dep</code>, <code>swallowed-err</code>, <code>public-api</code>, <code>large</code>, <code>todo</code> — offline, instant, and what make you stop.</p>
+      <p><code>no-test</code>, <code>new-dep</code>, <code>swallowed-err</code>, <code>public-api</code>, <code>large</code>, <code>todo</code> — offline, instant, and what make you stop. The two that mean <em>stop</em> become findings you can dismiss; the rest are counted once for the whole review instead of repeated on thirty files.</p>
+    </div>
+    <div class="card">
+      <h3>Whatever analysers you already have</h3>
+      <p>golangci-lint, gosec, staticcheck, semgrep, gitleaks, osv-scanner, ruff, eslint — detected on your <code>PATH</code>, run over the files you changed, scoped to the lines your change added. msr ships none of them and says nothing on a machine that has none. Adding one is a block of <code>.msr.toml</code>.</p>
+    </div>
+    <div class="card">
+      <h3>Two engines, one table</h3>
+      <p>Judgement — the story and the two audits — goes to the Claude Code CLI when it is installed; the per-file descriptions stay on your own model, because those are the calls there are hundreds of. Nothing blocks on either, and an answer from the fallback says so rather than borrowing the other's confidence.</p>
     </div>
     <div class="card">
       <h3>Every number is a git fact</h3>
@@ -640,7 +648,7 @@ footer p { margin: 0.3rem 0; }
     </div>
     <div class="card">
       <h3>Three readings, not one</h3>
-      <p>Story, security, breaking changes — each on demand, each independent. No analysis sees another's findings, because a model shown a previous answer anchors on it. A finding you decide is not a problem can be dismissed, and stays dismissed the next time you run it.</p>
+      <p>Story, security, breaking changes — each on demand, each independent. No analysis sees another's findings, because a model shown a previous answer anchors on it. A card is never ambiguous about whether it describes the code on screen, a finding you decide is not a problem stays dismissed, and a rerun re-reads only the files that moved.</p>
     </div>
     <div class="card">
       <h3>One list of checkpoints</h3>
@@ -656,7 +664,7 @@ footer p { margin: 0.3rem 0; }
     </div>
     <div class="card">
       <h3>It never writes to your repo</h3>
-      <p>No commits, no branches, no changes to HEAD, the index or your working tree. Snapshots go to their own refs. Read-only, by construction.</p>
+      <p>No commits, no branches, no changes to HEAD, the index or your working tree. Snapshots go to their own refs, and comparing against the base is a <code>git archive</code> into a temporary directory rather than a worktree that registers itself. Read-only, by construction.</p>
     </div>
   </div>
 </section>
