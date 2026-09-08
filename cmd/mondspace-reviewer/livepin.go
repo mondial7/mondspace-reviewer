@@ -9,6 +9,7 @@ import (
 
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/presenter/web"
 	gitsnap "github.com/mondial7/mondspace-reviewer/internal/adapter/snapshot/git"
+	"github.com/mondial7/mondspace-reviewer/internal/adapter/store/items"
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/store/jsonl"
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
 	"github.com/mondial7/mondspace-reviewer/internal/port"
@@ -250,6 +251,15 @@ func runAnalysis(pool *agentPool, model string) web.RunAnalysisFunc {
 			// It ran and the reviewer will see it; it simply will not survive a
 			// restart.
 			return fmt.Errorf("ran, but could not be saved: %w", err)
+		}
+
+		// And into the findings store, so a model's finding reaches the same
+		// exports and the same push as everything else (ADR 0044). Best effort:
+		// the reading is already saved, and failing here must not report a
+		// reading that ran as one that did not.
+		if entry, known := lookupTarget(targetID); known {
+			_ = recordAnalysis(items.New(sharedDir(entry.repo, "")), result,
+				gitsnap.New(entry.repo, "").CurrentBranch(ctx), entry.session, entry.repo)
 		}
 		return nil
 	}

@@ -32,6 +32,14 @@ type Pass struct {
 	// Paths is which files they were pointed at, repository-relative. Empty
 	// means the whole tree.
 	Paths map[string]bool
+	// Tentative says this pass's silence is not evidence.
+	//
+	// A deterministic tool that does not report a finding it reported an hour
+	// ago has told you something: the code changed. A model asked the same
+	// question twice has not — it may simply have answered differently. So a
+	// model's pass never closes anything, and a finding it raised is closed by
+	// the reviewer or by the code it names going away.
+	Tentative bool
 }
 
 // Covered reports whether this pass was in a position to see an item at all.
@@ -108,7 +116,7 @@ func Reconcile(stored, seen []contract.Item, pass Pass) []contract.Item {
 	}
 
 	for id, prior := range latest {
-		if live[id] || !prior.Stands() || !pass.Covered(prior) {
+		if pass.Tentative || live[id] || !prior.Stands() || !pass.Covered(prior) {
 			continue
 		}
 		fixed := prior

@@ -221,3 +221,50 @@ func OnlyIn(found []domain.Reported, paths map[string]bool) []domain.Reported {
 	}
 	return out
 }
+
+// FromAnalysis converts one model reading — the security pass, the
+// breaking-change pass — into items.
+//
+// A model's finding has no rule and no line: it is a sentence about a file
+// (ADR 0024). So its identity is the file, the reading it came from, and the
+// sentence itself, normalised. That has a cost worth stating plainly: a model
+// that rephrases the same objection raises it again as a new item. The
+// alternative — treating any two findings in one file as the same one — would
+// merge two real problems into one record, and losing a finding is worse than
+// seeing it twice.
+func (s Sighting) FromAnalysis(a domain.Analysis) []contract.Item {
+	producer := a.Model
+	if producer == "" {
+		producer = string(a.Engine)
+	}
+
+	out := make([]contract.Item, 0, len(a.Findings))
+	for _, f := range a.Findings {
+		path := contract.NormalisePath(f.File)
+		item := contract.Item{
+			ID:          s.Mint(),
+			Fingerprint: contract.Fingerprint(path, "llm:"+string(a.Kind)+":"+said(f.Note), nil),
+			Source:      contract.SourceLLM,
+			Producer:    producer,
+			Location:    contract.Location{Path: path, Commit: s.Commit},
+			Severity:    contract.Severity(f.Severity).Normalise(),
+			Title:       title(string(a.Kind), f.Note),
+			Message:     f.Note,
+			Directive:   f.Note,
+			State:       contract.StateOpen,
+			Verdict:     contract.Verdict(f.Verdict),
+			Branch:      s.Branch,
+			SessionID:   s.SessionID,
+			FirstSeen:   s.At,
+			LastSeen:    s.At,
+		}
+		out = append(out, item)
+	}
+	return out
+}
+
+// said normalises a model's sentence enough that the same objection, capitalised
+// differently or with the whitespace rearranged, is the same objection.
+func said(note string) string {
+	return strings.ToLower(strings.Join(strings.Fields(note), " "))
+}
