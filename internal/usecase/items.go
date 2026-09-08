@@ -161,3 +161,79 @@ func sameSighting(a, b contract.Item) bool {
 	a.LastSeen, b.LastSeen = time.Time{}, time.Time{}
 	return reflect.DeepEqual(a, b)
 }
+
+// SurfaceCap is how many items a run puts in front of a reviewer.
+//
+// The overflow is stored, not dropped: silently having none and silently
+// hiding four hundred look identical on a page, and one of them means the tool
+// is broken (ADR 0043).
+const SurfaceCap = 25
+
+// Surface picks what a run actually shows, worst first, and says how much it
+// held back.
+//
+// Ordered by severity and then by how recently it appeared, because a reviewer
+// reading a capped list is reading the top of it and the top should be the
+// things they have not already decided to live with.
+func Surface(items []contract.Item, cap int, floor contract.Severity) (shown []contract.Item, held int) {
+	var standing []contract.Item
+	for _, item := range items {
+		if !item.Stands() {
+			continue
+		}
+		if floor != "" && !item.Severity.AtLeast(floor) {
+			continue
+		}
+		standing = append(standing, item)
+	}
+
+	sort.SliceStable(standing, func(i, j int) bool {
+		a, b := standing[i], standing[j]
+		if ra, rb := a.Severity.Normalise().Rank(), b.Severity.Normalise().Rank(); ra != rb {
+			return ra < rb
+		}
+		if !a.LastSeen.Equal(b.LastSeen) {
+			return a.LastSeen.After(b.LastSeen)
+		}
+		return a.ID < b.ID
+	})
+
+	if cap <= 0 || len(standing) <= cap {
+		return standing, 0
+	}
+	return standing[:cap], len(standing) - cap
+}
+
+// DismissalsBeforeSuppressing is how many times one rule has to be waved away
+// before msr suggests turning it off.
+const DismissalsBeforeSuppressing = 3
+
+// RulesWorthSuppressing names the rules a reviewer keeps dismissing.
+//
+// Three distinct fingerprints, not three dismissals: dismissing the same
+// finding twice is one opinion held twice, and a rule that fires three times in
+// three places and is waved away every time is a rule this repository does not
+// want. The suggestion is made to the reviewer; nothing is suppressed by msr
+// deciding it on its own.
+func RulesWorthSuppressing(items []contract.Item) []string {
+	seen := map[string]map[string]bool{}
+	for _, item := range items {
+		if item.Verdict != contract.VerdictDismissed || item.RuleID == "" {
+			continue
+		}
+		rule := item.Producer + ":" + item.RuleID
+		if seen[rule] == nil {
+			seen[rule] = map[string]bool{}
+		}
+		seen[rule][item.Fingerprint] = true
+	}
+
+	var out []string
+	for rule, fingerprints := range seen {
+		if len(fingerprints) >= DismissalsBeforeSuppressing {
+			out = append(out, rule)
+		}
+	}
+	sort.Strings(out)
+	return out
+}

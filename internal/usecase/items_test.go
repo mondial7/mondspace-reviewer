@@ -1,6 +1,7 @@
 package usecase_test
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -221,5 +222,91 @@ func TestReconcileDeduplicatesWithinAPass(t *testing.T) {
 
 	if len(got) != 1 {
 		t.Errorf("wrote %d items for one fingerprint seen twice, want 1", len(got))
+	}
+}
+
+func severe(id string, sev contract.Severity, seen time.Time) contract.Item {
+	item := sighting("fp-"+id, id)
+	item.Severity = sev
+	item.LastSeen = seen
+	return item
+}
+
+func TestSurfaceOrdersBySeverityThenRecency(t *testing.T) {
+	got, held := usecase.Surface([]contract.Item{
+		severe("a", contract.SeverityLow, second),
+		severe("b", contract.SeverityHigh, first),
+		severe("c", contract.SeverityHigh, second),
+	}, usecase.SurfaceCap, "")
+
+	if held != 0 {
+		t.Errorf("held back %d of three items", held)
+	}
+	var order []string
+	for _, item := range got {
+		order = append(order, item.ID)
+	}
+	if strings.Join(order, " ") != "c b a" {
+		t.Errorf("order = %v, want c b a", order)
+	}
+}
+
+// The overflow is stored, not dropped, and the count is what tells a reviewer
+// the difference between "nothing found" and "four hundred hidden".
+func TestSurfaceCapsAndCounts(t *testing.T) {
+	var many []contract.Item
+	for i := 0; i < 30; i++ {
+		many = append(many, severe(string(rune('a'+i)), contract.SeverityMedium, first))
+	}
+
+	shown, held := usecase.Surface(many, 25, "")
+
+	if len(shown) != 25 || held != 5 {
+		t.Errorf("showed %d and held %d, want 25 and 5", len(shown), held)
+	}
+}
+
+func TestSurfaceLeavesOutWhatIsSettled(t *testing.T) {
+	dismissed := severe("a", contract.SeverityHigh, first)
+	dismissed.Verdict = contract.VerdictDismissed
+	fixed := severe("b", contract.SeverityHigh, first)
+	fixed.State = contract.StateFixed
+
+	shown, _ := usecase.Surface([]contract.Item{dismissed, fixed, severe("c", contract.SeverityLow, first)}, 25, "")
+
+	if len(shown) != 1 || shown[0].ID != "c" {
+		t.Errorf("surfaced %+v, want only the standing item", shown)
+	}
+}
+
+func TestSurfaceRespectsASeverityFloor(t *testing.T) {
+	shown, _ := usecase.Surface([]contract.Item{
+		severe("a", contract.SeverityHigh, first),
+		severe("b", contract.SeverityLow, first),
+	}, 25, contract.SeverityHigh)
+
+	if len(shown) != 1 || shown[0].ID != "a" {
+		t.Errorf("surfaced %+v, want only what clears the floor", shown)
+	}
+}
+
+// A rule waved away in three different places is a rule this repository does
+// not want. The same finding dismissed three times is one opinion.
+func TestRulesWorthSuppressing(t *testing.T) {
+	var items []contract.Item
+	for i := 0; i < 3; i++ {
+		item := sighting("fp"+string(rune('a'+i)), "id"+string(rune('a'+i)))
+		item.Verdict = contract.VerdictDismissed
+		items = append(items, item)
+	}
+	repeated := sighting("fp-same", "id-same")
+	repeated.RuleID = "G401"
+	repeated.Verdict = contract.VerdictDismissed
+	items = append(items, repeated, repeated)
+
+	got := usecase.RulesWorthSuppressing(items)
+
+	if len(got) != 1 || got[0] != "gosec:G404" {
+		t.Errorf("RulesWorthSuppressing = %v, want just gosec:G404", got)
 	}
 }
