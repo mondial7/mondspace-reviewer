@@ -2229,8 +2229,8 @@ func TestFindingsAreShownWithTheirFile(t *testing.T) {
 			return domain.Analysis{
 				TargetID: "s", Kind: k, At: time.Now(),
 				Verdict: "One exported signature changed.",
-				Findings: []domain.Finding{
-					{File: "api/handler.go", Note: "Routes now requires a Validator; existing callers will not compile."},
+				Findings: []contract.Item{
+					contract.Item{Source: contract.SourceLLM, Location: contract.Location{Path: "api/handler.go"}, Message: "Routes now requires a Validator; existing callers will not compile."},
 				},
 				Print: usecase.Fingerprint(testSession().Units),
 			}
@@ -2452,9 +2452,9 @@ func TestACardIsColouredByItsWorstFinding(t *testing.T) {
 			}
 			return domain.Analysis{
 				TargetID: "s", Kind: k, At: time.Now(), Verdict: "Two things.",
-				Findings: []domain.Finding{
-					{File: "a.go", Note: "worth knowing", Severity: domain.SeverityLow},
-					{File: "b.go", Note: "secret committed", Severity: domain.SeverityHigh},
+				Findings: []contract.Item{
+					contract.Item{Source: contract.SourceLLM, Location: contract.Location{Path: "a.go"}, Message: "worth knowing", Severity: domain.SeverityLow},
+					contract.Item{Source: contract.SourceLLM, Location: contract.Location{Path: "b.go"}, Message: "secret committed", Severity: domain.SeverityHigh},
 				},
 				Print: usecase.Fingerprint(testSession().Units),
 			}
@@ -3015,7 +3015,7 @@ func TestTheReportSaysWhatDismissingDoes(t *testing.T) {
 			return domain.Analysis{
 				TargetID: target, Kind: k, At: time.Now(), Print: print,
 				Verdict:  "One thing.",
-				Findings: []domain.Finding{{File: "a.go", Note: "n", Severity: domain.SeverityMedium}},
+				Findings: []contract.Item{contract.Item{Source: contract.SourceLLM, Location: contract.Location{Path: "a.go"}, Message: "n", Severity: domain.SeverityMedium}},
 			}
 		}).
 		WithJudge(func(context.Context, string, domain.AnalysisKind, string, string, domain.Verdict) error {

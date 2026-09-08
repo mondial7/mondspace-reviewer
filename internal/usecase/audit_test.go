@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mondial7/mondspace-reviewer/contract"
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
 	"github.com/mondial7/mondspace-reviewer/internal/usecase"
 )
@@ -112,7 +113,7 @@ func TestALongFindingIsBoundedButKeptWholeEnoughToRead(t *testing.T) {
 	if len(got.Findings) != 1 {
 		t.Fatalf("got %+v", got.Findings)
 	}
-	n := len([]rune(got.Findings[0].Note))
+	n := len([]rune(got.Findings[0].Message))
 	if n > 210 {
 		t.Errorf("note is %d characters; nothing should reach the store unbounded", n)
 	}
@@ -310,10 +311,10 @@ func TestAMissingOrInventedSeverityBecomesTheMiddleOne(t *testing.T) {
 func TestAnAnalysisKnowsItsWorstFinding(t *testing.T) {
 	// The card is coloured from this, so a page of cards can be read at a
 	// glance without opening any of them.
-	a := domain.Analysis{At: time.Now(), Findings: []domain.Finding{
-		{Note: "a", Severity: domain.SeverityLow},
-		{Note: "b", Severity: domain.SeverityHigh},
-		{Note: "c", Severity: domain.SeverityMedium},
+	a := domain.Analysis{At: time.Now(), Findings: []contract.Item{
+		contract.Item{Source: contract.SourceLLM, Message: "a", Severity: domain.SeverityLow},
+		contract.Item{Source: contract.SourceLLM, Message: "b", Severity: domain.SeverityHigh},
+		contract.Item{Source: contract.SourceLLM, Message: "c", Severity: domain.SeverityMedium},
 	}}
 	if got := a.Worst(); got != domain.SeverityHigh {
 		t.Errorf("Worst = %s, want high", got)
@@ -327,9 +328,9 @@ func TestAnAnalysisKnowsItsWorstFinding(t *testing.T) {
 
 func TestAnAnalysisCountsBySeverity(t *testing.T) {
 	// "1 high · 2 medium" says more in the same space than "3 to look at".
-	a := domain.Analysis{At: time.Now(), Findings: []domain.Finding{
-		{Severity: domain.SeverityHigh}, {Severity: domain.SeverityMedium},
-		{Severity: domain.SeverityMedium}, {Severity: domain.SeverityLow},
+	a := domain.Analysis{At: time.Now(), Findings: []contract.Item{
+		contract.Item{Source: contract.SourceLLM, Severity: domain.SeverityHigh}, contract.Item{Source: contract.SourceLLM, Severity: domain.SeverityMedium},
+		contract.Item{Source: contract.SourceLLM, Severity: domain.SeverityMedium}, contract.Item{Source: contract.SourceLLM, Severity: domain.SeverityLow},
 	}}
 
 	got := a.Tally()
@@ -345,9 +346,9 @@ func TestAFindingCanBeDismissedAndStaysDismissed(t *testing.T) {
 	// to stop running the audit (ADR 0030).
 	before := domain.Analysis{
 		TargetID: "t1", Kind: usecase.AuditSecurity, At: time.Now(),
-		Findings: []domain.Finding{
-			{File: "a.go", Note: "hardcoded secret", Severity: domain.SeverityHigh},
-			{File: "b.go", Note: "unvalidated input", Severity: domain.SeverityMedium},
+		Findings: []contract.Item{
+			contract.Item{Source: contract.SourceLLM, Location: contract.Location{Path: "a.go"}, Message: "hardcoded secret", Severity: domain.SeverityHigh},
+			contract.Item{Source: contract.SourceLLM, Location: contract.Location{Path: "b.go"}, Message: "unvalidated input", Severity: domain.SeverityMedium},
 		},
 	}
 
@@ -375,17 +376,17 @@ func TestADismissalSurvivesTheAuditBeingRunAgain(t *testing.T) {
 	// judgement has to be carried onto them or it was pointless.
 	judged := domain.Analysis{
 		TargetID: "t1", Kind: usecase.AuditSecurity, At: time.Now(),
-		Findings: []domain.Finding{
-			{File: "a.go", Note: "hardcoded secret", Verdict: domain.VerdictDismissed},
-			{File: "b.go", Note: "unvalidated input"},
+		Findings: []contract.Item{
+			contract.Item{Source: contract.SourceLLM, Location: contract.Location{Path: "a.go"}, Message: "hardcoded secret", Verdict: domain.VerdictDismissed},
+			contract.Item{Source: contract.SourceLLM, Location: contract.Location{Path: "b.go"}, Message: "unvalidated input"},
 		},
 	}
 	rerun := domain.Analysis{
 		TargetID: "t1", Kind: usecase.AuditSecurity, At: time.Now(),
-		Findings: []domain.Finding{
-			{File: "a.go", Note: "hardcoded secret", Severity: domain.SeverityHigh},
-			{File: "b.go", Note: "unvalidated input", Severity: domain.SeverityMedium},
-			{File: "c.go", Note: "something new", Severity: domain.SeverityLow},
+		Findings: []contract.Item{
+			contract.Item{Source: contract.SourceLLM, Location: contract.Location{Path: "a.go"}, Message: "hardcoded secret", Severity: domain.SeverityHigh},
+			contract.Item{Source: contract.SourceLLM, Location: contract.Location{Path: "b.go"}, Message: "unvalidated input", Severity: domain.SeverityMedium},
+			contract.Item{Source: contract.SourceLLM, Location: contract.Location{Path: "c.go"}, Message: "something new", Severity: domain.SeverityLow},
 		},
 	}
 
@@ -393,7 +394,7 @@ func TestADismissalSurvivesTheAuditBeingRunAgain(t *testing.T) {
 
 	by := map[string]domain.Verdict{}
 	for _, f := range got.Findings {
-		by[f.File] = f.Verdict
+		by[f.Location.Path] = f.Verdict
 	}
 	if by["a.go"] != domain.VerdictDismissed {
 		t.Errorf("a.go = %q, want the dismissal carried over", by["a.go"])
@@ -407,11 +408,11 @@ func TestAFindingThatChangedIsNotSilentlyStillDismissed(t *testing.T) {
 	// A dismissal is about a specific claim. If the model now says something
 	// different about the same file, that is a new claim and has not been ruled
 	// on — carrying the dismissal across would hide it.
-	judged := domain.Analysis{Findings: []domain.Finding{
-		{File: "a.go", Note: "hardcoded secret", Verdict: domain.VerdictDismissed},
+	judged := domain.Analysis{Findings: []contract.Item{
+		contract.Item{Source: contract.SourceLLM, Location: contract.Location{Path: "a.go"}, Message: "hardcoded secret", Verdict: domain.VerdictDismissed},
 	}}
-	rerun := domain.Analysis{Findings: []domain.Finding{
-		{File: "a.go", Note: "the key is read from the environment now, but logged"},
+	rerun := domain.Analysis{Findings: []contract.Item{
+		contract.Item{Source: contract.SourceLLM, Location: contract.Location{Path: "a.go"}, Message: "the key is read from the environment now, but logged"},
 	}}
 
 	got := usecase.CarryJudgements(rerun, judged)
@@ -424,9 +425,9 @@ func TestAFindingThatChangedIsNotSilentlyStillDismissed(t *testing.T) {
 func TestStandingFindingsAreWhatTheCardCountsAndColours(t *testing.T) {
 	// A card that still says "2 high" after both were dismissed has not
 	// listened.
-	a := domain.Analysis{At: time.Now(), Findings: []domain.Finding{
-		{File: "a.go", Note: "x", Severity: domain.SeverityHigh, Verdict: domain.VerdictDismissed},
-		{File: "b.go", Note: "y", Severity: domain.SeverityLow},
+	a := domain.Analysis{At: time.Now(), Findings: []contract.Item{
+		contract.Item{Source: contract.SourceLLM, Location: contract.Location{Path: "a.go"}, Message: "x", Severity: domain.SeverityHigh, Verdict: domain.VerdictDismissed},
+		contract.Item{Source: contract.SourceLLM, Location: contract.Location{Path: "b.go"}, Message: "y", Severity: domain.SeverityLow},
 	}}
 
 	if got := a.Worst(); got != domain.SeverityLow {
@@ -441,8 +442,8 @@ func TestStandingFindingsAreWhatTheCardCountsAndColours(t *testing.T) {
 }
 
 func TestDismissingEverythingLeavesACleanCard(t *testing.T) {
-	a := domain.Analysis{At: time.Now(), Findings: []domain.Finding{
-		{File: "a.go", Note: "x", Severity: domain.SeverityHigh, Verdict: domain.VerdictDismissed},
+	a := domain.Analysis{At: time.Now(), Findings: []contract.Item{
+		contract.Item{Source: contract.SourceLLM, Location: contract.Location{Path: "a.go"}, Message: "x", Severity: domain.SeverityHigh, Verdict: domain.VerdictDismissed},
 	}}
 	if !a.Clean() {
 		t.Error("with everything dismissed, nothing stands")
@@ -519,9 +520,9 @@ func TestAPartialRerunOnlyShowsTheModelWhatMoved(t *testing.T) {
 
 	// The finding on the file nobody touched is carried across untouched. The
 	// one on the file that moved is replaced by what the fresh reading said.
-	notes := map[string]domain.Finding{}
+	notes := map[string]contract.Item{}
 	for _, f := range got.Findings {
-		notes[f.Note] = f
+		notes[f.Message] = f
 	}
 	if _, kept := notes["timing-unsafe comparison"]; !kept {
 		t.Errorf("a finding about an untouched file must survive: %+v", got.Findings)

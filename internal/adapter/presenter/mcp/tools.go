@@ -282,12 +282,12 @@ func modelFindings(r Review, path string) string {
 		}
 		for _, pass := range []bool{true, false} {
 			for _, f := range a.Findings {
-				if f.Stands() != pass || (path != "" && f.File != path) {
+				if f.Stands() != pass || (path != "" && f.Location.Path != path) {
 					continue
 				}
 				shown++
 				fmt.Fprintf(&b, "\n%d. [%s · %s] %s\n   %s\n",
-					shown, a.Kind, f.Severity.Normalise(), firstNonEmpty(f.File, "the change as a whole"), f.Note)
+					shown, a.Kind, f.Severity.Normalise(), firstNonEmpty(f.Location.Path, "the change as a whole"), f.Message)
 				if !f.Stands() {
 					// Kept rather than filtered: an agent that cannot see the
 					// dismissal raises the same thing again next time.

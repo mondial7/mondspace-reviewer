@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/mondial7/mondspace-reviewer/contract"
+	"github.com/mondial7/mondspace-reviewer/internal/adapter/store/legacy"
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
 )
 
@@ -486,5 +487,5 @@ func (s *Store) readAnalysis(path string) (domain.Analysis, error) {
 	if err := json.Unmarshal(body, &a); err != nil {
 		return domain.Analysis{}, nil
 	}
-	return a, nil
+	return legacy.Findings(a, body), nil
 }

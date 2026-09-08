@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/mondial7/mondspace-reviewer/internal/adapter/store/legacy"
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
 )
 
@@ -315,7 +316,7 @@ func (s *Store) readAnalysis(query string, args ...any) (domain.Analysis, error)
 	if err := json.Unmarshal(payload, &a); err != nil {
 		return domain.Analysis{}, nil
 	}
-	return a, nil
+	return legacy.Findings(a, payload), nil
 }
 
 // Load reconstructs a session. The task prompt is the first prompt event's

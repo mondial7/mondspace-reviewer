@@ -66,7 +66,7 @@ func TestFeedbackIsWhatAHumanWroteAndStillWants(t *testing.T) {
 		},
 		Analyses: []domain.Analysis{{
 			Kind: "security", At: time.Now(), Verdict: "one thing",
-			Findings: []domain.Finding{{File: "http.go", Note: "token in a log line"}},
+			Findings: []contract.Item{contract.Item{Source: contract.SourceLLM, Location: contract.Location{Path: "http.go"}, Message: "token in a log line"}},
 		}},
 	}}
 
@@ -98,7 +98,7 @@ func TestStatusSaysWhereTheReviewStandsWithoutSpendingTheContext(t *testing.T) {
 		},
 		Analyses: []domain.Analysis{{
 			Kind: "security", At: time.Now(), Verdict: "one thing worth a look",
-			Findings: []domain.Finding{{File: "http.go", Note: "token in a log line"}},
+			Findings: []contract.Item{contract.Item{Source: contract.SourceLLM, Location: contract.Location{Path: "http.go"}, Message: "token in a log line"}},
 		}},
 	}}
 
@@ -136,7 +136,7 @@ func TestAskingAboutOneFileGetsEverythingAHumanWroteThere(t *testing.T) {
 		},
 		Analyses: []domain.Analysis{{
 			Kind: "security", At: time.Now(), Verdict: "one thing",
-			Findings: []domain.Finding{{File: "http.go", Note: "token in a log line"}},
+			Findings: []contract.Item{contract.Item{Source: contract.SourceLLM, Location: contract.Location{Path: "http.go"}, Message: "token in a log line"}},
 		}},
 	}}
 
@@ -168,7 +168,7 @@ func TestAToolThatNeedsAPathSaysSoRatherThanAnsweringAboutNothing(t *testing.T) 
 	}
 }
 
-func findings(kind domain.AnalysisKind, model string, fs ...domain.Finding) domain.Analysis {
+func findings(kind domain.AnalysisKind, model string, fs ...contract.Item) domain.Analysis {
 	return domain.Analysis{
 		Kind: kind, At: time.Date(2026, 8, 29, 11, 0, 0, 0, time.UTC),
 		Model: model, Verdict: "two things worth a look", Findings: fs,
@@ -182,7 +182,7 @@ func TestModelFindingsArriveLabelledAsGuessesToCheck(t *testing.T) {
 	w := space{open: mcp.Review{
 		ID: "abc123", Title: "add retries",
 		Analyses: []domain.Analysis{findings("security", "qwen3.5-9b",
-			domain.Finding{File: "http.go", Note: "token in a log line", Severity: domain.SeverityHigh},
+			contract.Item{Source: contract.SourceLLM, Location: contract.Location{Path: "http.go"}, Message: "token in a log line", Severity: domain.SeverityHigh},
 		)},
 	}}
 
@@ -212,9 +212,8 @@ func TestAFindingAHumanDismissedIsNotHandedOverAsWork(t *testing.T) {
 	w := space{open: mcp.Review{
 		ID: "abc123", Title: "add retries",
 		Analyses: []domain.Analysis{findings("security", "qwen3.5-9b",
-			domain.Finding{File: "http.go", Note: "token in a log line", Severity: domain.SeverityHigh},
-			domain.Finding{File: "http.go", Note: "the sleep is unbounded",
-				Severity: domain.SeverityLow, Verdict: domain.VerdictDismissed},
+			contract.Item{Source: contract.SourceLLM, Location: contract.Location{Path: "http.go"}, Message: "token in a log line", Severity: domain.SeverityHigh},
+			contract.Item{Source: contract.SourceLLM, Location: contract.Location{Path: "http.go"}, Message: "the sleep is unbounded", Severity: domain.SeverityLow, Verdict: domain.VerdictDismissed},
 		)},
 	}}
 
@@ -233,8 +232,8 @@ func TestModelFindingsNarrowToAFileWhenAsked(t *testing.T) {
 	w := space{open: mcp.Review{
 		ID: "abc123",
 		Analyses: []domain.Analysis{findings("security", "qwen3.5-9b",
-			domain.Finding{File: "http.go", Note: "token in a log line"},
-			domain.Finding{File: "main.go", Note: "flag parsed twice"},
+			contract.Item{Source: contract.SourceLLM, Location: contract.Location{Path: "http.go"}, Message: "token in a log line"},
+			contract.Item{Source: contract.SourceLLM, Location: contract.Location{Path: "main.go"}, Message: "flag parsed twice"},
 		)},
 	}}
 
@@ -285,7 +284,7 @@ func TestSearchReachesEveryReviewAndSaysWhichClaimsAreAMachines(t *testing.T) {
 		}},
 		{ID: "def456", Title: "drop the cache", Ref: "def456",
 			Analyses: []domain.Analysis{findings("security", "qwen3.5-9b",
-				domain.Finding{File: "cache.go", Note: "retries can leak the key"},
+				contract.Item{Source: contract.SourceLLM, Location: contract.Location{Path: "cache.go"}, Message: "retries can leak the key"},
 			)},
 		},
 	}}

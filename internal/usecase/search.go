@@ -91,7 +91,7 @@ func SearchableReview(targetID, ref, title string, notes []domain.Note,
 	}
 	for _, a := range analyses {
 		for _, f := range a.Findings {
-			add(string(a.Kind), f.File, f.Note)
+			add(string(a.Kind), f.Location.Path, f.Message)
 		}
 	}
 	return out
