@@ -20,6 +20,7 @@ import (
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/config"
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/presenter/web"
 	gitsnap "github.com/mondial7/mondspace-reviewer/internal/adapter/snapshot/git"
+	"github.com/mondial7/mondspace-reviewer/internal/adapter/store/items"
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/store/jsonl"
 	pgstore "github.com/mondial7/mondspace-reviewer/internal/adapter/store/postgres"
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/summarizer/openai"
@@ -1270,7 +1271,16 @@ func (targetNotes) AppendNote(n domain.Note) error {
 	if !known {
 		return fmt.Errorf("no such review %q", n.SessionID)
 	}
-	return jsonl.New(entry.out).AppendNote(n)
+	if err := jsonl.New(entry.out).AppendNote(n); err != nil {
+		return err
+	}
+	// A note that is work goes into the findings store as well, so it outlives
+	// the review it was written in and reaches the same exports as everything
+	// else (ADR 0044). The note itself is already saved; failing to mirror it
+	// must not read to the reviewer as the note having been lost.
+	_ = recordNote(items.New(sharedDir(entry.repo, "")), n,
+		gitsnap.New(entry.repo, "").CurrentBranch(context.Background()), entry.repo)
+	return nil
 }
 
 // unopenedRepos lists checkouts found nearby that are not in the workspace, so

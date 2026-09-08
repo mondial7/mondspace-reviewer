@@ -80,31 +80,74 @@ func runScan(ctx context.Context, args []string, stdout io.Writer) error {
 	found = usecase.MarkNew(found, units, diffs)
 	found = append(found, usecase.FlagFindings(units, diffs)...)
 
-	at := time.Now().UTC()
-	sight := usecase.Sighting{
-		Branch:    branchName(ctx, snap, *branch),
-		SessionID: "",
-		Commit:    baseline.Commit,
-		At:        at,
-		Mint:      newULID,
-		Body:      fileBodies(*repo),
-	}
-
+	on := branchName(ctx, snap, *branch)
 	store := items.New(shared)
-	stored, err := store.All()
+	changed, err := recordFindings(store, found, sighting{
+		branch:    on,
+		commit:    baseline.Commit,
+		repo:      *repo,
+		producers: ranProducers(scanner),
+		paths:     pathsOf(units),
+	})
 	if err != nil {
 		return err
 	}
-	changed := usecase.Reconcile(stored, sight.FromReported(found), usecase.Pass{
+
+	return reportScan(stdout, store, on, changed)
+}
+
+// sighting is the context one pass of the analysers ran in.
+type sighting struct {
+	branch    string
+	session   string
+	commit    string
+	repo      string
+	producers map[string]bool
+	paths     []string
+}
+
+// recordFindings is the one path from what a reading produced to what the store
+// holds, shared by the command and by the cockpit's own scan.
+//
+// It reconciles rather than appends: the same finding seen twice is one record,
+// a dismissal is never raised again, and a finding whose code has gone is
+// closed (ADR 0045).
+func recordFindings(store *items.Store, found []domain.Reported, in sighting) ([]contract.Item, error) {
+	at := time.Now().UTC()
+	sight := usecase.Sighting{
+		Branch:    in.branch,
+		SessionID: in.session,
+		Commit:    in.commit,
 		At:        at,
-		Producers: ranProducers(scanner),
-		Paths:     pathSet(pathsOf(units)),
-	})
-	if err := store.Append(changed...); err != nil {
-		return err
+		Mint:      newULID,
+		Body:      fileBodies(in.repo),
 	}
 
-	return reportScan(stdout, store, sight.Branch, changed)
+	stored, err := store.All()
+	if err != nil {
+		return nil, err
+	}
+	changed := usecase.Reconcile(stored, sight.FromReported(found), usecase.Pass{
+		At:        at,
+		Producers: in.producers,
+		Paths:     pathSet(in.paths),
+	})
+	return changed, store.Append(changed...)
+}
+
+// recordNote mirrors a reviewer's annotation into the findings store, so that a
+// note written in a lens outlives the session it was written in and turns up in
+// the same exports as everything else (ADR 0044).
+//
+// Only the kinds that are work: `ok` and `note` are the reviewer thinking
+// aloud, and handing those to an agent as tasks is worse than handing it
+// nothing.
+func recordNote(store *items.Store, note domain.Note, branch, repo string) error {
+	if !note.Actionable() {
+		return nil
+	}
+	sight := usecase.Sighting{Branch: branch, At: note.TS, Mint: newULID, Body: fileBodies(repo)}
+	return store.Append(sight.FromNote(note))
 }
 
 // reportScan says what the pass did, in the terms the store thinks in.
