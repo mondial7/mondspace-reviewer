@@ -892,6 +892,23 @@ func (s *Snapshotter) defaultBranch(ctx context.Context) string {
 	return ""
 }
 
+// CurrentBranch is the branch the working tree is on.
+//
+// A detached head has no branch, and the findings store would rather say so
+// than record everything against a commit nobody will check out again: items
+// are stored against a branch, and "" is a legitimate answer meaning the
+// reviewer is not on one (ADR 0045).
+func (s *Snapshotter) CurrentBranch(ctx context.Context) string {
+	out, err := s.run(ctx, os.Environ(), "rev-parse", "--abbrev-ref", "HEAD")
+	if err != nil {
+		return ""
+	}
+	if name := strings.TrimSpace(out); name != "HEAD" {
+		return name
+	}
+	return ""
+}
+
 // shortBranch drops the remote from a remote-tracking name: origin/feature-x
 // is called feature-x by the person who pushed it.
 func shortBranch(name string) string {
