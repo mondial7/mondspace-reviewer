@@ -1,6 +1,10 @@
 package domain
 
-import "time"
+import (
+	"time"
+
+	"github.com/mondial7/mondspace-reviewer/contract"
+)
 
 // AnalysisKind is one way of reading a change. The story — what happened and
 // why — is one reading; a security pass and a breaking-change pass are others
@@ -11,69 +15,36 @@ import "time"
 // an afterthought, and the reviewer cannot tell which is which.
 type AnalysisKind string
 
-// Severity is how much a finding should interrupt the reviewer.
+// Severity and Verdict live in `contract` and are aliased here (ADR 0044,
+// ADR 0048).
 //
-// Three levels, not five, and defined by what the reviewer should *do* rather
-// than by a score nobody computed. A finer scale would invite a small local
-// model to express confidence it does not have, and the whole set is still
-// labelled inferred: it is the model's suggestion of weight, not a rating
-// (ADR 0003, ADR 0024).
-type Severity string
+// They are aliases rather than copies because they cross the boundary: an item
+// written to the findings store and an item read by the planner have to mean
+// the same thing by "high", and two definitions that agree today are a
+// definition that will disagree eventually. Everything the domain used to say
+// about them is said there instead.
+type Severity = contract.Severity
 
 const (
 	// SeverityHigh: I would not merge this without dealing with it.
-	SeverityHigh Severity = "high"
+	SeverityHigh = contract.SeverityHigh
 	// SeverityMedium: worth checking before merging.
-	SeverityMedium Severity = "medium"
+	SeverityMedium = contract.SeverityMedium
 	// SeverityLow: worth knowing about, not worth blocking on.
-	SeverityLow Severity = "low"
+	SeverityLow = contract.SeverityLow
 )
 
 // Severities is the three levels, worst first — the order they are read in.
-var Severities = []Severity{SeverityHigh, SeverityMedium, SeverityLow}
-
-// Rank orders severities, worst lowest, for sorting. An unrecognised level
-// ranks with medium, which is where it is normalised to anyway.
-func (s Severity) Rank() int {
-	switch s {
-	case SeverityHigh:
-		return 0
-	case SeverityLow:
-		return 2
-	default:
-		return 1
-	}
-}
-
-// Normalise maps whatever came back to one of the three.
-//
-// An endpoint that ignored the schema can return anything. Dropping the finding
-// would hide it and calling it high would cry wolf, so an unusable level
-// becomes "worth checking" — the honest answer when the model did not say.
-func (s Severity) Normalise() Severity {
-	for _, known := range Severities {
-		if s == known {
-			return known
-		}
-	}
-	return SeverityMedium
-}
+var Severities = contract.Severities
 
 // Verdict is what the reviewer decided about a finding (ADR 0030).
-//
-// Only "dismissed" exists as a state that changes anything: a finding nobody
-// has ruled on and a finding somebody confirmed are both things still to deal
-// with, and inventing a third colour for the difference would be decoration.
-type Verdict string
+type Verdict = contract.Verdict
 
 const (
-	// VerdictDismissed: looked at, not a problem. It stays on the card, greyed,
-	// because deleting it would invite the next audit to raise it again as
-	// though it were new.
-	VerdictDismissed Verdict = "dismissed"
-	// VerdictConfirmed: looked at, and it is real. Recorded because "I have
-	// read this" is worth distinguishing from "nobody has looked".
-	VerdictConfirmed Verdict = "confirmed"
+	// VerdictDismissed: looked at, not a problem.
+	VerdictDismissed = contract.VerdictDismissed
+	// VerdictConfirmed: looked at, and it is real.
+	VerdictConfirmed = contract.VerdictConfirmed
 )
 
 // Finding is one thing worth a second look: where, one line about why, how much
