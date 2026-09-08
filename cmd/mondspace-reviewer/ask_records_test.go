@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mondial7/mondspace-reviewer/contract"
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/store/jsonl"
-	"github.com/mondial7/mondspace-reviewer/internal/domain"
 )
 
 // fakeModel answers every question with the same sentence, over the
@@ -31,9 +31,7 @@ func TestAskingFromTheCommandLineJoinsTheReviewsConversation(t *testing.T) {
 	// moment it was answered — the same review, two different memories.
 	root := t.TempDir()
 	store := jsonl.New(root)
-	if err := store.AppendNote(domain.Note{
-		ID: "n1", SessionID: "abc123", Kind: domain.NoteQuestion, Text: "why here?",
-	}); err != nil {
+	if err := store.AppendNote(contract.Item{Source: contract.SourceHuman, ID: "n1", SessionID: "abc123", Kind: contract.KindQuestion, Message: "why here?"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -68,9 +66,7 @@ func TestWithNoTargetTheCommandLineAsksAboutTheOpenReview(t *testing.T) {
 	// `msr web` leaves a pointer to the review being read (ADR 0031). Typing
 	// out a target id you are already looking at is a thing to make unnecessary.
 	root := t.TempDir()
-	if err := jsonl.New(root).AppendNote(domain.Note{
-		ID: "n1", SessionID: "open-one", Kind: domain.NoteQuestion, Text: "?",
-	}); err != nil {
+	if err := jsonl.New(root).AppendNote(contract.Item{Source: contract.SourceHuman, ID: "n1", SessionID: "open-one", Kind: contract.KindQuestion, Message: "?"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := markOpen(root, openReview{TargetID: "open-one", Title: "the open one"}); err != nil {
@@ -95,9 +91,7 @@ func TestWithNoTargetTheCommandLineAsksAboutTheOpenReview(t *testing.T) {
 
 func TestExportingWithNoTargetTakesTheOpenReview(t *testing.T) {
 	root := t.TempDir()
-	if err := jsonl.New(root).AppendNote(domain.Note{
-		ID: "n1", SessionID: "open-one", Kind: domain.NoteObjection, Text: "this retries forever",
-	}); err != nil {
+	if err := jsonl.New(root).AppendNote(contract.Item{Source: contract.SourceHuman, ID: "n1", SessionID: "open-one", Kind: contract.KindObjection, Message: "this retries forever"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := markOpen(root, openReview{TargetID: "open-one"}); err != nil {

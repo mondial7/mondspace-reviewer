@@ -9,6 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/mondial7/mondspace-reviewer/contract"
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/store/postgres"
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
 )
@@ -93,7 +94,7 @@ func TestRoundTripsSessionState(t *testing.T) {
 	if err := s.AppendUnit(unit); err != nil {
 		t.Fatalf("AppendUnit: %v", err)
 	}
-	note := domain.Note{ID: "n1", SessionID: "s", UnitID: "s-f001", Kind: domain.NoteObjection, Text: "wrong layer", TS: ts}
+	note := contract.Item{Source: contract.SourceHuman, ID: "n1", SessionID: "s", UnitID: "s-f001", Kind: contract.KindObjection, Message: "wrong layer", FirstSeen: ts}
 	if err := s.AppendNote(note); err != nil {
 		t.Fatalf("AppendNote: %v", err)
 	}
@@ -114,7 +115,7 @@ func TestRoundTripsSessionState(t *testing.T) {
 	if len(sess.Units[0].Flags) != 1 || sess.Units[0].Flags[0] != domain.FlagNoTest {
 		t.Errorf("unit flags not round-tripped: %+v", sess.Units[0].Flags)
 	}
-	if len(sess.Notes) != 1 || sess.Notes[0].Text != "wrong layer" {
+	if len(sess.Notes) != 1 || sess.Notes[0].Message != "wrong layer" {
 		t.Errorf("notes = %+v", sess.Notes)
 	}
 }

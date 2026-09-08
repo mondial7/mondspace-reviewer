@@ -7,7 +7,9 @@ package legacy
 
 import (
 	"encoding/json"
+	"time"
 
+	"github.com/mondial7/mondspace-reviewer/contract"
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
 )
 
@@ -44,4 +46,43 @@ func Findings(a domain.Analysis, body []byte) domain.Analysis {
 		}
 	}
 	return a
+}
+
+// Note puts back the three fields a reviewer's annotation was written with
+// before notes became items (ADR 0048): the text, the time and the file.
+//
+// This is the one migration that cannot be got wrong. An analyser's cache is
+// re-derived and a model's reading can be re-run; a note is something a person
+// typed once, and there is nowhere else to get it from. Everything else about
+// the record — the id, the session, the unit, the kind, the anchor, the
+// supersession — kept its name and decodes without help.
+func Note(item contract.Item, raw []byte) contract.Item {
+	var stored struct {
+		Text string    `json:"text"`
+		TS   time.Time `json:"ts"`
+		File string    `json:"file"`
+	}
+	if err := json.Unmarshal(raw, &stored); err != nil {
+		return item
+	}
+
+	if item.Message == "" {
+		item.Message = stored.Text
+	}
+	if item.Directive == "" {
+		item.Directive = item.Message
+	}
+	if item.FirstSeen.IsZero() {
+		item.FirstSeen = stored.TS
+	}
+	if item.LastSeen.IsZero() {
+		item.LastSeen = item.FirstSeen
+	}
+	if item.Location.Path == "" {
+		item.Location.Path = stored.File
+	}
+	if item.Source == "" {
+		item.Source = contract.SourceHuman
+	}
+	return item
 }

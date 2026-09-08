@@ -1,6 +1,9 @@
 package usecase
 
-import "github.com/mondial7/mondspace-reviewer/internal/domain"
+import (
+	"github.com/mondial7/mondspace-reviewer/contract"
+	"github.com/mondial7/mondspace-reviewer/internal/domain"
+)
 
 // BuildAskContext assembles the bounded context for a question. Unit scope is
 // narrow — the current unit, its diff, and its notes. Session scope is broad but
@@ -21,8 +24,8 @@ func BuildAskContext(scope domain.AskScope, sess domain.Session, current domain.
 	return ctx
 }
 
-func notesFor(notes []domain.Note, unitID string) []domain.Note {
-	var out []domain.Note
+func notesFor(notes []contract.Item, unitID string) []contract.Item {
+	var out []contract.Item
 	for _, n := range notes {
 		if n.UnitID == unitID {
 			out = append(out, n)

@@ -5,6 +5,7 @@ package port
 import (
 	"context"
 
+	"github.com/mondial7/mondspace-reviewer/contract"
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
 )
 
@@ -85,7 +86,7 @@ type Pinger interface {
 type Store interface {
 	AppendEvent(domain.Event) error
 	AppendUnit(domain.Unit) error
-	AppendNote(domain.Note) error
+	AppendNote(contract.Item) error
 	Load(sessionID string) (domain.Session, error)
 }
 

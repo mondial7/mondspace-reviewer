@@ -42,7 +42,7 @@ func (s *Store) AppendExchange(e domain.Exchange) error {
 	return s.appendLine(e.SessionID, "ask.jsonl", e)
 }
 
-func (s *Store) AppendNote(n domain.Note) error {
+func (s *Store) AppendNote(n contract.Item) error {
 	return s.appendLine(n.SessionID, "notes.jsonl", n)
 }
 
@@ -72,7 +72,7 @@ func (s *Store) Load(sessionID string) (domain.Session, error) {
 	}
 	sess.Units = units
 
-	notes, err := readLines[domain.Note](filepath.Join(s.root, sessionID, "notes.jsonl"))
+	notes, err := readNotes(filepath.Join(s.root, sessionID, "notes.jsonl"))
 	if err != nil {
 		return domain.Session{}, err
 	}
@@ -85,6 +85,35 @@ func (s *Store) Load(sessionID string) (domain.Session, error) {
 	sess.Exchanges = exchanges
 
 	return sess, nil
+}
+
+// readNotes decodes the note log, restoring what older builds wrote.
+//
+// Notes are the one thing in the store that cannot be re-derived from anything
+// (ADR 0048), so this goes through the raw line rather than trusting the
+// current field names to have always been the field names.
+func readNotes(path string) ([]contract.Item, error) {
+	f, err := os.Open(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	var notes []contract.Item
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for sc.Scan() {
+		raw := append([]byte(nil), sc.Bytes()...)
+		var note contract.Item
+		if err := json.Unmarshal(raw, &note); err != nil {
+			continue
+		}
+		notes = append(notes, legacy.Note(note, raw))
+	}
+	return notes, sc.Err()
 }
 
 // readLines decodes each JSON line of a file into T. A missing file yields no

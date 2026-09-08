@@ -1,6 +1,10 @@
 package domain
 
-import "time"
+import (
+	"time"
+
+	"github.com/mondial7/mondspace-reviewer/contract"
+)
 
 // Session is the reconstructed state of one watched agent session: its task
 // prompt, the full event log, and the sealed units. It is rebuilt from the
@@ -10,7 +14,7 @@ type Session struct {
 	Prompt string
 	Events []Event
 	Units  []Unit
-	Notes  []Note
+	Notes  []contract.Item
 	// Exchanges is the review conversation. It is part of the review, not a
 	// transient UI state: a reviewer must be able to pick a thread up tomorrow.
 	Exchanges []Exchange

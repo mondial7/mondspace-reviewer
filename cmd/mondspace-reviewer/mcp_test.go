@@ -9,13 +9,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mondial7/mondspace-reviewer/contract"
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/store/jsonl"
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
 )
 
 // writeReview puts one review's human record in the store, the way the web app
 // would have.
-func writeReview(t *testing.T, root, targetID string, notes ...domain.Note) {
+func writeReview(t *testing.T, root, targetID string, notes ...contract.Item) {
 	t.Helper()
 	store := jsonl.New(root)
 	for _, n := range notes {
@@ -50,12 +51,12 @@ func TestWithNoPointerTheMostRecentlyWrittenReviewIsTheOpenOne(t *testing.T) {
 	// msr web may never have run — the store is still on disk, and guessing
 	// from it beats refusing to answer.
 	root := t.TempDir()
-	writeReview(t, root, "older", domain.Note{ID: "1", Kind: domain.NoteQuestion, Text: "older"})
+	writeReview(t, root, "older", contract.Item{Source: contract.SourceHuman, ID: "1", Kind: contract.KindQuestion, Message: "older"})
 	old := time.Now().Add(-time.Hour)
 	if err := os.Chtimes(filepath.Join(root, "older", "notes.jsonl"), old, old); err != nil {
 		t.Fatalf("Chtimes: %v", err)
 	}
-	writeReview(t, root, "newer", domain.Note{ID: "2", Kind: domain.NoteQuestion, Text: "newer"})
+	writeReview(t, root, "newer", contract.Item{Source: contract.SourceHuman, ID: "2", Kind: contract.KindQuestion, Message: "newer"})
 
 	got, ok := whatIsOpen(root)
 	if !ok {
@@ -69,8 +70,8 @@ func TestWithNoPointerTheMostRecentlyWrittenReviewIsTheOpenOne(t *testing.T) {
 func TestMCPServesTheOpenReviewOverStdio(t *testing.T) {
 	root := t.TempDir()
 	writeReview(t, root, "abc123",
-		domain.Note{ID: "1", Kind: domain.NoteObjection, File: "http.go", Text: "this retries forever"},
-		domain.Note{ID: "2", Kind: domain.NoteOK, File: "http.go", Text: "reads fine"})
+		contract.Item{Source: contract.SourceHuman, Location: contract.Location{Path: "http.go"}, ID: "1", Kind: contract.KindObjection, Message: "this retries forever"},
+		contract.Item{Source: contract.SourceHuman, Location: contract.Location{Path: "http.go"}, ID: "2", Kind: contract.KindOK, Message: "reads fine"})
 	if err := markOpen(root, openReview{TargetID: "abc123", Title: "add retries"}); err != nil {
 		t.Fatalf("markOpen: %v", err)
 	}

@@ -1,10 +1,13 @@
 package usecase
 
-import "github.com/mondial7/mondspace-reviewer/internal/domain"
+import (
+	"github.com/mondial7/mondspace-reviewer/contract"
+	"github.com/mondial7/mondspace-reviewer/internal/domain"
+)
 
 // groupOrder fixes the order note kinds appear in the review report.
-var groupOrder = []domain.NoteKind{
-	domain.NoteOK, domain.NoteQuestion, domain.NoteObjection, domain.NoteDebt, domain.NoteNote,
+var groupOrder = []contract.Kind{
+	contract.KindOK, contract.KindQuestion, contract.KindObjection, contract.KindDebt, contract.KindNote,
 }
 
 // BuildReport projects a session into an exportable review. It is pure: notes
@@ -33,7 +36,7 @@ func BuildReport(sess domain.Session) domain.Report {
 	for _, n := range notes {
 		item := itemFor(n, units[n.UnitID])
 		switch {
-		case n.Kind == domain.NoteDebt:
+		case n.Kind == contract.KindDebt:
 			r.Debt = append(r.Debt, item)
 		case isOpen(n.Kind) && n.SupersededBy == "":
 			r.Agenda = append(r.Agenda, item)
@@ -56,17 +59,17 @@ func BuildReport(sess domain.Session) domain.Report {
 }
 
 // isOpen reports whether a note kind represents an unresolved concern.
-func isOpen(kind domain.NoteKind) bool {
-	return kind == domain.NoteQuestion || kind == domain.NoteObjection
+func isOpen(kind contract.Kind) bool {
+	return kind == contract.KindQuestion || kind == contract.KindObjection
 }
 
-func itemFor(n domain.Note, u domain.Unit) domain.ReportItem {
+func itemFor(n contract.Item, u domain.Unit) domain.ReportItem {
 	return domain.ReportItem{
 		UnitID:       n.UnitID,
 		Headline:     u.Headline,
 		Flags:        u.Flags,
 		NoteKind:     n.Kind,
-		NoteText:     n.Text,
+		NoteText:     n.Message,
 		SupersededBy: n.SupersededBy,
 	}
 }

@@ -21,11 +21,8 @@ type space struct {
 func (s space) Open() (mcp.Review, error)  { return s.open, s.openTo }
 func (s space) All() ([]mcp.Review, error) { return s.all, nil }
 
-func note(kind domain.NoteKind, file, text string) domain.Note {
-	return domain.Note{
-		ID: text, Kind: kind, File: file, Text: text,
-		TS: time.Date(2026, 8, 29, 10, 0, 0, 0, time.UTC),
-	}
+func note(kind contract.Kind, file, text string) contract.Item {
+	return contract.Item{Source: contract.SourceHuman, Location: contract.Location{Path: file}, ID: text, Kind: kind, Message: text, FirstSeen: time.Date(2026, 8, 29, 10, 0, 0, 0, time.UTC)}
 }
 
 // tool runs one of the msr tools by name and returns the text it produced.
@@ -58,11 +55,11 @@ func TestFeedbackIsWhatAHumanWroteAndStillWants(t *testing.T) {
 	// guesses (ADR 0031).
 	w := space{open: mcp.Review{
 		ID: "abc123", Title: "add retries", Ref: "abc123",
-		Notes: []domain.Note{
-			note(domain.NoteObjection, "http.go", "this retries forever"),
-			note(domain.NoteOK, "http.go", "reads fine"),
-			note(domain.NoteQuestion, "main.go", "why the extra goroutine?"),
-			note(domain.NoteNote, "main.go", "thinking aloud"),
+		Notes: []contract.Item{
+			note(contract.KindObjection, "http.go", "this retries forever"),
+			note(contract.KindOK, "http.go", "reads fine"),
+			note(contract.KindQuestion, "main.go", "why the extra goroutine?"),
+			note(contract.KindNote, "main.go", "thinking aloud"),
 		},
 		Analyses: []domain.Analysis{{
 			Kind: "security", At: time.Now(), Verdict: "one thing",
@@ -89,9 +86,9 @@ func TestStatusSaysWhereTheReviewStandsWithoutSpendingTheContext(t *testing.T) {
 	// is anyone still looking at this, and is there anything for me.
 	w := space{open: mcp.Review{
 		ID: "abc123", Title: "add retries", Ref: "abc123", Repo: "mondspace-reviewer",
-		Notes: []domain.Note{
-			note(domain.NoteObjection, "http.go", "this retries forever"),
-			note(domain.NoteOK, "http.go", "reads fine"),
+		Notes: []contract.Item{
+			note(contract.KindObjection, "http.go", "this retries forever"),
+			note(contract.KindOK, "http.go", "reads fine"),
 		},
 		Signoff: domain.Signoff{
 			TargetID: "abc123", At: time.Now(), Comment: "good apart from the retry loop",
@@ -123,16 +120,16 @@ func TestAskingAboutOneFileGetsEverythingAHumanWroteThere(t *testing.T) {
 	// Narrower than review_feedback and therefore more generous: someone who
 	// names a file wants the whole human record of it, approvals included —
 	// "I already looked at this and it was fine" is worth an agent knowing.
-	superseded := note(domain.NoteQuestion, "http.go", "an earlier wording")
+	superseded := note(contract.KindQuestion, "http.go", "an earlier wording")
 	superseded.SupersededBy = "later"
 
 	w := space{open: mcp.Review{
 		ID: "abc123", Title: "add retries",
-		Notes: []domain.Note{
-			note(domain.NoteOK, "http.go", "the backoff reads fine"),
-			note(domain.NoteObjection, "http.go", "this retries forever"),
+		Notes: []contract.Item{
+			note(contract.KindOK, "http.go", "the backoff reads fine"),
+			note(contract.KindObjection, "http.go", "this retries forever"),
 			superseded,
-			note(domain.NoteQuestion, "main.go", "why the extra goroutine?"),
+			note(contract.KindQuestion, "main.go", "why the extra goroutine?"),
 		},
 		Analyses: []domain.Analysis{{
 			Kind: "security", At: time.Now(), Verdict: "one thing",
@@ -248,15 +245,15 @@ func TestWorkspaceFeedbackGathersWhatIsOutstandingEverywhere(t *testing.T) {
 	// The expensive call: every review in the workspace, not just the open one.
 	// Grouped by review, because "somewhere, someone objected" is not usable.
 	w := space{all: []mcp.Review{
-		{ID: "abc123", Title: "add retries", Notes: []domain.Note{
-			note(domain.NoteObjection, "http.go", "this retries forever"),
-			note(domain.NoteOK, "http.go", "reads fine"),
+		{ID: "abc123", Title: "add retries", Notes: []contract.Item{
+			note(contract.KindObjection, "http.go", "this retries forever"),
+			note(contract.KindOK, "http.go", "reads fine"),
 		}},
-		{ID: "def456", Title: "drop the cache", Notes: []domain.Note{
-			note(domain.NoteDebt, "cache.go", "the eviction is still O(n)"),
+		{ID: "def456", Title: "drop the cache", Notes: []contract.Item{
+			note(contract.KindDebt, "cache.go", "the eviction is still O(n)"),
 		}},
-		{ID: "ghi789", Title: "nothing written here", Notes: []domain.Note{
-			note(domain.NoteOK, "readme.md", "fine"),
+		{ID: "ghi789", Title: "nothing written here", Notes: []contract.Item{
+			note(contract.KindOK, "readme.md", "fine"),
 		}},
 	}}
 
@@ -279,8 +276,8 @@ func TestWorkspaceFeedbackGathersWhatIsOutstandingEverywhere(t *testing.T) {
 
 func TestSearchReachesEveryReviewAndSaysWhichClaimsAreAMachines(t *testing.T) {
 	w := space{all: []mcp.Review{
-		{ID: "abc123", Title: "add retries", Ref: "abc123", Notes: []domain.Note{
-			note(domain.NoteObjection, "http.go", "this retries forever"),
+		{ID: "abc123", Title: "add retries", Ref: "abc123", Notes: []contract.Item{
+			note(contract.KindObjection, "http.go", "this retries forever"),
 		}},
 		{ID: "def456", Title: "drop the cache", Ref: "def456",
 			Analyses: []domain.Analysis{findings("security", "qwen3.5-9b",

@@ -3,6 +3,7 @@ package usecase
 import (
 	"strings"
 
+	"github.com/mondial7/mondspace-reviewer/contract"
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
 )
 
@@ -13,7 +14,7 @@ type AnchoredLine struct {
 	// Nth is which occurrence of this exact text the line is, so a note written
 	// on it can be found again among identical lines.
 	Nth   int
-	Notes []domain.Note
+	Notes []contract.Item
 }
 
 // AnchorNotes places line-level notes on the diff they were written about, and
@@ -27,7 +28,7 @@ type AnchoredLine struct {
 // A note with no anchor is about the file as a whole and is left alone: that is
 // what every note was before this existed, and plenty of what a reviewer says
 // belongs to the file rather than to a line.
-func AnchorNotes(diff domain.Diff, notes []domain.Note) ([]AnchoredLine, []domain.Note) {
+func AnchorNotes(diff domain.Diff, notes []contract.Item) ([]AnchoredLine, []contract.Item) {
 	lines := numberLines(diff)
 
 	// Where each (text, occurrence) sits, and how many times each text appears,
@@ -41,7 +42,7 @@ func AnchorNotes(diff domain.Diff, notes []domain.Note) ([]AnchoredLine, []domai
 		at[l.Text][l.Nth] = i
 	}
 
-	var orphaned []domain.Note
+	var orphaned []contract.Item
 	for _, n := range notes {
 		if n.Anchor == "" {
 			continue // about the file, not a line

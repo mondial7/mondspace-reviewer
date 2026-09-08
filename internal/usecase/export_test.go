@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mondial7/mondspace-reviewer/contract"
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
 	"github.com/mondial7/mondspace-reviewer/internal/usecase"
 )
@@ -13,7 +14,7 @@ import (
 func TestExportJSONMarshalsReport(t *testing.T) {
 	sess := reportSession()
 	sess.Notes = append(sess.Notes,
-		domain.Note{ID: "n4", UnitID: "s-u003", Kind: domain.NoteDebt, Text: "add a test"},
+		contract.Item{Source: contract.SourceHuman, ID: "n4", UnitID: "s-u003", Kind: contract.KindDebt, Message: "add a test"},
 	)
 
 	data, err := usecase.ExportJSON(usecase.BuildReport(sess))
@@ -39,7 +40,7 @@ func TestExportJSONMarshalsReport(t *testing.T) {
 func TestExportMarkdownOpenAgenda(t *testing.T) {
 	sess := reportSession()
 	sess.Notes = append(sess.Notes,
-		domain.Note{ID: "n6", UnitID: "s-u001", Kind: domain.NoteQuestion, Text: "why an interface?"},
+		contract.Item{Source: contract.SourceHuman, ID: "n6", UnitID: "s-u001", Kind: contract.KindQuestion, Message: "why an interface?"},
 	)
 
 	md := usecase.ExportMarkdown(usecase.BuildReport(sess))
@@ -90,7 +91,7 @@ func TestExportMarkdownSupersededAndUnreviewed(t *testing.T) {
 		domain.Unit{ID: "s-u009", Headline: domain.Headline{Text: "untouched"}},
 	)
 	sess.Notes = append(sess.Notes,
-		domain.Note{ID: "n7", UnitID: "s-u001", Kind: domain.NoteObjection, Text: "bad choice"},
+		contract.Item{Source: contract.SourceHuman, ID: "n7", UnitID: "s-u001", Kind: contract.KindObjection, Message: "bad choice"},
 	)
 
 	md := usecase.ExportMarkdown(usecase.BuildReport(sess))
@@ -106,7 +107,7 @@ func TestExportMarkdownSupersededAndUnreviewed(t *testing.T) {
 func TestExportMarkdownDebtTaskList(t *testing.T) {
 	sess := reportSession()
 	sess.Notes = append(sess.Notes,
-		domain.Note{ID: "n4", UnitID: "s-u003", Kind: domain.NoteDebt, Text: "add a test for the retry"},
+		contract.Item{Source: contract.SourceHuman, ID: "n4", UnitID: "s-u003", Kind: contract.KindDebt, Message: "add a test for the retry"},
 	)
 
 	md := usecase.ExportMarkdown(usecase.BuildReport(sess))
@@ -127,8 +128,8 @@ func TestExportSlackHeadlineCounts(t *testing.T) {
 		}
 	}
 	sess.Notes = append(sess.Notes,
-		domain.Note{ID: "n6", UnitID: "s-u001", Kind: domain.NoteQuestion, Text: "why an interface?"},
-		domain.Note{ID: "n7", UnitID: "s-u003", Kind: domain.NoteDebt, Text: "add a test"},
+		contract.Item{Source: contract.SourceHuman, ID: "n6", UnitID: "s-u001", Kind: contract.KindQuestion, Message: "why an interface?"},
+		contract.Item{Source: contract.SourceHuman, ID: "n7", UnitID: "s-u003", Kind: contract.KindDebt, Message: "add a test"},
 	)
 
 	msg := usecase.ExportSlack(usecase.BuildReport(sess))
@@ -190,7 +191,7 @@ func TestExportSlackOmitsFlaggedSectionWhenNoneFlagged(t *testing.T) {
 func TestExportSlackOpenAgendaAsDirectives(t *testing.T) {
 	sess := reportSession()
 	sess.Notes = append(sess.Notes,
-		domain.Note{ID: "n6", UnitID: "s-u001", Kind: domain.NoteQuestion, Text: "why an interface?"},
+		contract.Item{Source: contract.SourceHuman, ID: "n6", UnitID: "s-u001", Kind: contract.KindQuestion, Message: "why an interface?"},
 	)
 
 	msg := usecase.ExportSlack(usecase.BuildReport(sess))
@@ -215,7 +216,7 @@ func TestExportSlackTruncatesLongListsWithCount(t *testing.T) {
 			Headline: domain.Headline{Text: "change"},
 			Flags:    []domain.Flag{domain.FlagLarge},
 		})
-		sess.Notes = append(sess.Notes, domain.Note{ID: "n" + id, UnitID: id, Kind: domain.NoteObjection, Text: "objection"})
+		sess.Notes = append(sess.Notes, contract.Item{Source: contract.SourceHuman, ID: "n" + id, UnitID: id, Kind: contract.KindObjection, Message: "objection"})
 	}
 
 	msg := usecase.ExportSlack(usecase.BuildReport(sess))
@@ -235,7 +236,7 @@ func TestExportSlackCapsMessageLength(t *testing.T) {
 	for i := 0; i < 20; i++ {
 		id := fmt.Sprintf("huge-u%03d", i)
 		sess.Units = append(sess.Units, domain.Unit{ID: id, Files: []string{fmt.Sprintf("f%d.go", i)}})
-		sess.Notes = append(sess.Notes, domain.Note{ID: "n" + id, UnitID: id, Kind: domain.NoteObjection, Text: longText})
+		sess.Notes = append(sess.Notes, contract.Item{Source: contract.SourceHuman, ID: "n" + id, UnitID: id, Kind: contract.KindObjection, Message: longText})
 	}
 
 	msg := usecase.ExportSlack(usecase.BuildReport(sess))

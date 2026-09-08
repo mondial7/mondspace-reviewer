@@ -148,6 +148,22 @@ type Location struct {
 	Commit string `json:"commit,omitempty"`
 }
 
+// Kind is what a reviewer meant by an annotation.
+//
+// It is the one axis a human note has that a tool's finding does not: `ok`
+// doubles as "mark read", which is what keeps a review queue moving, and the
+// difference between a question and an objection is the difference between
+// asking and refusing.
+type Kind string
+
+const (
+	KindOK        Kind = "ok"
+	KindQuestion  Kind = "question"
+	KindObjection Kind = "objection"
+	KindDebt      Kind = "debt"
+	KindNote      Kind = "note"
+)
+
 // Item is one thing to be done: a place in the code, a sentence about it, a
 // weight, and a state (ADR 0044).
 //
@@ -184,6 +200,15 @@ type Item struct {
 	// Snippet is enough of the code to act on without opening the file, for an
 	// agent that has no repository context loaded.
 	Snippet string `json:"snippet,omitempty"`
+
+	// Kind is what a reviewer meant, for items they wrote. Empty for
+	// everything a tool or a model produced.
+	Kind Kind `json:"kind,omitempty"`
+	// SupersededBy names a later unit that touched the same file, for an item
+	// a subsequent change has overtaken. Supersession is surfaced, never
+	// silently applied: nothing is deleted and nothing is auto-resolved
+	// (ADR 0030).
+	SupersededBy string `json:"superseded_by,omitempty"`
 
 	// New says this item is about a line the change actually touched. Showing
 	// the ones that were already there turns "3 things to look at" into "412
@@ -247,6 +272,29 @@ func (i Item) CurrentState() State {
 // later pass finds it gone (ADR 0044).
 func (i Item) Stands() bool {
 	return i.Verdict != VerdictDismissed && i.CurrentState() != StateFixed
+}
+
+// Actionable reports whether this is something still to be dealt with, for the
+// agent-facing surfaces.
+//
+// `ok` and `note` are the reviewer thinking aloud; `question`, `objection` and
+// `debt` are things they want answered, changed or remembered. Anything a tool
+// or a model produced is actionable by default — it has no kind, and it was
+// not raised for the pleasure of raising it.
+//
+// The distinction exists because handing an agent every note a human ever
+// wrote is a waste of its context, and handing it approvals as though they
+// were work is worse (ADR 0031).
+func (i Item) Actionable() bool {
+	if i.SupersededBy != "" || !i.Stands() {
+		return false
+	}
+	switch i.Kind {
+	case KindOK, KindNote:
+		return false
+	default:
+		return true
+	}
 }
 
 // Pushable reports whether this item may be handed to an implementation agent.

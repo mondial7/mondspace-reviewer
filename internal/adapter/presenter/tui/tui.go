@@ -13,13 +13,14 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/oklog/ulid/v2"
 
+	"github.com/mondial7/mondspace-reviewer/contract"
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
 	"github.com/mondial7/mondspace-reviewer/internal/port"
 )
 
 type Model struct {
 	units      []domain.Unit
-	notes      []domain.Note
+	notes      []contract.Item
 	store      port.Store
 	cursor     int                    // index into the visible units
 	expanded   map[string]bool        // unit ID -> expanded
@@ -62,7 +63,7 @@ type DiffReadyMsg struct {
 	Diff   domain.Diff
 }
 
-func New(units []domain.Unit, notes []domain.Note, store port.Store) Model {
+func New(units []domain.Unit, notes []contract.Item, store port.Store) Model {
 	return Model{
 		units:      units,
 		notes:      notes,
@@ -206,17 +207,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case "o":
-		m = m.annotate(domain.NoteOK)
+		m = m.annotate(contract.KindOK)
 		m.read[mustID(m)] = true
 		m.cursor = clamp(m.cursor+1, 0, len(m.visible())-1)
 	case "?":
-		m = m.annotate(domain.NoteQuestion)
+		m = m.annotate(contract.KindQuestion)
 	case "x":
-		m = m.annotate(domain.NoteObjection)
+		m = m.annotate(contract.KindObjection)
 	case "d":
-		m = m.annotate(domain.NoteDebt)
+		m = m.annotate(contract.KindDebt)
 	case "n":
-		m = m.annotate(domain.NoteNote)
+		m = m.annotate(contract.KindNote)
 	case "tab":
 		m.unreadOnly = !m.unreadOnly
 		m.cursor = clamp(m.cursor, 0, len(m.visible())-1)
@@ -306,18 +307,12 @@ func (m Model) fillHeadline(ready HeadlineReadyMsg) Model {
 }
 
 // annotate attaches a note of the given kind to the current unit and persists it.
-func (m Model) annotate(kind domain.NoteKind) Model {
+func (m Model) annotate(kind contract.Kind) Model {
 	u, ok := m.current()
 	if !ok {
 		return m
 	}
-	note := domain.Note{
-		ID:        m.newID(),
-		SessionID: u.SessionID,
-		UnitID:    u.ID,
-		Kind:      kind,
-		TS:        m.now(),
-	}
+	note := contract.Item{Source: contract.SourceHuman, ID: m.newID(), SessionID: u.SessionID, UnitID: u.ID, Kind: kind, FirstSeen: m.now()}
 	m.notes = append(m.notes, note)
 	if m.store != nil {
 		_ = m.store.AppendNote(note)
@@ -492,11 +487,11 @@ func diffLineStyle(line string) lipgloss.Style {
 	}
 }
 
-func renderNote(n domain.Note) string {
+func renderNote(n contract.Item) string {
 	sym, style := noteGlyph(n.Kind)
 	s := style.Render(sym + " " + string(n.Kind))
-	if n.Text != "" {
-		s += " — " + n.Text
+	if n.Message != "" {
+		s += " — " + n.Message
 	}
 	if n.SupersededBy != "" {
 		s += dimStyle.Render(" (superseded by " + n.SupersededBy + ")")
@@ -504,15 +499,15 @@ func renderNote(n domain.Note) string {
 	return s
 }
 
-func noteGlyph(kind domain.NoteKind) (string, lipgloss.Style) {
+func noteGlyph(kind contract.Kind) (string, lipgloss.Style) {
 	switch kind {
-	case domain.NoteOK:
+	case contract.KindOK:
 		return "✓", okStyle
-	case domain.NoteObjection:
+	case contract.KindObjection:
 		return "✗", flagStyle
-	case domain.NoteQuestion:
+	case contract.KindQuestion:
 		return "?", inferredStyle
-	case domain.NoteDebt:
+	case contract.KindDebt:
 		return "⚑", inferredStyle
 	default:
 		return "·", dimStyle

@@ -1,6 +1,9 @@
 package usecase
 
-import "github.com/mondial7/mondspace-reviewer/internal/domain"
+import (
+	"github.com/mondial7/mondspace-reviewer/contract"
+	"github.com/mondial7/mondspace-reviewer/internal/domain"
+)
 
 // PlaceNotes puts a set of notes back where they belong against a freshly built
 // unit list, then marks the ones a later change has overtaken.
@@ -14,7 +17,7 @@ import "github.com/mondial7/mondspace-reviewer/internal/domain"
 //
 // It never guesses: a note whose file matches nothing, or matches more than one
 // unit, is left exactly where it was rather than moved somewhere plausible.
-func PlaceNotes(units []domain.Unit, notes []domain.Note) []domain.Note {
+func PlaceNotes(units []domain.Unit, notes []contract.Item) []contract.Item {
 	known := map[string]bool{}
 	byFile := map[string][]string{}
 	for _, u := range units {
@@ -24,13 +27,13 @@ func PlaceNotes(units []domain.Unit, notes []domain.Note) []domain.Note {
 		}
 	}
 
-	out := make([]domain.Note, len(notes))
+	out := make([]contract.Item, len(notes))
 	copy(out, notes)
 	for i := range out {
-		if known[out[i].UnitID] || out[i].File == "" {
+		if known[out[i].UnitID] || out[i].Location.Path == "" {
 			continue
 		}
-		if ids := byFile[out[i].File]; len(ids) == 1 {
+		if ids := byFile[out[i].Location.Path]; len(ids) == 1 {
 			out[i].UnitID = ids[0]
 		}
 	}
@@ -40,13 +43,13 @@ func PlaceNotes(units []domain.Unit, notes []domain.Note) []domain.Note {
 // MarkSuperseded flags a note as superseded when a later unit touches the same
 // file as the annotated unit. It is a pure function: it never deletes a note and
 // never auto-resolves it — supersession is surfaced, not silently applied.
-func MarkSuperseded(units []domain.Unit, notes []domain.Note) []domain.Note {
+func MarkSuperseded(units []domain.Unit, notes []contract.Item) []contract.Item {
 	index := map[string]int{}
 	for i, u := range units {
 		index[u.ID] = i
 	}
 
-	out := make([]domain.Note, len(notes))
+	out := make([]contract.Item, len(notes))
 	copy(out, notes)
 	for i := range out {
 		pos, ok := index[out[i].UnitID]

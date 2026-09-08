@@ -44,7 +44,7 @@ type Session struct {
 	Prompt string
 	Repo   string
 	Units  []domain.Unit
-	Notes  []domain.Note
+	Notes  []contract.Item
 	Diffs  map[string]domain.Diff
 	// Stats and Histories travel with the session rather than beside it: the
 	// cockpit can be showing any session in the workspace, and numbers from a
@@ -230,7 +230,7 @@ type Loader func(ctx context.Context, sessionID string) (Session, error)
 // Annotator persists a reviewer's annotation. It is declared where it is
 // consumed so this adapter depends on no other adapter.
 type Annotator interface {
-	AppendNote(domain.Note) error
+	AppendNote(contract.Item) error
 }
 
 // Server renders and serves one review session. Handlers run concurrently, so
@@ -2170,12 +2170,12 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 }
 
 // noteKinds are the annotations a reviewer may attach (SPEC §11).
-var noteKinds = map[string]domain.NoteKind{
-	"ok":        domain.NoteOK,
-	"question":  domain.NoteQuestion,
-	"objection": domain.NoteObjection,
-	"debt":      domain.NoteDebt,
-	"note":      domain.NoteNote,
+var noteKinds = map[string]contract.Kind{
+	"ok":        contract.KindOK,
+	"question":  contract.KindQuestion,
+	"objection": contract.KindObjection,
+	"debt":      contract.KindDebt,
+	"note":      contract.KindNote,
 }
 
 // handleAnnotate attaches a note to a unit and persists it. Annotations anchor
@@ -2196,18 +2196,9 @@ func (s *Server) handleAnnotate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	note := domain.Note{
-		ID:        s.newID(),
-		SessionID: unit.SessionID,
-		UnitID:    unit.ID,
-		Kind:      kind,
-		Text:      strings.TrimSpace(r.FormValue("text")),
-		TS:        s.now(),
-		File:      strings.Join(unit.Files, ", "),
-		// Empty when the note is about the file as a whole, which is still the
+	note := contract.Item{Source: contract.SourceHuman, Location: contract.Location{Path: strings.Join(unit.Files, ", ")}, ID: s.newID(), SessionID: unit.SessionID, UnitID: unit.ID, Kind: kind, Message: strings.TrimSpace(r.FormValue("text")), FirstSeen: s.now(), // Empty when the note is about the file as a whole, which is still the
 		// common case (ADR 0028).
-		Anchor: r.FormValue("anchor"),
-	}
+		Anchor: r.FormValue("anchor")}
 	if nth, err := strconv.Atoi(r.FormValue("nth")); err == nil && nth > 0 {
 		note.AnchorNth = nth
 	}
@@ -2222,7 +2213,7 @@ func (s *Server) handleAnnotate(w http.ResponseWriter, r *http.Request) {
 	// turns up on something unrelated.
 	s.noteOn(unit.SessionID, note)
 	s.record(AuditEntry{SessionID: unit.SessionID, UnitID: unit.ID,
-		Action: "annotate", Detail: string(note.Kind) + ": " + note.Text})
+		Action: "annotate", Detail: string(note.Kind) + ": " + note.Message})
 	s.broadcast("note")
 
 	http.Redirect(w, r, backTo(r, "#unit-"+unit.ID), http.StatusSeeOther)
@@ -2230,7 +2221,7 @@ func (s *Server) handleAnnotate(w http.ResponseWriter, r *http.Request) {
 
 // noteOn adds an annotation to the review it belongs to, wherever that review
 // is held — the open one is a field, any other is in the loaded cache.
-func (s *Server) noteOn(targetID string, note domain.Note) {
+func (s *Server) noteOn(targetID string, note contract.Item) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -2287,11 +2278,11 @@ type unitView struct {
 	Added    int
 	Removed  int
 	Diff     []diffLine
-	Notes    []domain.Note
+	Notes    []contract.Item
 	// Orphaned are notes whose line is no longer in this diff. Shown, and shown
 	// as such: a judgement about code that has gone must neither vanish nor
 	// read as current (ADR 0021, ADR 0028).
-	Orphaned []domain.Note
+	Orphaned []contract.Item
 	Model    string
 
 	// Edits is how the file reached this net change: a net-change review
@@ -2324,7 +2315,7 @@ type diffLine struct {
 	// Nth is which occurrence of this exact text the line is, so a note written
 	// on it can be found again among identical lines (ADR 0028).
 	Nth   int
-	Notes []domain.Note
+	Notes []contract.Item
 }
 
 func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
@@ -3035,7 +3026,7 @@ func tokenTotal(u port.TokenUsage) string {
 
 // notesOffScreen counts the notes that are neither shown on a line nor orphaned
 // — the ones the compaction hid. They are the reason to offer the rest.
-func notesOffScreen(shown []diffLine, all, orphaned []domain.Note) int {
+func notesOffScreen(shown []diffLine, all, orphaned []contract.Item) int {
 	if len(all) == 0 {
 		return 0
 	}
@@ -3671,7 +3662,7 @@ func (s *Server) viewIn(sess Session, u domain.Unit) unitView {
 		flags[i] = string(f)
 	}
 
-	var notes []domain.Note
+	var notes []contract.Item
 	for _, n := range sess.Notes {
 		if n.UnitID == u.ID {
 			notes = append(notes, n)
@@ -3731,8 +3722,8 @@ func baseNames(files []string) string {
 // fileLevel is the notes that are about the file rather than a line. A
 // line-level note renders on its line, so listing it again below the diff would
 // show the same judgement twice.
-func fileLevel(notes []domain.Note) []domain.Note {
-	var out []domain.Note
+func fileLevel(notes []contract.Item) []contract.Item {
+	var out []contract.Item
 	for _, n := range notes {
 		if n.Anchor == "" {
 			out = append(out, n)
@@ -3742,8 +3733,8 @@ func fileLevel(notes []domain.Note) []domain.Note {
 }
 
 // notesFor is one unit's notes.
-func notesFor(all []domain.Note, unitID string) []domain.Note {
-	var out []domain.Note
+func notesFor(all []contract.Item, unitID string) []contract.Item {
+	var out []contract.Item
 	for _, n := range all {
 		if n.UnitID == unitID {
 			out = append(out, n)
@@ -3754,7 +3745,7 @@ func notesFor(all []domain.Note, unitID string) []domain.Note {
 
 // splitDiffWithNotes renders a diff with the line-level notes placed on the
 // lines they were written about, and returns the ones whose line has gone.
-func splitDiffWithNotes(text string, notes []domain.Note) ([]diffLine, []domain.Note) {
+func splitDiffWithNotes(text string, notes []contract.Item) ([]diffLine, []contract.Item) {
 	lines := splitDiff(text)
 	if len(notes) == 0 {
 		return lines, nil
@@ -3765,13 +3756,13 @@ func splitDiffWithNotes(text string, notes []domain.Note) ([]diffLine, []domain.
 	anchored, orphaned := usecase.AnchorNotes(
 		domain.Diff{Text: strings.TrimRight(text, "\n")}, notes)
 
-	byText := map[string]map[int][]domain.Note{}
+	byText := map[string]map[int][]contract.Item{}
 	for _, a := range anchored {
 		if len(a.Notes) == 0 {
 			continue
 		}
 		if byText[a.Text] == nil {
-			byText[a.Text] = map[int][]domain.Note{}
+			byText[a.Text] = map[int][]contract.Item{}
 		}
 		byText[a.Text][a.Nth] = a.Notes
 	}

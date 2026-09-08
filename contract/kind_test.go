@@ -1,9 +1,9 @@
-package domain_test
+package contract_test
 
 import (
 	"testing"
 
-	"github.com/mondial7/mondspace-reviewer/internal/domain"
+	"github.com/mondial7/mondspace-reviewer/contract"
 )
 
 func TestOnlyWhatIsStillToBeDealtWithIsActionable(t *testing.T) {
@@ -11,16 +11,16 @@ func TestOnlyWhatIsStillToBeDealtWithIsActionable(t *testing.T) {
 	// wastes it, and handing it approvals as though they were work is worse
 	// (ADR 0031).
 	tests := []struct {
-		note domain.Note
+		note contract.Item
 		want bool
 		why  string
 	}{
-		{domain.Note{Kind: domain.NoteObjection}, true, "an objection is a thing to change"},
-		{domain.Note{Kind: domain.NoteQuestion}, true, "a question wants answering"},
-		{domain.Note{Kind: domain.NoteDebt}, true, "debt is a thing to remember"},
-		{domain.Note{Kind: domain.NoteOK}, false, "an approval is not work"},
-		{domain.Note{Kind: domain.NoteNote}, false, "a remark is the reviewer thinking aloud"},
-		{domain.Note{Kind: domain.NoteObjection, SupersededBy: "n2"}, false,
+		{contract.Item{Source: contract.SourceHuman, Kind: contract.KindObjection}, true, "an objection is a thing to change"},
+		{contract.Item{Source: contract.SourceHuman, Kind: contract.KindQuestion}, true, "a question wants answering"},
+		{contract.Item{Source: contract.SourceHuman, Kind: contract.KindDebt}, true, "debt is a thing to remember"},
+		{contract.Item{Source: contract.SourceHuman, Kind: contract.KindOK}, false, "an approval is not work"},
+		{contract.Item{Source: contract.SourceHuman, Kind: contract.KindNote}, false, "a remark is the reviewer thinking aloud"},
+		{contract.Item{Source: contract.SourceHuman, Kind: contract.KindObjection, SupersededBy: "n2"}, false,
 			"a superseded note has been dealt with"},
 	}
 

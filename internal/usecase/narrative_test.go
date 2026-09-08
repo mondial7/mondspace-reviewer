@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mondial7/mondspace-reviewer/contract"
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
 	"github.com/mondial7/mondspace-reviewer/internal/port"
 	"github.com/mondial7/mondspace-reviewer/internal/usecase"
@@ -511,16 +512,16 @@ func TestARebuiltReviewKeepsItsNotesOnTheRightFiles(t *testing.T) {
 		{ID: usecase.FileUnitID("t", "api/handler.go"), Files: []string{"api/handler.go"}},
 		{ID: usecase.FileUnitID("t", "auth/token.go"), Files: []string{"auth/token.go"}},
 	}
-	notes := []domain.Note{
-		{ID: "n1", UnitID: "t-f002", File: "auth/token.go", Kind: domain.NoteObjection, Text: "wrong layer"},
-		{ID: "n2", UnitID: "t-f001", File: "api/handler.go", Kind: domain.NoteOK},
+	notes := []contract.Item{
+		contract.Item{Source: contract.SourceHuman, Location: contract.Location{Path: "auth/token.go"}, ID: "n1", UnitID: "t-f002", Kind: contract.KindObjection, Message: "wrong layer"},
+		contract.Item{Source: contract.SourceHuman, Location: contract.Location{Path: "api/handler.go"}, ID: "n2", UnitID: "t-f001", Kind: contract.KindOK},
 	}
 
 	got := usecase.PlaceNotes(units, notes)
 	if got[0].UnitID != usecase.FileUnitID("t", "auth/token.go") {
 		t.Errorf("the objection lost its file: %s", got[0].UnitID)
 	}
-	if got[0].Text != "wrong layer" {
+	if got[0].Message != "wrong layer" {
 		t.Error("re-anchoring must not touch what the reviewer wrote")
 	}
 	if got[1].UnitID != usecase.FileUnitID("t", "api/handler.go") {
@@ -529,8 +530,8 @@ func TestARebuiltReviewKeepsItsNotesOnTheRightFiles(t *testing.T) {
 
 	// And a note about a file nobody can find is left exactly where it was
 	// rather than moved somewhere plausible.
-	orphan := usecase.PlaceNotes(units, []domain.Note{
-		{ID: "n3", UnitID: "gone", File: "deleted/thing.go", Kind: domain.NoteNote},
+	orphan := usecase.PlaceNotes(units, []contract.Item{
+		contract.Item{Source: contract.SourceHuman, Location: contract.Location{Path: "deleted/thing.go"}, ID: "n3", UnitID: "gone", Kind: contract.KindNote},
 	})
 	if orphan[0].UnitID != "gone" {
 		t.Errorf("a note with nowhere to go was moved anyway: %s", orphan[0].UnitID)

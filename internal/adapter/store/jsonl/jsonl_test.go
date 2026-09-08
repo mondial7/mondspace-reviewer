@@ -79,7 +79,7 @@ func TestLoadReconstructsNotes(t *testing.T) {
 	root := t.TempDir()
 	s := jsonl.New(root)
 
-	if err := s.AppendNote(domain.Note{ID: "n1", SessionID: "s", UnitID: "s-u001", Kind: domain.NoteDebt, Text: "fix later"}); err != nil {
+	if err := s.AppendNote(contract.Item{Source: contract.SourceHuman, ID: "n1", SessionID: "s", UnitID: "s-u001", Kind: contract.KindDebt, Message: "fix later"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -90,7 +90,7 @@ func TestLoadReconstructsNotes(t *testing.T) {
 	if len(sess.Notes) != 1 {
 		t.Fatalf("got %d notes, want 1", len(sess.Notes))
 	}
-	if sess.Notes[0].Kind != domain.NoteDebt || sess.Notes[0].UnitID != "s-u001" {
+	if sess.Notes[0].Kind != contract.KindDebt || sess.Notes[0].UnitID != "s-u001" {
 		t.Errorf("note = %+v, want debt on s-u001", sess.Notes[0])
 	}
 }
@@ -149,7 +149,7 @@ func TestAppendNoteWritesToNotesFile(t *testing.T) {
 	root := t.TempDir()
 	s := jsonl.New(root)
 
-	n := domain.Note{ID: "n1", SessionID: "s", UnitID: "s-u001", Kind: domain.NoteObjection, Text: "wrong choice"}
+	n := contract.Item{Source: contract.SourceHuman, ID: "n1", SessionID: "s", UnitID: "s-u001", Kind: contract.KindObjection, Message: "wrong choice"}
 	if err := s.AppendNote(n); err != nil {
 		t.Fatalf("AppendNote: %v", err)
 	}
@@ -423,5 +423,48 @@ func TestLoadAnalysisReadsWhatOlderBuildsWrote(t *testing.T) {
 	}
 	if got.Findings[0].Verdict != contract.VerdictDismissed {
 		t.Errorf("verdict = %q — a human's dismissal was lost", got.Findings[0].Verdict)
+	}
+}
+
+// The one migration that cannot be got wrong. A note is something a person
+// typed once; there is nowhere else to get it from.
+func TestNotesWrittenByOlderBuildsAreStillRead(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "sess-1")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	stored := `{"id":"n1","session_id":"sess-1","unit_id":"u1","kind":"objection",` +
+		`"text":"this swallows the error","ts":"2026-08-01T10:00:00Z","file":"auth/token.go",` +
+		`"anchor":"\t_ = os.Remove(path)","anchor_nth":2,"superseded_by":"u4"}`
+	if err := os.WriteFile(filepath.Join(dir, "notes.jsonl"), []byte(stored+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	sess, err := jsonl.New(root).Load("sess-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(sess.Notes) != 1 {
+		t.Fatalf("read %d notes, want 1", len(sess.Notes))
+	}
+	note := sess.Notes[0]
+	if note.Message != "this swallows the error" {
+		t.Errorf("message = %q — the reviewer's words were lost", note.Message)
+	}
+	if note.FirstSeen.IsZero() {
+		t.Error("the note lost when it was written")
+	}
+	if note.Location.Path != "auth/token.go" {
+		t.Errorf("file = %q", note.Location.Path)
+	}
+	// Everything else kept its name and needs no help.
+	if note.Kind != contract.KindObjection || note.UnitID != "u1" ||
+		note.Anchor != "\t_ = os.Remove(path)" || note.AnchorNth != 2 || note.SupersededBy != "u4" {
+		t.Errorf("note = %+v", note)
+	}
+	if note.Source != contract.SourceHuman {
+		t.Errorf("source = %q, want it read as a human's", note.Source)
 	}
 }

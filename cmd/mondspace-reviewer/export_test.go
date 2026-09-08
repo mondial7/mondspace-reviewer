@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/mondial7/mondspace-reviewer/contract"
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/store/jsonl"
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
 )
@@ -20,7 +21,7 @@ func seedReviewedSession(t *testing.T, root string) {
 		Headline: domain.Headline{Text: "added validator", WhySrc: domain.WhyInferred}}); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.AppendNote(domain.Note{ID: "n1", SessionID: "s", UnitID: "s-u001", Kind: domain.NoteObjection, Text: "wrong layer"}); err != nil {
+	if err := store.AppendNote(contract.Item{Source: contract.SourceHuman, ID: "n1", SessionID: "s", UnitID: "s-u001", Kind: contract.KindObjection, Message: "wrong layer"}); err != nil {
 		t.Fatal(err)
 	}
 }

@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/mondial7/mondspace-reviewer/contract"
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/store/legacy"
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
 )
@@ -164,7 +165,7 @@ func (s *Store) AppendUnit(u domain.Unit) error {
 	return err
 }
 
-func (s *Store) AppendNote(n domain.Note) error {
+func (s *Store) AppendNote(n contract.Item) error {
 	payload, err := json.Marshal(n)
 	if err != nil {
 		return err
@@ -172,7 +173,7 @@ func (s *Store) AppendNote(n domain.Note) error {
 	_, err = s.pool.Exec(context.Background(),
 		`INSERT INTO `+s.table("notes")+` (id, session_id, unit_id, ts, payload)
 		 VALUES ($1, $2, $3, $4, $5) ON CONFLICT (id) DO NOTHING`,
-		n.ID, n.SessionID, n.UnitID, nonZeroTime(n.TS), payload)
+		n.ID, n.SessionID, n.UnitID, nonZeroTime(n.FirstSeen), payload)
 	return err
 }
 
@@ -340,7 +341,7 @@ func (s *Store) Load(sessionID string) (domain.Session, error) {
 	if sess.Units, err = load[domain.Unit](ctx, s, "units", sessionID); err != nil {
 		return domain.Session{}, err
 	}
-	if sess.Notes, err = load[domain.Note](ctx, s, "notes", sessionID); err != nil {
+	if sess.Notes, err = loadNotes(ctx, s, sessionID); err != nil {
 		return domain.Session{}, err
 	}
 	if sess.Exchanges, err = load[domain.Exchange](ctx, s, "exchanges", sessionID); err != nil {
@@ -350,6 +351,33 @@ func (s *Store) Load(sessionID string) (domain.Session, error) {
 }
 
 // load reads a session's rows from one table in insertion order.
+// loadNotes reads the note rows, restoring what older builds wrote.
+//
+// The one table whose contents cannot be re-derived from anything: a note is
+// something a person typed once (ADR 0048).
+func loadNotes(ctx context.Context, s *Store, sessionID string) ([]contract.Item, error) {
+	rows, err := s.pool.Query(ctx,
+		`SELECT payload FROM `+s.table("notes")+` WHERE session_id = $1 ORDER BY seq`, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var notes []contract.Item
+	for rows.Next() {
+		var payload []byte
+		if err := rows.Scan(&payload); err != nil {
+			return nil, err
+		}
+		var note contract.Item
+		if err := json.Unmarshal(payload, &note); err != nil {
+			continue
+		}
+		notes = append(notes, legacy.Note(note, payload))
+	}
+	return notes, rows.Err()
+}
+
 func load[T any](ctx context.Context, s *Store, table, sessionID string) ([]T, error) {
 	rows, err := s.pool.Query(ctx,
 		`SELECT payload FROM `+s.table(table)+` WHERE session_id = $1 ORDER BY seq`, sessionID)

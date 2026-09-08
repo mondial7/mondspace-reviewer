@@ -4,17 +4,18 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mondial7/mondspace-reviewer/contract"
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
 	"github.com/mondial7/mondspace-reviewer/internal/usecase"
 )
 
-func review() ([]domain.Unit, []domain.Note) {
+func review() ([]domain.Unit, []contract.Item) {
 	units := []domain.Unit{
 		{ID: "u1", Files: []string{"auth/token.go"}},
 		{ID: "u2", Files: []string{"api/handler.go"}},
 	}
-	notes := []domain.Note{
-		{ID: "n1", UnitID: "u1", Kind: domain.NoteOK, Text: "looks right"},
+	notes := []contract.Item{
+		contract.Item{Source: contract.SourceHuman, ID: "n1", UnitID: "u1", Kind: contract.KindOK, Message: "looks right"},
 	}
 	return units, notes
 }
@@ -116,7 +117,7 @@ func TestASupersededNoteDoesNotCountAsAJudgement(t *testing.T) {
 	// A note already marked superseded has been dealt with; counting it again
 	// would keep warning about something the reviewer has moved past.
 	units := []domain.Unit{{ID: "u1", Files: []string{"auth/token.go"}}}
-	notes := []domain.Note{{ID: "n1", UnitID: "u1", Kind: domain.NoteOK, SupersededBy: "n2"}}
+	notes := []contract.Item{contract.Item{Source: contract.SourceHuman, ID: "n1", UnitID: "u1", Kind: contract.KindOK, SupersededBy: "n2"}}
 	changed := []domain.FileStat{{Path: "auth/token.go", Added: 1}}
 
 	got := usecase.PendingWork(units, notes, changed, domain.SnapshotRef{}, domain.SnapshotRef{}, time.Time{})
