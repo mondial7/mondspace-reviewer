@@ -75,6 +75,8 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout io.Writer) 
 		return runFindings(ctx, args, stdout)
 	case "push":
 		return runPush(ctx, args, stdout)
+	case "auto":
+		return runAuto(ctx, args, stdout)
 	case "web":
 		return runWeb(ctx, args, stdout)
 	case "mcp":
