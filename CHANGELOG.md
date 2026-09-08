@@ -75,6 +75,30 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   store as well as the session log, through the same conversion the commands
   use — so a finding raised live is matched by a later scan rather than raised
   again.
+- **The three finding types are one.** `domain.Reported`, `domain.Finding` and
+  `domain.Note` are gone: what the decoders produce, what the store holds, what
+  the pages render and what the exports write are all `contract.Item`. There is
+  no conversion left anywhere, because there is nothing to convert between.
+  Severity and verdict are defined once, in the contract, and aliased in the
+  domain.
+
+### Migration
+
+Nothing to do, and nothing is lost — but the three kinds of record are treated
+differently on the way in, in proportion to what losing one would cost:
+
+- **Notes** are migrated with the most care. A note is something you typed once
+  and there is nowhere else to get it from, so the text, the time and the file
+  are restored from the raw line; the id, the kind, the unit, the anchor and the
+  supersession kept their names.
+- **Model readings** are migrated: they cost a model run, and the verdicts on
+  them are yours.
+- **The analyser cache** is dropped and re-derived. It is a cache of something
+  reproducible, so the first scan after upgrading rewrites it — which means one
+  scan where the deterministic layer starts from nothing.
+
+Dismissals of deterministic findings carry over untouched: the key they are
+stored under hashes exactly what it always did.
 
 The screenshots in this repository are of the old palette until `docs/img/demo.sh`
 is run again.
