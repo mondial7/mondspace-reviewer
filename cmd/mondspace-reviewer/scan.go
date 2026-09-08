@@ -11,6 +11,7 @@ import (
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/presenter/web"
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/scanner/local"
 	gitsnap "github.com/mondial7/mondspace-reviewer/internal/adapter/snapshot/git"
+	"github.com/mondial7/mondspace-reviewer/internal/adapter/store/items"
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/store/jsonl"
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
 	"github.com/mondial7/mondspace-reviewer/internal/usecase"
@@ -128,6 +129,19 @@ func scanTarget(ctx context.Context, targetID string) {
 	// write it costs those readers the answer and costs this one nothing, so it
 	// is not worth failing the scan over.
 	_ = jsonl.New(entry.out).SaveReported(targetID, found)
+
+	// And into the findings store, which outlives this session: the same
+	// fingerprints the post-mortem pass computes, so a finding raised in a live
+	// review is matched by a later `msr scan` rather than raised again
+	// (ADR 0044, ADR 0045). Best effort, for the same reason as above.
+	_, _ = recordFindings(items.New(sharedDir(entry.repo, "")), found, sighting{
+		branch:    gitsnap.New(entry.repo, "").CurrentBranch(ctx),
+		session:   entry.session,
+		commit:    entry.target.From.Commit,
+		repo:      entry.repo,
+		producers: ranProducers(scannerFor(entry.repo)),
+		paths:     pathsOf(units),
+	})
 
 	if handler := handlerRef(); handler != nil {
 		handler.Broadcast("reported")

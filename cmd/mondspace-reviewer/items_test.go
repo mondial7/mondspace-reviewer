@@ -7,6 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/mondial7/mondspace-reviewer/internal/adapter/store/items"
+	"github.com/mondial7/mondspace-reviewer/internal/domain"
 )
 
 // A repository with one finding in it: an error assigned and thrown away on a
@@ -247,4 +250,72 @@ func TestFindingsRefusesAnUnknownId(t *testing.T) {
 	if err == nil {
 		t.Error("dismissing an id that does not exist was accepted")
 	}
+}
+
+// A finding raised in a live review is matched — not duplicated — by the
+// post-mortem pass that comes later. The live pass is attributed to a session
+// and the later one is not, and that difference must not make it a new finding.
+func TestALiveFindingIsMatchedByALaterPass(t *testing.T) {
+	repo, shared := repoWithAFinding(t)
+	store := storeAt(t, shared)
+	found := []domain.Reported{{
+		Tool: "gosec", Rule: "G404", File: "a.go", Line: 6,
+		Message: "weak random", Severity: domain.SeverityHigh, New: true,
+	}}
+	live := sighting{branch: "main", session: "sess-1", repo: repo,
+		producers: map[string]bool{"gosec": true}, paths: []string{"a.go"}}
+
+	if _, err := recordFindings(store, found, live); err != nil {
+		t.Fatal(err)
+	}
+	first, err := store.All()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	after := live
+	after.session = ""
+	changed, err := recordFindings(store, found, after)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(changed) != 0 {
+		t.Errorf("the later pass rewrote %d record(s) for a finding it had already seen", len(changed))
+	}
+	all, err := store.All()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != len(first) {
+		t.Errorf("the store holds %d records for one finding seen twice, want %d", len(all), len(first))
+	}
+}
+
+// A reviewer's note becomes an item; the reviewer thinking aloud does not.
+func TestOnlyNotesThatAreWorkReachTheStore(t *testing.T) {
+	repo, shared := repoWithAFinding(t)
+	store := storeAt(t, shared)
+
+	for _, note := range []domain.Note{
+		{ID: "n1", Kind: domain.NoteObjection, Text: "this swallows the error", File: "a.go"},
+		{ID: "n2", Kind: domain.NoteOK, Text: "fine", File: "a.go"},
+	} {
+		if err := recordNote(store, note, "main", repo); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	all, err := store.All()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 1 || all[0].ID != "n1" {
+		t.Errorf("the store holds %+v, want only the objection", all)
+	}
+}
+
+func storeAt(t *testing.T, dir string) *items.Store {
+	t.Helper()
+	return items.New(dir)
 }
