@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mondial7/mondspace-reviewer/contract"
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
 	"github.com/mondial7/mondspace-reviewer/internal/port"
 )
@@ -122,13 +123,18 @@ func RunAudit(ctx context.Context, n Narrator, a Audit, targetID string,
 		if note == "" {
 			continue
 		}
-		result.Findings = append(result.Findings, domain.Finding{
-			File: strings.TrimSpace(f.File),
-			Note: note,
+		result.Findings = append(result.Findings, contract.Item{
+			Source:   contract.SourceLLM,
+			Location: contract.Location{Path: strings.TrimSpace(f.File)},
+			Message:  note,
+			// A model's finding is a suggestion of what to do about the code it
+			// names, so it is its own directive: there is nothing else to
+			// derive one from (ADR 0048).
+			Directive: note,
 			// Normalised here rather than trusted: an endpoint that ignored the
 			// schema can return any string, and a level nobody recognises must
 			// not reach the page.
-			Severity: domain.Severity(strings.ToLower(strings.TrimSpace(f.Severity))).Normalise(),
+			Severity: contract.Severity(strings.ToLower(strings.TrimSpace(f.Severity))).Normalise(),
 		})
 		if len(result.Findings) == maxFindings {
 			break
@@ -215,10 +221,10 @@ func RunAuditIncremental(ctx context.Context, n Narrator, a Audit, targetID stri
 // to say it has stopped being true — dropping it would be a partial reading
 // silently clearing a security finding, which is the one thing this must never
 // do. A whole-change run is what clears it.
-func keepFindings(findings []domain.Finding, drop map[string]bool) []domain.Finding {
-	var out []domain.Finding
+func keepFindings(findings []contract.Item, drop map[string]bool) []contract.Item {
+	var out []contract.Item
 	for _, f := range findings {
-		if f.File != "" && drop[f.File] {
+		if f.Location.Path != "" && drop[f.Location.Path] {
 			continue
 		}
 		out = append(out, f)
@@ -231,12 +237,12 @@ func keepFindings(findings []domain.Finding, drop map[string]bool) []domain.Find
 // Worst first, as everywhere else. The cap counts only what still stands: a
 // dismissal costs nothing to keep and dropping one would invite the next run to
 // raise the same thing as though nobody had ever looked at it.
-func rankFindings(findings []domain.Finding) []domain.Finding {
+func rankFindings(findings []contract.Item) []contract.Item {
 	sort.SliceStable(findings, func(i, j int) bool {
 		return findings[i].Severity.Rank() < findings[j].Severity.Rank()
 	})
 
-	out := make([]domain.Finding, 0, len(findings))
+	out := make([]contract.Item, 0, len(findings))
 	standing := 0
 	for _, f := range findings {
 		if f.Stands() {
@@ -424,9 +430,9 @@ func extractJSON(reply string) string {
 // pointless.
 func Judge(a domain.Analysis, file, note string, verdict domain.Verdict) domain.Analysis {
 	out := a
-	out.Findings = append([]domain.Finding(nil), a.Findings...)
+	out.Findings = append([]contract.Item(nil), a.Findings...)
 	for i := range out.Findings {
-		if out.Findings[i].File == file && out.Findings[i].Note == note {
+		if out.Findings[i].Location.Path == file && out.Findings[i].Message == note {
 			out.Findings[i].Verdict = verdict
 		}
 	}
@@ -447,14 +453,14 @@ func CarryJudgements(fresh, earlier domain.Analysis) domain.Analysis {
 	judged := make(map[string]domain.Verdict, len(earlier.Findings))
 	for _, f := range earlier.Findings {
 		if f.Verdict != "" {
-			judged[f.File+"\x00"+f.Note] = f.Verdict
+			judged[f.Location.Path+"\x00"+f.Message] = f.Verdict
 		}
 	}
 
 	out := fresh
-	out.Findings = append([]domain.Finding(nil), fresh.Findings...)
+	out.Findings = append([]contract.Item(nil), fresh.Findings...)
 	for i := range out.Findings {
-		if v, ok := judged[out.Findings[i].File+"\x00"+out.Findings[i].Note]; ok {
+		if v, ok := judged[out.Findings[i].Location.Path+"\x00"+out.Findings[i].Message]; ok {
 			out.Findings[i].Verdict = v
 		}
 	}

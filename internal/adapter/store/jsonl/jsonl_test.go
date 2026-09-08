@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mondial7/mondspace-reviewer/contract"
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/store/jsonl"
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
 )
@@ -332,7 +333,7 @@ func TestEachAuditIsStoredSeparately(t *testing.T) {
 		Verdict: "Nothing worth a second look.", Print: "p1"}
 	brk := domain.Analysis{TargetID: "t1", Kind: "breaking", At: time.Now().UTC().Truncate(time.Second),
 		Verdict: "One signature changed.", Print: "p1",
-		Findings: []domain.Finding{{File: "api/handler.go", Note: "Routes now takes a Validator."}}}
+		Findings: []contract.Item{contract.Item{Source: contract.SourceLLM, Location: contract.Location{Path: "api/handler.go"}, Message: "Routes now takes a Validator."}}}
 
 	if err := s.SaveAnalysis(sec); err != nil {
 		t.Fatalf("SaveAnalysis: %v", err)
@@ -350,7 +351,7 @@ func TestEachAuditIsStoredSeparately(t *testing.T) {
 	}
 
 	gotBrk, _ := jsonl.New(dir).LoadAnalysis("t1", "breaking")
-	if len(gotBrk.Findings) != 1 || gotBrk.Findings[0].File != "api/handler.go" {
+	if len(gotBrk.Findings) != 1 || gotBrk.Findings[0].Location.Path != "api/handler.go" {
 		t.Errorf("breaking = %+v, want its own finding", gotBrk)
 	}
 }
@@ -386,5 +387,41 @@ func TestLoadReportedDropsRecordsFromBeforeTheMerge(t *testing.T) {
 
 	if len(got) != 0 {
 		t.Errorf("LoadReported = %+v, want the unreadable records dropped", got)
+	}
+}
+
+// A reading stored before findings became items keeps its file, its sentence
+// and — the part that matters — the verdict a human put on it. Unlike the
+// analyser cache this cannot be re-derived: it cost a model run, and the
+// dismissal on it is somebody's decision.
+func TestLoadAnalysisReadsWhatOlderBuildsWrote(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "sess-1")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	stored := `{"target_id":"sess-1","kind":"security","verdict":"one thing to look at",
+	  "findings":[{"file":"auth/token.go","note":"the token is generated with math/rand",
+	  "severity":"high","verdict":"dismissed"}]}`
+	if err := os.WriteFile(filepath.Join(dir, "analysis-security.json"), []byte(stored), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := jsonl.New(root).LoadAnalysis("sess-1", domain.AnalysisKind("security"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(got.Findings) != 1 {
+		t.Fatalf("read %d findings, want 1", len(got.Findings))
+	}
+	if got.Findings[0].Location.Path != "auth/token.go" {
+		t.Errorf("file = %q, want it recovered", got.Findings[0].Location.Path)
+	}
+	if got.Findings[0].Message != "the token is generated with math/rand" {
+		t.Errorf("message = %q, want the note recovered", got.Findings[0].Message)
+	}
+	if got.Findings[0].Verdict != contract.VerdictDismissed {
+		t.Errorf("verdict = %q — a human's dismissal was lost", got.Findings[0].Verdict)
 	}
 }

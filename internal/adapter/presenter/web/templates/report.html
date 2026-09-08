@@ -97,15 +97,15 @@
                    {{ if eq (printf "%s" .Verdict) "dismissed" }}acard__finding--dismissed{{ end }}">
           <span class="acard__where">
             <span class="sev sev--{{ .Severity }}">{{ .Severity }}</span>
-            {{ with .File }}<code class="acard__file">{{ . }}</code>{{ end }}
+            {{ with .Location.Path }}<code class="acard__file">{{ . }}</code>{{ end }}
             {{ with .Verdict }}<span class="acard__verdicted">{{ . }}</span>{{ end }}
           </span>
-          <span class="acard__note">{{ .Note }}</span>
+          <span class="acard__note">{{ .Message }}</span>
           {{ if $card.CanJudge }}
           <span class="acard__judge">
             <form method="post" action="/analysis/{{ $card.Kind }}/judge?target={{ $.Session.ID }}&amp;back=report">
-              <input type="hidden" name="file" value="{{ .File }}">
-              <input type="hidden" name="note" value="{{ .Note }}">
+              <input type="hidden" name="file" value="{{ .Location.Path }}">
+              <input type="hidden" name="note" value="{{ .Message }}">
               <input type="hidden" name="verdict"
                      value="{{ if eq (printf "%s" .Verdict) "dismissed" }}confirmed{{ else }}dismissed{{ end }}">
               <!-- "not a problem" read as a label on the finding rather than

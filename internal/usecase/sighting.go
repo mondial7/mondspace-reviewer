@@ -244,25 +244,26 @@ func (s Sighting) FromAnalysis(a domain.Analysis) []contract.Item {
 
 	out := make([]contract.Item, 0, len(a.Findings))
 	for _, f := range a.Findings {
-		path := contract.NormalisePath(f.File)
-		item := contract.Item{
-			ID:          s.Mint(),
-			Fingerprint: contract.Fingerprint(path, "llm:"+string(a.Kind)+":"+said(f.Note), nil),
-			Source:      contract.SourceLLM,
-			Producer:    producer,
-			Location:    contract.Location{Path: path, Commit: s.Commit},
-			Severity:    contract.Severity(f.Severity).Normalise(),
-			Title:       title(string(a.Kind), f.Note),
-			Message:     f.Note,
-			Directive:   f.Note,
-			State:       contract.StateOpen,
-			Verdict:     contract.Verdict(f.Verdict),
-			Branch:      s.Branch,
-			SessionID:   s.SessionID,
-			FirstSeen:   s.At,
-			LastSeen:    s.At,
+		f.Location.Path = contract.NormalisePath(f.Location.Path)
+		f.Location.Commit = s.Commit
+		f.ID = s.Mint()
+		f.Source = contract.SourceLLM
+		f.Producer = producer
+		f.Fingerprint = contract.Fingerprint(
+			f.Location.Path, "llm:"+string(a.Kind)+":"+said(f.Message), nil)
+		f.Title = title(string(a.Kind), f.Message)
+		if f.Directive == "" {
+			f.Directive = f.Message
 		}
-		out = append(out, item)
+		if f.State == "" {
+			f.State = contract.StateOpen
+		}
+		f.Branch = s.Branch
+		if f.SessionID == "" {
+			f.SessionID = s.SessionID
+		}
+		f.FirstSeen, f.LastSeen = s.At, s.At
+		out = append(out, f)
 	}
 	return out
 }

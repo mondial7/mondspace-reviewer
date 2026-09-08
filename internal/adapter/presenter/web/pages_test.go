@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mondial7/mondspace-reviewer/contract"
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/presenter/web"
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
 	"github.com/mondial7/mondspace-reviewer/internal/usecase"
@@ -50,7 +51,7 @@ func wiredServer(t *testing.T) *web.Server {
 			func(_ string, k domain.AnalysisKind, _ string) domain.Analysis {
 				return domain.Analysis{TargetID: "s", Kind: k, At: time.Now(),
 					Verdict: "one thing", Print: usecase.Fingerprint(testSession().Units),
-					Findings: []domain.Finding{{File: "a.go", Note: "look", Severity: domain.SeverityMedium}}}
+					Findings: []contract.Item{contract.Item{Source: contract.SourceLLM, Location: contract.Location{Path: "a.go"}, Message: "look", Severity: domain.SeverityMedium}}}
 			}).
 		WithSignoff(
 			func(context.Context, domain.Signoff) error { return nil },

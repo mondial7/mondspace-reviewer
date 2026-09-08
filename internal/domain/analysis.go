@@ -47,18 +47,6 @@ const (
 	VerdictConfirmed = contract.VerdictConfirmed
 )
 
-// Finding is one thing worth a second look: where, one line about why, how much
-// it should interrupt, and what the reviewer made of it.
-type Finding struct {
-	File     string   `json:"file,omitempty"`
-	Note     string   `json:"note"`
-	Severity Severity `json:"severity,omitempty"`
-	Verdict  Verdict  `json:"verdict,omitempty"`
-}
-
-// Stands reports whether this finding is still something to deal with.
-func (f Finding) Stands() bool { return f.Verdict != VerdictDismissed }
-
 // Analysis is the result of running one audit over one target.
 type Analysis struct {
 	TargetID string       `json:"target_id"`
@@ -68,8 +56,8 @@ type Analysis struct {
 	// Verdict is the one-line answer, and it is required. Findings are usually
 	// empty: "nothing here worth a second look" is the common result, and it has
 	// to read as a result rather than as something that failed to run.
-	Verdict  string    `json:"verdict"`
-	Findings []Finding `json:"findings,omitempty"`
+	Verdict  string          `json:"verdict"`
+	Findings []contract.Item `json:"findings,omitempty"`
 	// Print is what the review looked like when this ran, so a later visit can
 	// say the code has moved rather than presenting a stale reading as current
 	// (ADR 0021, ADR 0037).
@@ -105,8 +93,8 @@ func (a Analysis) Clean() bool { return a.Done() && len(a.Standing()) == 0 }
 // Standing is the findings the reviewer has not dismissed. Everything that
 // counts or colours anything is measured on these: a card still reporting
 // "2 high" after both were dismissed has not listened.
-func (a Analysis) Standing() []Finding {
-	var out []Finding
+func (a Analysis) Standing() []contract.Item {
+	var out []contract.Item
 	for _, f := range a.Findings {
 		if f.Stands() {
 			out = append(out, f)

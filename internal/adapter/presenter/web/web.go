@@ -3449,7 +3449,7 @@ type analysisCard struct {
 	When     string
 	Verdict  string
 	Err      string
-	Findings []domain.Finding
+	Findings []contract.Item
 	CanJudge bool
 }
 

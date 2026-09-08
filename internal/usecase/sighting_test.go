@@ -164,9 +164,9 @@ func TestFromAnalysis(t *testing.T) {
 	analysis := domain.Analysis{
 		Kind:  domain.AnalysisKind("security"),
 		Model: "qwen3-4b",
-		Findings: []domain.Finding{
-			{File: "internal/p/p.go", Note: "The token is generated with math/rand.", Severity: domain.SeverityHigh},
-			{File: "internal/p/p.go", Note: "The error is discarded.", Severity: domain.SeverityMedium},
+		Findings: []contract.Item{
+			contract.Item{Source: contract.SourceLLM, Location: contract.Location{Path: "internal/p/p.go"}, Message: "The token is generated with math/rand.", Severity: domain.SeverityHigh},
+			contract.Item{Source: contract.SourceLLM, Location: contract.Location{Path: "internal/p/p.go"}, Message: "The error is discarded.", Severity: domain.SeverityMedium},
 		},
 	}
 
@@ -190,8 +190,8 @@ func TestFromAnalysis(t *testing.T) {
 // The same objection, rephrased in whitespace or capitals, is the same
 // objection.
 func TestFromAnalysisIsStableAcrossWording(t *testing.T) {
-	one := domain.Analysis{Kind: "security", Findings: []domain.Finding{{File: "a.go", Note: "The token is weak."}}}
-	two := domain.Analysis{Kind: "security", Findings: []domain.Finding{{File: "a.go", Note: "the   token  is weak."}}}
+	one := domain.Analysis{Kind: "security", Findings: []contract.Item{contract.Item{Source: contract.SourceLLM, Location: contract.Location{Path: "a.go"}, Message: "The token is weak."}}}
+	two := domain.Analysis{Kind: "security", Findings: []contract.Item{contract.Item{Source: contract.SourceLLM, Location: contract.Location{Path: "a.go"}, Message: "the   token  is weak."}}}
 
 	first := sighter(t).FromAnalysis(one)
 	second := sighter(t).FromAnalysis(two)
