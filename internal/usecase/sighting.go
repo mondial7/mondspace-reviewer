@@ -46,40 +46,47 @@ type Sighting struct {
 	Body func(path string) string
 }
 
-// FromReported converts a deterministic analyser's findings.
-func (s Sighting) FromReported(found []domain.Reported) []contract.Item {
+// Seen fills in what a decoder could not know.
+//
+// A SARIF reader knows the rule, the file and the sentence; it does not know
+// which branch this is, what the code around the finding looks like, or what a
+// downstream agent should do about it. That is this: the identity, the
+// locality, and the directive, all in one place so there is one answer to each
+// (ADR 0048).
+func (s Sighting) Seen(found []contract.Item) []contract.Item {
 	out := make([]contract.Item, 0, len(found))
-	for _, r := range found {
-		path := contract.NormalisePath(r.File)
-		lines := s.lines(path)
-		rule := r.Tool + ":" + r.Rule
+	for _, item := range found {
+		item.Location.Path = contract.NormalisePath(item.Location.Path)
+		item.Location.Commit = s.Commit
+		lines := s.lines(item.Location.Path)
 
-		item := contract.Item{
-			ID:          s.Mint(),
-			Fingerprint: contract.Fingerprint(path, rule, contract.Window(lines, r.Line, r.Line)),
-			Source:      contract.SourceAnalyser,
-			Producer:    r.Tool,
-			RuleID:      r.Rule,
-			Location: contract.Location{
-				Path:      path,
-				StartLine: r.Line,
-				EndLine:   r.Line,
-				Commit:    s.Commit,
-			},
-			Severity:  contract.Severity(r.Severity).Normalise(),
-			Title:     title(r.Tool+" "+r.Rule, r.Message),
-			Message:   r.Message,
-			Directive: reportedDirective(r),
-			Snippet:   snippet(lines, r.Line),
-			New:       r.New,
-			Verdict:   contract.Verdict(r.Verdict),
-			State:     contract.StateOpen,
-			Branch:    s.Branch,
-			SessionID: s.SessionID,
-			Anchor:    r.Anchor,
-			FirstSeen: s.At,
-			LastSeen:  s.At,
+		item.ID = s.Mint()
+		item.Fingerprint = contract.Fingerprint(
+			item.Location.Path,
+			item.Ref(),
+			contract.Window(lines, item.Location.StartLine, item.Location.EndLine),
+		)
+		item.Severity = item.Severity.Normalise()
+		if item.Source == "" {
+			item.Source = contract.SourceAnalyser
 		}
+		if item.Title == "" {
+			item.Title = title(strings.TrimSuffix(item.Ref(), "/"), item.Message)
+		}
+		if item.Directive == "" {
+			item.Directive = directiveFor(item)
+		}
+		if item.Snippet == "" {
+			item.Snippet = snippet(lines, item.Location.StartLine)
+		}
+		if item.State == "" {
+			item.State = contract.StateOpen
+		}
+		item.Branch = s.Branch
+		if item.SessionID == "" {
+			item.SessionID = s.SessionID
+		}
+		item.FirstSeen, item.LastSeen = s.At, s.At
 		out = append(out, item)
 	}
 	return out
@@ -134,22 +141,19 @@ func (s Sighting) lines(path string) []string {
 	return strings.Split(body, "\n")
 }
 
-// reportedDirective is what a downstream agent should do about a finding.
+// directiveFor is what a downstream agent should do about a finding.
 //
-// An item without one is not actionable, so every adapter has to produce one
-// rather than leave it empty (ADR 0044). This is the deterministic default: the
-// tool's own sentence, addressed to whoever has to act on it. A reviewer who
-// rewrites it is the point, and their version is what gets stored from then on.
-func reportedDirective(r domain.Reported) string {
-	where := r.File
-	if r.Line > 0 {
-		where = r.Where()
+// An item without one is not actionable, so every producer path has to end with
+// one rather than leave it empty (ADR 0044). This is the deterministic default:
+// the tool's own sentence, addressed to whoever has to act on it. A reviewer
+// who rewrites it is the point, and their version is what gets stored from then
+// on.
+func directiveFor(item contract.Item) string {
+	rule := item.Producer
+	if item.RuleID != "" {
+		rule = item.Producer + "'s " + item.RuleID
 	}
-	rule := r.Tool
-	if r.Rule != "" {
-		rule = r.Tool + "'s " + r.Rule
-	}
-	return "Resolve " + rule + " at " + where + ": " + strings.TrimSpace(r.Message)
+	return "Resolve " + rule + " at " + item.Where() + ": " + strings.TrimSpace(item.Message)
 }
 
 // noteSeverity maps what the reviewer meant onto how much it should interrupt.
@@ -212,10 +216,10 @@ func snippet(lines []string, line int) string {
 // server that has been analysing a repository for two years holds thousands of
 // issues, and showing them next to a two-file change is the noise this whole
 // layer is arranged to avoid (ADR 0043).
-func OnlyIn(found []domain.Reported, paths map[string]bool) []domain.Reported {
-	var out []domain.Reported
+func OnlyIn(found []contract.Item, paths map[string]bool) []contract.Item {
+	var out []contract.Item
 	for _, r := range found {
-		if paths[contract.NormalisePath(r.File)] {
+		if paths[contract.NormalisePath(r.Location.Path)] {
 			out = append(out, r)
 		}
 	}

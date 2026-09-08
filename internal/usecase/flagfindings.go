@@ -1,6 +1,7 @@
 package usecase
 
 import (
+	"github.com/mondial7/mondspace-reviewer/contract"
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
 )
 
@@ -50,8 +51,8 @@ var stopFlags = map[domain.Flag]struct {
 //
 // Marked new, always: every one of them is derived from the change's own diff,
 // so there is no version of them that was "already there".
-func FlagFindings(units []domain.Unit, diffs map[string]domain.Diff) []domain.Reported {
-	var out []domain.Reported
+func FlagFindings(units []domain.Unit, diffs map[string]domain.Diff) []contract.Item {
+	var out []contract.Item
 	for _, u := range units {
 		for _, flag := range Flags(u, diffs[u.ID]) {
 			meaning, stops := stopFlags[flag]
@@ -59,10 +60,11 @@ func FlagFindings(units []domain.Unit, diffs map[string]domain.Diff) []domain.Re
 				continue
 			}
 			for _, file := range u.Files {
-				out = append(out, domain.Reported{
-					Tool:     msrTool,
-					Rule:     string(flag),
-					File:     file,
+				out = append(out, contract.Item{
+					Source:   contract.SourceAnalyser,
+					Producer: msrTool,
+					RuleID:   string(flag),
+					Location: contract.Location{Path: file},
 					Message:  meaning.Message,
 					Severity: meaning.Severity,
 					New:      true,

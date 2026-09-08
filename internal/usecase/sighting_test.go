@@ -38,14 +38,10 @@ func sighter(t *testing.T) usecase.Sighting {
 	}
 }
 
-func TestFromReported(t *testing.T) {
-	found := []domain.Reported{{
-		Tool: "gosec", Rule: "G404", File: "./internal/p/p.go", Line: 4,
-		Message:  "Use of weak random number generator. Prefer crypto/rand.",
-		Severity: domain.SeverityHigh, New: true,
-	}}
+func TestSeen(t *testing.T) {
+	found := []contract.Item{contract.Item{Source: contract.SourceAnalyser, Location: contract.Location{Path: "./internal/p/p.go", StartLine: 4, EndLine: 4}, Producer: "gosec", RuleID: "G404", Message: "Use of weak random number generator. Prefer crypto/rand.", Severity: domain.SeverityHigh, New: true}}
 
-	got := sighter(t).FromReported(found)
+	got := sighter(t).Seen(found)
 
 	if len(got) != 1 {
 		t.Fatalf("converted %d findings, want 1", len(got))
@@ -70,19 +66,19 @@ func TestFromReported(t *testing.T) {
 	if !item.New || item.Severity != contract.SeverityHigh {
 		t.Errorf("new = %v, severity = %q", item.New, item.Severity)
 	}
-	if item.Title != "gosec G404 — Use of weak random number generator" {
+	if item.Title != "gosec/G404 — Use of weak random number generator" {
 		t.Errorf("title = %q", item.Title)
 	}
 }
 
 // The same finding on the same code fingerprints the same on the next run, and
 // a finding of a different rule on the same line does not.
-func TestFromReportedFingerprintsByRuleAndPlace(t *testing.T) {
-	one := domain.Reported{Tool: "gosec", Rule: "G404", File: "internal/p/p.go", Line: 4}
-	two := domain.Reported{Tool: "gosec", Rule: "G401", File: "internal/p/p.go", Line: 4}
+func TestSeenFingerprintsByRuleAndPlace(t *testing.T) {
+	one := contract.Item{Source: contract.SourceAnalyser, Location: contract.Location{Path: "internal/p/p.go", StartLine: 4, EndLine: 4}, Producer: "gosec", RuleID: "G404"}
+	two := contract.Item{Source: contract.SourceAnalyser, Location: contract.Location{Path: "internal/p/p.go", StartLine: 4, EndLine: 4}, Producer: "gosec", RuleID: "G401"}
 
-	got := sighter(t).FromReported([]domain.Reported{one, two})
-	again := sighter(t).FromReported([]domain.Reported{one})
+	got := sighter(t).Seen([]contract.Item{one, two})
+	again := sighter(t).Seen([]contract.Item{one})
 
 	if got[0].Fingerprint != again[0].Fingerprint {
 		t.Error("the same finding fingerprinted differently on a second pass")
@@ -97,10 +93,8 @@ func TestFromReportedFingerprintsByRuleAndPlace(t *testing.T) {
 
 // A file that has gone since the tool ran is ordinary. The finding is still
 // worth recording; it simply has no window and no snippet.
-func TestFromReportedSurvivesAnUnreadableFile(t *testing.T) {
-	got := sighter(t).FromReported([]domain.Reported{{
-		Tool: "gosec", Rule: "G404", File: "gone.go", Line: 4, Message: "x",
-	}})
+func TestSeenSurvivesAnUnreadableFile(t *testing.T) {
+	got := sighter(t).Seen([]contract.Item{contract.Item{Source: contract.SourceAnalyser, Location: contract.Location{Path: "gone.go", StartLine: 4, EndLine: 4}, Producer: "gosec", RuleID: "G404", Message: "x"}})
 
 	if len(got) != 1 {
 		t.Fatalf("converted %d findings, want 1", len(got))
@@ -154,14 +148,14 @@ func TestFromNoteSeparatesUnanchoredNotes(t *testing.T) {
 // A whole-project source has to be cut down to the change, or a server holding
 // two years of issues drowns a two-file review.
 func TestOnlyIn(t *testing.T) {
-	found := []domain.Reported{
-		{Tool: "sonar", File: "./internal/p/p.go", Line: 4},
-		{Tool: "sonar", File: "internal/elsewhere.go", Line: 9},
+	found := []contract.Item{
+		contract.Item{Source: contract.SourceAnalyser, Location: contract.Location{Path: "./internal/p/p.go", StartLine: 4, EndLine: 4}, Producer: "sonar"},
+		contract.Item{Source: contract.SourceAnalyser, Location: contract.Location{Path: "internal/elsewhere.go", StartLine: 9, EndLine: 9}, Producer: "sonar"},
 	}
 
 	got := usecase.OnlyIn(found, map[string]bool{"internal/p/p.go": true})
 
-	if len(got) != 1 || got[0].File != "./internal/p/p.go" {
+	if len(got) != 1 || got[0].Location.Path != "./internal/p/p.go" {
 		t.Errorf("OnlyIn = %+v, want the finding in the changed file", got)
 	}
 }

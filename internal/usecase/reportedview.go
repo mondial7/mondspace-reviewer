@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/mondial7/mondspace-reviewer/contract"
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
 )
 
@@ -19,10 +20,10 @@ import (
 type FileFindings struct {
 	File string
 	// New is what this change introduced, and is what is shown by default.
-	New []domain.Reported
+	New []contract.Item
 	// Standing was already there. Counted, offered behind a toggle, never
 	// silently dropped.
-	Standing []domain.Reported
+	Standing []contract.Item
 	Worst    domain.Severity
 }
 
@@ -91,19 +92,19 @@ func (v ReportedView) FindingsFor(file string) FileFindings {
 // not the summary line, not the worst severity. A layer still saying "3
 // findings" after all three were dismissed has not listened, which is exactly
 // the discipline the model's findings already follow (ADR 0030).
-func GroupReported(findings []domain.Reported, units []domain.Unit) ReportedView {
+func GroupReported(findings []contract.Item, units []domain.Unit) ReportedView {
 	byFile := map[string]*FileFindings{}
 	tools := map[string]bool{}
 
 	for _, f := range findings {
-		tools[f.Tool] = true
+		tools[f.Producer] = true
 		if !f.Stands() {
 			continue
 		}
-		at, known := byFile[f.File]
+		at, known := byFile[f.Location.Path]
 		if !known {
-			at = &FileFindings{File: f.File}
-			byFile[f.File] = at
+			at = &FileFindings{File: f.Location.Path}
+			byFile[f.Location.Path] = at
 		}
 		if f.New {
 			at.New = append(at.New, f)
@@ -152,16 +153,16 @@ func GroupReported(findings []domain.Reported, units []domain.Unit) ReportedView
 
 // sortReported orders a file's findings worst first, then by line, so reading
 // down a file's list is reading down the file.
-func sortReported(in []domain.Reported) {
+func sortReported(in []contract.Item) {
 	sort.SliceStable(in, func(i, j int) bool {
 		if in[i].Severity.Rank() != in[j].Severity.Rank() {
 			return in[i].Severity.Rank() < in[j].Severity.Rank()
 		}
-		return in[i].Line < in[j].Line
+		return in[i].Location.StartLine < in[j].Location.StartLine
 	})
 }
 
-func worstOf(in []domain.Reported) domain.Severity {
+func worstOf(in []contract.Item) domain.Severity {
 	worst := domain.Severity("")
 	for _, f := range in {
 		if worst == "" || f.Severity.Rank() < worst.Rank() {
@@ -185,11 +186,11 @@ func worstOfFiles(files []FileFindings) domain.Severity {
 }
 
 // ApplyDismissals stamps stored rulings onto a fresh set of findings.
-func ApplyDismissals(findings []domain.Reported, rulings map[string]domain.Verdict) []domain.Reported {
+func ApplyDismissals(findings []contract.Item, rulings map[string]domain.Verdict) []contract.Item {
 	if len(rulings) == 0 {
 		return findings
 	}
-	out := make([]domain.Reported, 0, len(findings))
+	out := make([]contract.Item, 0, len(findings))
 	for _, f := range findings {
 		if v, ruled := rulings[f.Key()]; ruled {
 			f.Verdict = v

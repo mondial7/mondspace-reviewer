@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/mondial7/mondspace-reviewer/contract"
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
 	"github.com/mondial7/mondspace-reviewer/internal/usecase"
 )
@@ -28,7 +29,7 @@ type Review struct {
 	// Analyses on purpose: those are a model's guesses and these are a tool's
 	// output, and the whole value of the second is that it is not the first
 	// (ADR 0043).
-	Reported []domain.Reported
+	Reported []contract.Item
 	Signoff  domain.Signoff
 
 	// Files resolves a note's unit id to the file it concerns, for notes
@@ -350,7 +351,7 @@ func reportedFindings(r Review, path string, all bool) string {
 	shown, hidden := 0, 0
 	for _, pass := range []bool{true, false} {
 		for _, f := range r.Reported {
-			if f.Stands() != pass || (path != "" && f.File != path) {
+			if f.Stands() != pass || (path != "" && f.Location.Path != path) {
 				continue
 			}
 			if !f.New && !all {

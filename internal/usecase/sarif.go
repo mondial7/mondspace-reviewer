@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/mondial7/mondspace-reviewer/internal/domain"
+	"github.com/mondial7/mondspace-reviewer/contract"
 )
 
 // Two decoders, and only two (ADR 0043).
@@ -27,7 +27,7 @@ import (
 // printed a warning on stdout, or a version banner, or nothing at all, must not
 // take a review down; the settings page reports what could not be read
 // (ADR 0043).
-func ReadFindings(a Analyser, output, repoDir string) []domain.Reported {
+func ReadFindings(a Analyser, output, repoDir string) []contract.Item {
 	switch a.Format {
 	case FormatSARIF:
 		return readSARIF(a, output, repoDir)
@@ -66,7 +66,7 @@ type sarifLog struct {
 	} `json:"runs"`
 }
 
-func readSARIF(a Analyser, output, repoDir string) []domain.Reported {
+func readSARIF(a Analyser, output, repoDir string) []contract.Item {
 	// Tools print things around their own report — a version banner before it,
 	// a "14 issues:" summary after it — so the document is cut out of whatever
 	// else was on the stream. golangci-lint does both.
@@ -82,7 +82,7 @@ func readSARIF(a Analyser, output, repoDir string) []domain.Reported {
 		return nil
 	}
 
-	var out []domain.Reported
+	var out []contract.Item
 	for _, run := range log.Runs {
 		for _, res := range run.Results {
 			message := strings.TrimSpace(res.Message.Text)
@@ -95,14 +95,14 @@ func readSARIF(a Analyser, output, repoDir string) []domain.Reported {
 				file = relativeTo(repoDir, loc.ArtifactLocation.URI)
 				line = loc.Region.StartLine
 			}
-			out = append(out, domain.Reported{
+			out = append(out, contract.Item{
+				Source: contract.SourceAnalyser,
 				// The analyser's own name, not the driver's. They usually agree;
 				// where they do not, the reviewer configured this entry and it is
 				// their word for the tool that should appear beside the finding.
-				Tool:     a.Name,
-				Rule:     strings.TrimSpace(res.RuleID),
-				File:     file,
-				Line:     line,
+				Producer: a.Name,
+				RuleID:   strings.TrimSpace(res.RuleID),
+				Location: contract.Location{Path: file, StartLine: line, EndLine: line},
 				Message:  Brief(message, reportedChars),
 				Severity: a.Level(res.Level),
 			})
@@ -122,8 +122,8 @@ var lineFinding = regexp.MustCompile(`^(.+?):(\d+)(?::(\d+))?:\s*(.*)$`)
 
 var trailingRule = regexp.MustCompile(`\s*\(([A-Za-z][\w./-]*)\)\s*$`)
 
-func readLines(a Analyser, output, repoDir string) []domain.Reported {
-	var out []domain.Reported
+func readLines(a Analyser, output, repoDir string) []contract.Item {
+	var out []contract.Item
 	for _, line := range strings.Split(output, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
@@ -148,12 +148,12 @@ func readLines(a Analyser, output, repoDir string) []domain.Reported {
 		if message == "" {
 			continue
 		}
-		out = append(out, domain.Reported{
-			Tool:    a.Name,
-			Rule:    rule,
-			File:    relativeTo(repoDir, m[1]),
-			Line:    n,
-			Message: Brief(message, reportedChars),
+		out = append(out, contract.Item{
+			Source:   contract.SourceAnalyser,
+			Producer: a.Name,
+			RuleID:   rule,
+			Location: contract.Location{Path: relativeTo(repoDir, m[1]), StartLine: n, EndLine: n},
+			Message:  Brief(message, reportedChars),
 			// Nothing said how bad it is, so nothing is claimed. Normalise puts
 			// it at "worth checking", which is the honest answer.
 			Severity: a.Level(""),

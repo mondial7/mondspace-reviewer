@@ -312,14 +312,14 @@ func TestOnlyTheFlagsThatMeanStopBecomeFindings(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("got %+v, want just the swallowed error", got)
 	}
-	if got[0].Tool != "msr" || got[0].Rule != string(domain.FlagSwallowedErr) {
+	if got[0].Producer != "msr" || got[0].RuleID != string(domain.FlagSwallowedErr) {
 		t.Errorf("finding = %+v; msr's own rules still have to name themselves", got[0])
 	}
 	if got[0].Ref() != "msr/swallowed-err" {
 		t.Errorf("Ref() = %q", got[0].Ref())
 	}
-	if got[0].File != "api/handler.go" {
-		t.Errorf("file = %q", got[0].File)
+	if got[0].Location.Path != "api/handler.go" {
+		t.Errorf("file = %q", got[0].Location.Path)
 	}
 	if !got[0].New {
 		t.Error("a flag is derived from this change's own diff; there is no version of it that was already there")

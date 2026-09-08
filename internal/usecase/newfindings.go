@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/mondial7/mondspace-reviewer/contract"
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
 )
 
@@ -114,8 +115,8 @@ func ChangedLines(units []domain.Unit, diffs map[string]domain.Diff) map[string]
 // nothing to say about it. A finding with no line at all is judged by its file,
 // because a whole-file finding — a leaked credential, a vulnerable dependency —
 // is exactly as new as the file's presence in this change.
-func MarkNew(findings []domain.Reported, units []domain.Unit,
-	diffs map[string]domain.Diff) []domain.Reported {
+func MarkNew(findings []contract.Item, units []domain.Unit,
+	diffs map[string]domain.Diff) []contract.Item {
 
 	changed := ChangedLines(units, diffs)
 	text := map[string]map[int]string{}
@@ -126,19 +127,19 @@ func MarkNew(findings []domain.Reported, units []domain.Unit,
 		}
 	}
 
-	out := make([]domain.Reported, 0, len(findings))
+	out := make([]contract.Item, 0, len(findings))
 	for _, f := range findings {
-		lines, touched := changed[f.File]
+		lines, touched := changed[f.Location.Path]
 		switch {
 		case !touched:
 			f.New = false
-		case f.Line == 0:
+		case f.Location.StartLine == 0:
 			// About the file as a whole, and the file is in this change.
 			f.New = true
 		default:
-			f.New = lines[f.Line]
+			f.New = lines[f.Location.StartLine]
 			if f.New {
-				f.Anchor = text[f.File][f.Line]
+				f.Anchor = text[f.Location.Path][f.Location.StartLine]
 			}
 		}
 		out = append(out, f)
@@ -159,17 +160,17 @@ func MarkNew(findings []domain.Reported, units []domain.Unit,
 //
 // Matched on the finding's own identity rather than on its line, because the
 // line has moved by definition — the change is what moved it (ADR 0043).
-func MarkAgainstBase(found, before []domain.Reported) []domain.Reported {
+func MarkAgainstBase(found, before []contract.Item) []contract.Item {
 	was := make(map[string]bool, len(before))
 	for _, f := range before {
 		was[f.Key()] = true
 	}
 
-	out := make([]domain.Reported, 0, len(found))
+	out := make([]contract.Item, 0, len(found))
 	for _, f := range found {
 		// msr's own flags are derived from the diff itself, so there is no
 		// version of them that existed before and the base has no opinion.
-		if f.Tool != msrTool {
+		if f.Producer != msrTool {
 			f.New = !was[f.Key()]
 		}
 		out = append(out, f)
@@ -183,7 +184,7 @@ func MarkAgainstBase(found, before []domain.Reported) []domain.Reported {
 // Both are returned rather than the pre-existing ones being dropped. Silently
 // hiding four hundred findings and silently having none are indistinguishable
 // from the page, and one of them means the tool is not running (ADR 0043).
-func SplitNew(findings []domain.Reported) (fresh, standing []domain.Reported) {
+func SplitNew(findings []contract.Item) (fresh, standing []contract.Item) {
 	for _, f := range findings {
 		if f.New {
 			fresh = append(fresh, f)
@@ -200,7 +201,7 @@ func SplitNew(findings []domain.Reported) (fresh, standing []domain.Reported) {
 // tool is *more* likely to raise the same finding again, not less: it is the
 // same rule over the same line, so without this a dismissal would last until
 // the next poll tick.
-func CarryDismissals(fresh, earlier []domain.Reported) []domain.Reported {
+func CarryDismissals(fresh, earlier []contract.Item) []contract.Item {
 	if len(earlier) == 0 {
 		return fresh
 	}
@@ -211,7 +212,7 @@ func CarryDismissals(fresh, earlier []domain.Reported) []domain.Reported {
 		}
 	}
 
-	out := make([]domain.Reported, 0, len(fresh))
+	out := make([]contract.Item, 0, len(fresh))
 	for _, f := range fresh {
 		if v, ok := judged[f.Key()]; ok {
 			f.Verdict = v

@@ -8,6 +8,8 @@
 package contract
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"strconv"
 	"time"
 )
@@ -261,6 +263,43 @@ func (i Item) Pushable() bool {
 	default:
 		return true
 	}
+}
+
+// Ref names the rule for a human: "gosec/G404".
+//
+// Both halves, because rule ids are only unique within a tool and "G404" alone
+// is not something anybody can look up.
+func (i Item) Ref() string {
+	if i.RuleID == "" {
+		return i.Producer
+	}
+	return i.Producer + "/" + i.RuleID
+}
+
+// Key identifies an item across runs by what was said about it, for carrying a
+// reviewer's ruling onto the next run before a fingerprint has been computed.
+//
+// Deliberately not the line number: a diff grows above a finding constantly,
+// and a key that moved would lose every ruling on the file every time anything
+// was added to the top of it.
+//
+// Hashed rather than joined, because this travels: into an HTML form value,
+// back through a POST, and into a JSON object as a key. A separator that is a
+// control character survives none of those reliably, and the failure is silent
+// — a dismissal that is written down and never matches anything again.
+//
+// It is not the fingerprint and does not replace it. This is stable across the
+// runs where the tool says the same sentence about the same file; the
+// fingerprint is stable across the runs where the *code* has not changed, which
+// is the stronger and more expensive question (see fingerprint.go).
+func (i Item) Key() string {
+	// The path exactly as the producer reported it, not normalised: this hash
+	// is written into stores that already exist, and changing what goes into it
+	// would quietly invalidate every ruling in them.
+	sum := sha256.Sum256([]byte(
+		i.Producer + "\x00" + i.RuleID + "\x00" + i.Location.Path + "\x00" + i.Message,
+	))
+	return hex.EncodeToString(sum[:12])
 }
 
 // Where names the item's location for a human: "internal/api/handler.go:42".

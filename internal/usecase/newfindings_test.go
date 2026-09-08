@@ -3,6 +3,7 @@ package usecase_test
 import (
 	"testing"
 
+	"github.com/mondial7/mondspace-reviewer/contract"
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
 	"github.com/mondial7/mondspace-reviewer/internal/usecase"
 )
@@ -52,10 +53,10 @@ func scannedReview() ([]domain.Unit, map[string]domain.Diff) {
 
 func TestAFindingOnALineThisChangeAddedIsNew(t *testing.T) {
 	units, diffs := scannedReview()
-	got := usecase.MarkNew([]domain.Reported{
-		{Tool: "gosec", Rule: "G404", File: "api/handler.go", Line: 13, Message: "weak rng"},
-		{Tool: "gosec", Rule: "G401", File: "api/handler.go", Line: 11, Message: "already there"},
-		{Tool: "gosec", Rule: "G402", File: "other/thing.go", Line: 3, Message: "not in this review"},
+	got := usecase.MarkNew([]contract.Item{
+		contract.Item{Source: contract.SourceAnalyser, Location: contract.Location{Path: "api/handler.go", StartLine: 13, EndLine: 13}, Producer: "gosec", RuleID: "G404", Message: "weak rng"},
+		contract.Item{Source: contract.SourceAnalyser, Location: contract.Location{Path: "api/handler.go", StartLine: 11, EndLine: 11}, Producer: "gosec", RuleID: "G401", Message: "already there"},
+		contract.Item{Source: contract.SourceAnalyser, Location: contract.Location{Path: "other/thing.go", StartLine: 3, EndLine: 3}, Producer: "gosec", RuleID: "G402", Message: "not in this review"},
 	}, units, diffs)
 
 	if !got[0].New {
@@ -76,8 +77,8 @@ func TestAWholeFileFindingIsAsNewAsTheFile(t *testing.T) {
 	// A leaked credential or a vulnerable dependency has no line to intersect;
 	// the file being in this change is the whole of the question.
 	units, diffs := scannedReview()
-	got := usecase.MarkNew([]domain.Reported{
-		{Tool: "gitleaks", Rule: "generic-api-key", File: "api/handler.go", Message: "key"},
+	got := usecase.MarkNew([]contract.Item{
+		contract.Item{Source: contract.SourceAnalyser, Location: contract.Location{Path: "api/handler.go"}, Producer: "gitleaks", RuleID: "generic-api-key", Message: "key"},
 	}, units, diffs)
 	if !got[0].New {
 		t.Error("a whole-file finding on a changed file is new")
@@ -87,10 +88,10 @@ func TestAWholeFileFindingIsAsNewAsTheFile(t *testing.T) {
 func TestPreExistingFindingsAreSeparatedNotDiscarded(t *testing.T) {
 	// Silently hiding four hundred findings and silently having none look the
 	// same from the page, and one of them means the tool is not running.
-	fresh, standing := usecase.SplitNew([]domain.Reported{
-		{Tool: "t", Rule: "a", File: "x.go", New: true},
-		{Tool: "t", Rule: "b", File: "x.go"},
-		{Tool: "t", Rule: "c", File: "x.go"},
+	fresh, standing := usecase.SplitNew([]contract.Item{
+		contract.Item{Source: contract.SourceAnalyser, Location: contract.Location{Path: "x.go"}, Producer: "t", RuleID: "a", New: true},
+		contract.Item{Source: contract.SourceAnalyser, Location: contract.Location{Path: "x.go"}, Producer: "t", RuleID: "b"},
+		contract.Item{Source: contract.SourceAnalyser, Location: contract.Location{Path: "x.go"}, Producer: "t", RuleID: "c"},
 	})
 	if len(fresh) != 1 || len(standing) != 2 {
 		t.Errorf("got %d new and %d pre-existing, want 1 and 2", len(fresh), len(standing))
@@ -100,15 +101,9 @@ func TestPreExistingFindingsAreSeparatedNotDiscarded(t *testing.T) {
 func TestADismissalSurvivesTheNextRunOfTheSameTool(t *testing.T) {
 	// A deterministic tool is *more* likely to raise the same thing again, not
 	// less, so without this a dismissal lasts until the next poll tick.
-	earlier := []domain.Reported{{
-		Tool: "gosec", Rule: "G404", File: "api/handler.go", Line: 13,
-		Message: "weak rng", Verdict: domain.VerdictDismissed,
-	}}
+	earlier := []contract.Item{contract.Item{Source: contract.SourceAnalyser, Location: contract.Location{Path: "api/handler.go", StartLine: 13, EndLine: 13}, Producer: "gosec", RuleID: "G404", Message: "weak rng", Verdict: domain.VerdictDismissed}}
 	// Same finding, moved down the file because something was added above it.
-	fresh := []domain.Reported{{
-		Tool: "gosec", Rule: "G404", File: "api/handler.go", Line: 40,
-		Message: "weak rng",
-	}}
+	fresh := []contract.Item{contract.Item{Source: contract.SourceAnalyser, Location: contract.Location{Path: "api/handler.go", StartLine: 40, EndLine: 40}, Producer: "gosec", RuleID: "G404", Message: "weak rng"}}
 
 	got := usecase.CarryDismissals(fresh, earlier)
 	if got[0].Stands() {
@@ -119,13 +114,13 @@ func TestADismissalSurvivesTheNextRunOfTheSameTool(t *testing.T) {
 func TestTheBaseDecidesWhatWasAlreadyThere(t *testing.T) {
 	// The case the cheap path cannot see: an import that is now unused is not
 	// on a line this change added, and is entirely this change's doing.
-	found := []domain.Reported{
-		{Tool: "staticcheck", Rule: "ST1003", File: "a.go", Line: 3, Message: "was here before"},
-		{Tool: "staticcheck", Rule: "SA4006", File: "a.go", Line: 40, Message: "this change caused this"},
+	found := []contract.Item{
+		contract.Item{Source: contract.SourceAnalyser, Location: contract.Location{Path: "a.go", StartLine: 3, EndLine: 3}, Producer: "staticcheck", RuleID: "ST1003", Message: "was here before"},
+		contract.Item{Source: contract.SourceAnalyser, Location: contract.Location{Path: "a.go", StartLine: 40, EndLine: 40}, Producer: "staticcheck", RuleID: "SA4006", Message: "this change caused this"},
 	}
-	before := []domain.Reported{
+	before := []contract.Item{
 		// The same finding, on a different line, because the change moved it.
-		{Tool: "staticcheck", Rule: "ST1003", File: "a.go", Line: 3000, Message: "was here before"},
+		contract.Item{Source: contract.SourceAnalyser, Location: contract.Location{Path: "a.go", StartLine: 3000, EndLine: 3000}, Producer: "staticcheck", RuleID: "ST1003", Message: "was here before"},
 	}
 
 	got := usecase.MarkAgainstBase(found, before)
@@ -140,8 +135,8 @@ func TestTheBaseDecidesWhatWasAlreadyThere(t *testing.T) {
 func TestMsrsOwnFlagsAreNotJudgedAgainstTheBase(t *testing.T) {
 	// They are derived from the diff itself, so there is no version of them
 	// that existed before and the base has no opinion to offer.
-	found := []domain.Reported{
-		{Tool: "msr", Rule: "swallowed-err", File: "a.go", Message: "an error is discarded", New: true},
+	found := []contract.Item{
+		contract.Item{Source: contract.SourceAnalyser, Location: contract.Location{Path: "a.go"}, Producer: "msr", RuleID: "swallowed-err", Message: "an error is discarded", New: true},
 	}
 	if got := usecase.MarkAgainstBase(found, nil); !got[0].New {
 		t.Error("a flag is always this change's own")

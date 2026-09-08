@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mondial7/mondspace-reviewer/contract"
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/presenter/web"
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
 	"github.com/mondial7/mondspace-reviewer/internal/port"
@@ -3035,15 +3036,8 @@ func TestDeterministicFindingsAppearAgainstTheirFile(t *testing.T) {
 	// because "is anything mechanically wrong with what I am reading" is a
 	// question about the file (ADR 0043).
 	h := web.NewServer(testSession(), nil).
-		WithReported(func(string) []domain.Reported {
-			return []domain.Reported{{
-				Tool: "gosec", Rule: "G404", File: "auth/token.go", Line: 2,
-				Message:  "Use of weak random number generator",
-				Severity: domain.SeverityMedium, New: true,
-			}, {
-				Tool: "staticcheck", Rule: "SA4006", File: "auth/token.go", Line: 9,
-				Message: "this value of err is never used",
-			}}
+		WithReported(func(string) []contract.Item {
+			return []contract.Item{contract.Item{Source: contract.SourceAnalyser, Location: contract.Location{Path: "auth/token.go", StartLine: 2, EndLine: 2}, Producer: "gosec", RuleID: "G404", Message: "Use of weak random number generator", Severity: domain.SeverityMedium, New: true}, contract.Item{Source: contract.SourceAnalyser, Location: contract.Location{Path: "auth/token.go", StartLine: 9, EndLine: 9}, Producer: "staticcheck", RuleID: "SA4006", Message: "this value of err is never used"}}
 		}, func(context.Context, string, string, domain.Verdict) error { return nil }).
 		WithTools(func() []web.ToolStatus {
 			return []web.ToolStatus{{Name: "gosec", Present: true}, {Name: "staticcheck", Present: true}}
@@ -3070,7 +3064,7 @@ func TestAReviewWithNothingReportedStillSaysSo(t *testing.T) {
 	// "Nothing found" and "nothing ran" must not look the same, which is the
 	// same discipline the security card follows.
 	h := web.NewServer(testSession(), nil).
-		WithReported(func(string) []domain.Reported { return nil }, nil).
+		WithReported(func(string) []contract.Item { return nil }, nil).
 		WithTools(func() []web.ToolStatus { return []web.ToolStatus{{Name: "gosec", Present: true}} })
 
 	body := get(t, h, "/").Body.String()
@@ -3084,7 +3078,7 @@ func TestAnAnalyserThatIsNotInstalledIsNotListedAsHavingLooked(t *testing.T) {
 	// "gosec found nothing" and "gosec is not installed" are not the same
 	// sentence, and only one of them is about the code.
 	h := web.NewServer(testSession(), nil).
-		WithReported(func(string) []domain.Reported { return nil }, nil).
+		WithReported(func(string) []contract.Item { return nil }, nil).
 		WithTools(func() []web.ToolStatus {
 			return []web.ToolStatus{{Name: "gosec"}, {Name: "go vet", Present: true}}
 		})

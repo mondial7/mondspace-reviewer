@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mondial7/mondspace-reviewer/contract"
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
 )
 
@@ -401,7 +402,7 @@ const foundFile = "reported-found.json"
 
 // SaveReported records the findings themselves, for readers outside the process
 // that produced them.
-func (s *Store) SaveReported(targetID string, found []domain.Reported) error {
+func (s *Store) SaveReported(targetID string, found []contract.Item) error {
 	dir := filepath.Join(s.root, targetID)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
@@ -414,7 +415,7 @@ func (s *Store) SaveReported(targetID string, found []domain.Reported) error {
 }
 
 // LoadReported reads them back. Nothing scanned is the ordinary state.
-func (s *Store) LoadReported(targetID string) ([]domain.Reported, error) {
+func (s *Store) LoadReported(targetID string) ([]contract.Item, error) {
 	body, err := os.ReadFile(filepath.Join(s.root, targetID, foundFile))
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil
@@ -422,11 +423,25 @@ func (s *Store) LoadReported(targetID string) ([]domain.Reported, error) {
 	if err != nil {
 		return nil, err
 	}
-	var out []domain.Reported
+	var out []contract.Item
 	if err := json.Unmarshal(body, &out); err != nil {
 		return nil, nil
 	}
-	return out, nil
+
+	// A file written before findings became items decodes into records with
+	// no producer: the field names moved (ADR 0048). They are dropped rather
+	// than shown half-read, which is safe because this file is a cache of
+	// something reproducible and the next scan rewrites it. The test is the
+	// same one ADR 0043 states: a finding that cannot name the tool that
+	// produced it is not a finding.
+	kept := out[:0]
+	for _, item := range out {
+		if item.Producer == "" {
+			continue
+		}
+		kept = append(kept, item)
+	}
+	return kept, nil
 }
 
 // LoadAnalysisAt returns the result of one audit over one exact diff, or a zero
