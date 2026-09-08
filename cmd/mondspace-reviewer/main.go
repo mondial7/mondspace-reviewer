@@ -68,7 +68,13 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout io.Writer) 
 	case "ask":
 		return runAsk(ctx, args, stdout)
 	case "export":
-		return runExport(args, stdout)
+		return runExport(ctx, args, stdout)
+	case "scan":
+		return runScan(ctx, args, stdout)
+	case "findings":
+		return runFindings(ctx, args, stdout)
+	case "push":
+		return runPush(ctx, args, stdout)
 	case "web":
 		return runWeb(ctx, args, stdout)
 	case "mcp":
@@ -199,15 +205,30 @@ const (
 	defaultModel         = "qwen3-4b-instruct-2507"
 )
 
-// runExport writes a review report for a stored session as Markdown or JSON.
-func runExport(args []string, stdout io.Writer) error {
+// runExport writes a review as Markdown or JSON.
+//
+// Two halves, because there are two things worth exporting. `md`, `json` and
+// `slack` render one stored session's report, which is what the reviewer was
+// looking at. `agent`, `plan`, `markdown`, `github-issues` and `jsonl` render
+// the findings store, which is what outlives the session and what another tool
+// consumes (ADR 0044, ADR 0045).
+func runExport(ctx context.Context, args []string, stdout io.Writer) error {
 	fs := flag.NewFlagSet("export", flag.ContinueOnError)
-	format := fs.String("format", "md", "output format (md|json|slack)")
+	format := fs.String("format", "md", "output format (md|json|slack|agent|plan|markdown|github-issues|jsonl)")
 	out := fs.String("out", ".mondspace-reviewer", "store root directory")
 	target := fs.String("target", "", "which review (a target id or session id; default: the one open in `msr web`)")
 	session := fs.String("session", "", "session id — an older name for --target")
+	repo := fs.String("repo", ".", "repository, for the findings-store formats")
+	dir := fs.String("dir", "", "shared directory holding the findings store (default <repo>/.mondspace)")
+	branch := fs.String("branch", "", "which branch's findings (default: the one checked out)")
+	everywhere := fs.Bool("all-branches", false, "every branch, not just this one")
+	state := fs.String("state", "", "only items in this state (open|accepted|pushed|fixed)")
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
+	}
+
+	if isItemFormat(*format) {
+		return exportItems(ctx, *format, *repo, *dir, *branch, *state, *everywhere, stdout)
 	}
 	reviewID, err := whichReview(*out, *target, *session)
 	if err != nil {
