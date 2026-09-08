@@ -27,6 +27,13 @@ const SharedDir = ".mondspace"
 // FileName is the reviewer's half of that contract.
 const FileName = "findings.jsonl"
 
+// BacklogFile is the planner's half of the shared directory. msr writes it only
+// when asked to (`msr export --promote`): promotion is the planner's job by
+// default, and a noisy analyser run dumping forty items onto somebody's board
+// is exactly what that default is protecting (ADR 0045, and D1 in the phase 2
+// spec).
+const BacklogFile = "items.jsonl"
+
 // Store is the findings file. It holds no state: two processes on two
 // worktrees of one repository are two Stores over one file, and appending whole
 // lines is what keeps that safe.
@@ -170,4 +177,34 @@ func (s *Store) Compact() error {
 		return err
 	}
 	return os.Rename(tmp.Name(), s.path)
+}
+
+// Backlog is the planner's file in the same directory, addressed the same way.
+func Backlog(dir string) *Store {
+	return &Store{path: filepath.Join(dir, BacklogFile)}
+}
+
+// Promote copies items into the backlog, skipping anything already there.
+//
+// By id rather than by fingerprint: the planner may have edited what it took,
+// and a second promotion must not overwrite that with the reviewer's wording.
+func (s *Store) Promote(list []contract.Item) (int, error) {
+	existing, err := s.All()
+	if err != nil {
+		return 0, err
+	}
+	known := make(map[string]bool, len(existing))
+	for _, item := range existing {
+		known[item.ID] = true
+	}
+
+	var fresh []contract.Item
+	for _, item := range list {
+		if known[item.ID] {
+			continue
+		}
+		known[item.ID] = true
+		fresh = append(fresh, item)
+	}
+	return len(fresh), s.Append(fresh...)
 }

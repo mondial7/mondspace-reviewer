@@ -579,7 +579,7 @@ func isItemFormat(format string) bool {
 
 // exportItems renders the findings store for whoever is consuming it.
 func exportItems(ctx context.Context, format, repo, dir, branch, state string,
-	everywhere bool, stdout io.Writer) error {
+	everywhere, promote bool, stdout io.Writer) error {
 
 	store := items.New(sharedDir(repo, dir))
 	list, err := selection(ctx, store, repo, branch, everywhere)
@@ -599,6 +599,15 @@ func exportItems(ctx context.Context, format, repo, dir, branch, state string,
 			continue
 		}
 		open = append(open, item)
+	}
+
+	if promote {
+		count, err := items.Backlog(sharedDir(repo, dir)).Promote(open)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(stdout, "promoted %d item(s) into %s\n", count, items.BacklogFile)
+		return nil
 	}
 
 	switch format {

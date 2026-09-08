@@ -69,6 +69,8 @@ var commands = []struct {
 			"--target=<id>    which review; default is the one open in `msr web`",
 			"--branch=<b>     which branch's findings (default: the one checked out)",
 			"--state=<s>      only items in this state (open|accepted|pushed|fixed)",
+			"--promote        write the items into items.jsonl, for a repository with",
+			"                 no planner to promote them itself",
 		},
 	},
 	{
