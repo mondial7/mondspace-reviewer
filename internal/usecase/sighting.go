@@ -205,3 +205,19 @@ func snippet(lines []string, line int) string {
 	}
 	return strings.Join(lines[from:to], "\n")
 }
+
+// OnlyIn keeps the findings that are about files this change touched.
+//
+// It is what makes a whole-project source usable beside the diff-scoped ones: a
+// server that has been analysing a repository for two years holds thousands of
+// issues, and showing them next to a two-file change is the noise this whole
+// layer is arranged to avoid (ADR 0043).
+func OnlyIn(found []domain.Reported, paths map[string]bool) []domain.Reported {
+	var out []domain.Reported
+	for _, r := range found {
+		if paths[contract.NormalisePath(r.File)] {
+			out = append(out, r)
+		}
+	}
+	return out
+}
