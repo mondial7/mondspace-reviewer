@@ -15,6 +15,7 @@ import (
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/delivery"
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/scanner/local"
 	gitsnap "github.com/mondial7/mondspace-reviewer/internal/adapter/snapshot/git"
+	"github.com/mondial7/mondspace-reviewer/internal/adapter/sonar"
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/store/items"
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
 	"github.com/mondial7/mondspace-reviewer/internal/usecase"
@@ -77,6 +78,21 @@ func runScan(ctx context.Context, args []string, stdout io.Writer) error {
 	}
 
 	found := scanner.Look(ctx, pathsOf(units), usecase.FilePrints(units, diffs), baseline.Commit)
+	producers := ranProducers(scanner)
+
+	// A team's Sonar server has already computed an answer for this project.
+	// Pulled rather than run, scoped to the files this change touched, and
+	// never fatal: a review does not stop because somebody's server is down.
+	if client, configured := sonar.FromEnv(); configured {
+		issues, err := client.Issues(ctx)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "msr:", err)
+		} else {
+			found = append(found, usecase.OnlyIn(issues, pathSet(pathsOf(units)))...)
+			producers[sonar.Tool] = true
+		}
+	}
+
 	found = usecase.MarkNew(found, units, diffs)
 	found = append(found, usecase.FlagFindings(units, diffs)...)
 
@@ -86,7 +102,7 @@ func runScan(ctx context.Context, args []string, stdout io.Writer) error {
 		branch:    on,
 		commit:    baseline.Commit,
 		repo:      *repo,
-		producers: ranProducers(scanner),
+		producers: producers,
 		paths:     pathsOf(units),
 	})
 	if err != nil {

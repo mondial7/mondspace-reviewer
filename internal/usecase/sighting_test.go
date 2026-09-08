@@ -150,3 +150,18 @@ func TestFromNoteSeparatesUnanchoredNotes(t *testing.T) {
 		t.Error("two file-wide notes share a fingerprint")
 	}
 }
+
+// A whole-project source has to be cut down to the change, or a server holding
+// two years of issues drowns a two-file review.
+func TestOnlyIn(t *testing.T) {
+	found := []domain.Reported{
+		{Tool: "sonar", File: "./internal/p/p.go", Line: 4},
+		{Tool: "sonar", File: "internal/elsewhere.go", Line: 9},
+	}
+
+	got := usecase.OnlyIn(found, map[string]bool{"internal/p/p.go": true})
+
+	if len(got) != 1 || got[0].File != "./internal/p/p.go" {
+		t.Errorf("OnlyIn = %+v, want the finding in the changed file", got)
+	}
+}
