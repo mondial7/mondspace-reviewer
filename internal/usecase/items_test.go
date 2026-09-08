@@ -310,3 +310,15 @@ func TestRulesWorthSuppressing(t *testing.T) {
 		t.Errorf("RulesWorthSuppressing = %v, want just gosec:G404", got)
 	}
 }
+
+// A model that does not repeat itself has not said the problem is gone, so a
+// tentative pass never closes anything.
+func TestReconcileTentativePassClosesNothing(t *testing.T) {
+	stored := usecase.Reconcile(nil, []contract.Item{sighting("fp1", "id1")}, pass(first))
+
+	got := usecase.Reconcile(stored, nil, usecase.Pass{At: second, Tentative: true})
+
+	if len(got) != 0 {
+		t.Errorf("a tentative pass closed %d item(s): %+v", len(got), got)
+	}
+}

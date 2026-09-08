@@ -166,6 +166,22 @@ func recordNote(store *items.Store, note domain.Note, branch, repo string) error
 	return store.Append(sight.FromNote(note))
 }
 
+// recordAnalysis mirrors one model reading into the findings store.
+//
+// Tentative, always: a model that does not repeat itself has not told you the
+// problem is gone, so nothing it raised is ever closed by its own silence.
+func recordAnalysis(store *items.Store, a domain.Analysis, branch, session, repo string) error {
+	at := time.Now().UTC()
+	sight := usecase.Sighting{Branch: branch, SessionID: session, At: at, Mint: newULID, Body: fileBodies(repo)}
+
+	stored, err := store.All()
+	if err != nil {
+		return err
+	}
+	changed := usecase.Reconcile(stored, sight.FromAnalysis(a), usecase.Pass{At: at, Tentative: true})
+	return store.Append(changed...)
+}
+
 // reportScan says what the pass did, in the terms the store thinks in.
 func reportScan(stdout io.Writer, store *items.Store, branch string, changed []contract.Item) error {
 	raised, closed := 0, 0

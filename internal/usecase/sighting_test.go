@@ -165,3 +165,44 @@ func TestOnlyIn(t *testing.T) {
 		t.Errorf("OnlyIn = %+v, want the finding in the changed file", got)
 	}
 }
+
+func TestFromAnalysis(t *testing.T) {
+	analysis := domain.Analysis{
+		Kind:  domain.AnalysisKind("security"),
+		Model: "qwen3-4b",
+		Findings: []domain.Finding{
+			{File: "internal/p/p.go", Note: "The token is generated with math/rand.", Severity: domain.SeverityHigh},
+			{File: "internal/p/p.go", Note: "The error is discarded.", Severity: domain.SeverityMedium},
+		},
+	}
+
+	got := sighter(t).FromAnalysis(analysis)
+
+	if len(got) != 2 {
+		t.Fatalf("converted %d findings, want 2", len(got))
+	}
+	if got[0].Source != contract.SourceLLM || got[0].Producer != "qwen3-4b" {
+		t.Errorf("provenance = %q/%q", got[0].Source, got[0].Producer)
+	}
+	// Two sentences about one file are two findings, not one.
+	if got[0].Fingerprint == got[1].Fingerprint {
+		t.Error("two findings in one file share a fingerprint")
+	}
+	if got[0].Directive == "" {
+		t.Error("a model's finding arrived with nothing to do about it")
+	}
+}
+
+// The same objection, rephrased in whitespace or capitals, is the same
+// objection.
+func TestFromAnalysisIsStableAcrossWording(t *testing.T) {
+	one := domain.Analysis{Kind: "security", Findings: []domain.Finding{{File: "a.go", Note: "The token is weak."}}}
+	two := domain.Analysis{Kind: "security", Findings: []domain.Finding{{File: "a.go", Note: "the   token  is weak."}}}
+
+	first := sighter(t).FromAnalysis(one)
+	second := sighter(t).FromAnalysis(two)
+
+	if first[0].Fingerprint != second[0].Fingerprint {
+		t.Error("the same sentence, spaced differently, became a different finding")
+	}
+}
