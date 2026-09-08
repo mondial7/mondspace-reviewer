@@ -319,3 +319,22 @@ func storeAt(t *testing.T, dir string) *items.Store {
 	t.Helper()
 	return items.New(dir)
 }
+
+// Promotion is the planner's job; --promote is the escape hatch for a
+// repository that has no planner, and it must not duplicate on a second run.
+func TestPromoteWritesTheBacklogOnce(t *testing.T) {
+	repo, shared := repoWithAFinding(t)
+	msr(t, "scan", "--repo="+repo, "--since=start", "--dir="+shared)
+
+	first := msr(t, "export", "--promote", "--repo="+repo, "--dir="+shared)
+	if !strings.Contains(first, "promoted 1 item(s)") {
+		t.Fatalf("promote said %q", first)
+	}
+	if _, err := os.Stat(filepath.Join(shared, "items.jsonl")); err != nil {
+		t.Fatalf("no backlog file: %v", err)
+	}
+
+	if again := msr(t, "export", "--promote", "--repo="+repo, "--dir="+shared); !strings.Contains(again, "promoted 0 item(s)") {
+		t.Errorf("a second promotion said %q, want nothing new", again)
+	}
+}

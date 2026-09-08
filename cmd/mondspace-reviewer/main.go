@@ -225,12 +225,13 @@ func runExport(ctx context.Context, args []string, stdout io.Writer) error {
 	branch := fs.String("branch", "", "which branch's findings (default: the one checked out)")
 	everywhere := fs.Bool("all-branches", false, "every branch, not just this one")
 	state := fs.String("state", "", "only items in this state (open|accepted|pushed|fixed)")
+	promote := fs.Bool("promote", false, "write the items into items.jsonl for a planner that is not there to promote them itself")
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
 	}
 
-	if isItemFormat(*format) {
-		return exportItems(ctx, *format, *repo, *dir, *branch, *state, *everywhere, stdout)
+	if isItemFormat(*format) || *promote {
+		return exportItems(ctx, *format, *repo, *dir, *branch, *state, *everywhere, *promote, stdout)
 	}
 	reviewID, err := whichReview(*out, *target, *session)
 	if err != nil {
