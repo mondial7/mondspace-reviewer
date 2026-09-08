@@ -63,10 +63,10 @@ func TestAnnotatePersistsNoteAndShowsIt(t *testing.T) {
 		t.Fatalf("got %d persisted notes, want 1", len(store.notes))
 	}
 	n := store.notes[0]
-	if n.Kind != domain.NoteObjection || n.UnitID != "s-f001" || n.Text != "wrong layer" {
+	if n.Kind != contract.KindObjection || n.UnitID != "s-f001" || n.Message != "wrong layer" {
 		t.Errorf("note = %+v, want objection 'wrong layer' on s-f001", n)
 	}
-	if n.SessionID != "s" || n.ID == "" || n.TS.IsZero() {
+	if n.SessionID != "s" || n.ID == "" || n.FirstSeen.IsZero() {
 		t.Errorf("note should carry session, id and timestamp: %+v", n)
 	}
 
@@ -1725,7 +1725,7 @@ func TestAFileAlreadyJudgedIsCalledOutInTheBanner(t *testing.T) {
 	// A reviewer who marked a file ok formed that view against a version that
 	// no longer exists. Nothing else on the page would tell them.
 	sess := testSession()
-	sess.Notes = []domain.Note{{ID: "n1", UnitID: "s-f001", Kind: domain.NoteOK, Text: "fine"}}
+	sess.Notes = []contract.Item{contract.Item{Source: contract.SourceHuman, ID: "n1", UnitID: "s-f001", Kind: contract.KindOK, Message: "fine"}}
 	h := web.NewServer(sess, nil)
 
 	h.SetPending([]domain.FileStat{{Path: "auth/token.go", Added: 2}},
@@ -2821,8 +2821,8 @@ func TestTheReviewLogCanBeTakenOutOfTheApp(t *testing.T) {
 	// way to get it out was a separate CLI invocation against a session id
 	// (issue #19).
 	sess := testSession()
-	sess.Notes = []domain.Note{
-		{ID: "n1", UnitID: "s-f001", Kind: domain.NoteObjection, Text: "this retries forever"},
+	sess.Notes = []contract.Item{
+		contract.Item{Source: contract.SourceHuman, ID: "n1", UnitID: "s-f001", Kind: contract.KindObjection, Message: "this retries forever"},
 	}
 	h := web.NewServer(sess, nil)
 
@@ -2869,8 +2869,8 @@ func TestExportIsOfTheReviewYouAreLookingAt(t *testing.T) {
 	// mistake as auditing the wrong one.
 	other := testSession()
 	other.ID = "other"
-	other.Notes = []domain.Note{
-		{ID: "n2", UnitID: "s-f001", Kind: domain.NoteOK, Text: "a note from the other review"},
+	other.Notes = []contract.Item{
+		contract.Item{Source: contract.SourceHuman, ID: "n2", UnitID: "s-f001", Kind: contract.KindOK, Message: "a note from the other review"},
 	}
 	h := web.NewServer(testSession(), nil).
 		WithLoader(func(context.Context, string) (web.Session, error) { return other, nil }).
@@ -2919,9 +2919,9 @@ func TestAnnotatingAReviewOtherThanTheOpenOneShowsThere(t *testing.T) {
 	}
 }
 
-type recordingNotes struct{ notes []domain.Note }
+type recordingNotes struct{ notes []contract.Item }
 
-func (r *recordingNotes) AppendNote(n domain.Note) error {
+func (r *recordingNotes) AppendNote(n contract.Item) error {
 	r.notes = append(r.notes, n)
 	return nil
 }
@@ -2930,9 +2930,8 @@ func TestALineCanBeAnnotatedAndTheNoteShowsUnderIt(t *testing.T) {
 	// Real review happens on lines. This was the widest gap between msr and
 	// what a reviewer expects (ADR 0028).
 	sess := testSession()
-	sess.Notes = []domain.Note{
-		{ID: "n1", UnitID: "s-f001", Kind: domain.NoteQuestion,
-			Anchor: "+new body", Text: "why replace the whole body?"},
+	sess.Notes = []contract.Item{
+		contract.Item{Source: contract.SourceHuman, ID: "n1", UnitID: "s-f001", Kind: contract.KindQuestion, Anchor: "+new body", Message: "why replace the whole body?"},
 	}
 	h := web.NewServer(sess, nil)
 
@@ -2971,9 +2970,8 @@ func TestAnnotatingALineRecordsWhichLine(t *testing.T) {
 func TestANoteWhoseLineWentIsShownAsSuch(t *testing.T) {
 	// It must not vanish, and must not be shown as though it still applies.
 	sess := testSession()
-	sess.Notes = []domain.Note{
-		{ID: "n1", UnitID: "s-f001", Kind: domain.NoteObjection,
-			Anchor: "+a line that is no longer in this diff", Text: "this was wrong"},
+	sess.Notes = []contract.Item{
+		contract.Item{Source: contract.SourceHuman, ID: "n1", UnitID: "s-f001", Kind: contract.KindObjection, Anchor: "+a line that is no longer in this diff", Message: "this was wrong"},
 	}
 	h := web.NewServer(sess, nil)
 
@@ -3002,8 +3000,8 @@ func TestANoteRecordsTheFileItWasAbout(t *testing.T) {
 	if len(kept.notes) != 1 {
 		t.Fatalf("stored %+v", kept.notes)
 	}
-	if kept.notes[0].File != "auth/token.go" {
-		t.Errorf("File = %q, want the file the unit covers", kept.notes[0].File)
+	if kept.notes[0].Location.Path != "auth/token.go" {
+		t.Errorf("File = %q, want the file the unit covers", kept.notes[0].Location.Path)
 	}
 }
 

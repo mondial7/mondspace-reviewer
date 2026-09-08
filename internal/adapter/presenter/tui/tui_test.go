@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/mondial7/mondspace-reviewer/contract"
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/presenter/tui"
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
 )
@@ -187,11 +188,11 @@ func TestViewNeverBlankAndShowsHelp(t *testing.T) {
 }
 
 // recordingStore captures notes the TUI persists.
-type recordingStore struct{ notes []domain.Note }
+type recordingStore struct{ notes []contract.Item }
 
-func (s *recordingStore) AppendEvent(domain.Event) error { return nil }
-func (s *recordingStore) AppendUnit(domain.Unit) error   { return nil }
-func (s *recordingStore) AppendNote(n domain.Note) error { s.notes = append(s.notes, n); return nil }
+func (s *recordingStore) AppendEvent(domain.Event) error   { return nil }
+func (s *recordingStore) AppendUnit(domain.Unit) error     { return nil }
+func (s *recordingStore) AppendNote(n contract.Item) error { s.notes = append(s.notes, n); return nil }
 func (s *recordingStore) Load(string) (domain.Session, error) {
 	return domain.Session{}, nil
 }
@@ -214,7 +215,7 @@ func TestAnnotateOKWritesNoteAdvancesAndMarksRead(t *testing.T) {
 		t.Fatalf("store got %d notes, want 1", len(store.notes))
 	}
 	n := store.notes[0]
-	if n.Kind != domain.NoteOK || n.UnitID != "s-u001" || n.SessionID != "s" {
+	if n.Kind != contract.KindOK || n.UnitID != "s-u001" || n.SessionID != "s" {
 		t.Errorf("note = %+v, want ok on s-u001 in s", n)
 	}
 	if m.Cursor() != 1 {
@@ -228,12 +229,12 @@ func TestAnnotateOKWritesNoteAdvancesAndMarksRead(t *testing.T) {
 func TestAnnotateOtherKindsDoNotAdvance(t *testing.T) {
 	cases := []struct {
 		key  rune
-		kind domain.NoteKind
+		kind contract.Kind
 	}{
-		{'?', domain.NoteQuestion},
-		{'x', domain.NoteObjection},
-		{'d', domain.NoteDebt},
-		{'n', domain.NoteNote},
+		{'?', contract.KindQuestion},
+		{'x', contract.KindObjection},
+		{'d', contract.KindDebt},
+		{'n', contract.KindNote},
 	}
 	for _, tc := range cases {
 		t.Run(string(tc.kind), func(t *testing.T) {
@@ -282,7 +283,7 @@ func TestSlashFiltersByFileFlagAndKind(t *testing.T) {
 		{ID: "s-u002", SessionID: "s", Files: []string{"http/mw.go"}},
 		{ID: "s-u003", SessionID: "s", Files: []string{"auth/util.go"}, Flags: []domain.Flag{domain.FlagLarge}},
 	}
-	notes := []domain.Note{{ID: "n1", UnitID: "s-u002", Kind: domain.NoteObjection}}
+	notes := []contract.Item{contract.Item{Source: contract.SourceHuman, ID: "n1", UnitID: "s-u002", Kind: contract.KindObjection}}
 
 	filterTo := func(q string) int {
 		m := tui.New(units, notes, nil)
@@ -352,10 +353,7 @@ func TestViewRendersFailedFlag(t *testing.T) {
 
 func TestViewShowsSupersededMarker(t *testing.T) {
 	units := []domain.Unit{{ID: "s-u001", SessionID: "s", Files: []string{"a.go"}}}
-	notes := []domain.Note{{
-		ID: "n1", UnitID: "s-u001", Kind: domain.NoteObjection,
-		Text: "wrong choice", SupersededBy: "s-u007",
-	}}
+	notes := []contract.Item{contract.Item{Source: contract.SourceHuman, ID: "n1", UnitID: "s-u001", Kind: contract.KindObjection, Message: "wrong choice", SupersededBy: "s-u007"}}
 	m := enter(tui.New(units, notes, nil))
 
 	view := m.View()

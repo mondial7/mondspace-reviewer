@@ -3,6 +3,7 @@ package usecase_test
 import (
 	"testing"
 
+	"github.com/mondial7/mondspace-reviewer/contract"
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
 	"github.com/mondial7/mondspace-reviewer/internal/usecase"
 )
@@ -16,15 +17,15 @@ func reportSession() domain.Session {
 			{ID: "s-u002", Files: []string{"http/mw.go"}, Headline: domain.Headline{Text: "wired middleware", WhySrc: domain.WhyInferred}},
 			{ID: "s-u003", Files: []string{"db/pool.go"}, Headline: domain.Headline{Text: "added retry", WhySrc: domain.WhyInferred}},
 		},
-		Notes: []domain.Note{
-			{ID: "n1", UnitID: "s-u001", Kind: domain.NoteOK},
-			{ID: "n2", UnitID: "s-u002", Kind: domain.NoteObjection, Text: "wrong layer"},
-			{ID: "n3", UnitID: "s-u003", Kind: domain.NoteNote, Text: "fyi"},
+		Notes: []contract.Item{
+			contract.Item{Source: contract.SourceHuman, ID: "n1", UnitID: "s-u001", Kind: contract.KindOK},
+			contract.Item{Source: contract.SourceHuman, ID: "n2", UnitID: "s-u002", Kind: contract.KindObjection, Message: "wrong layer"},
+			contract.Item{Source: contract.SourceHuman, ID: "n3", UnitID: "s-u003", Kind: contract.KindNote, Message: "fyi"},
 		},
 	}
 }
 
-func groupFor(r domain.Report, kind domain.NoteKind) (domain.NoteGroup, bool) {
+func groupFor(r domain.Report, kind contract.Kind) (domain.NoteGroup, bool) {
 	for _, g := range r.Groups {
 		if g.Kind == kind {
 			return g, true
@@ -36,7 +37,7 @@ func groupFor(r domain.Report, kind domain.NoteKind) (domain.NoteGroup, bool) {
 func TestBuildReportOpenAgenda(t *testing.T) {
 	sess := reportSession()
 	sess.Notes = append(sess.Notes,
-		domain.Note{ID: "n6", UnitID: "s-u001", Kind: domain.NoteQuestion, Text: "why an interface?"},
+		contract.Item{Source: contract.SourceHuman, ID: "n6", UnitID: "s-u001", Kind: contract.KindQuestion, Message: "why an interface?"},
 	)
 
 	r := usecase.BuildReport(sess)
@@ -45,11 +46,11 @@ func TestBuildReportOpenAgenda(t *testing.T) {
 	if len(r.Agenda) != 2 {
 		t.Fatalf("Agenda = %d, want 2 (the objection and the question)", len(r.Agenda))
 	}
-	kinds := map[domain.NoteKind]bool{}
+	kinds := map[contract.Kind]bool{}
 	for _, it := range r.Agenda {
 		kinds[it.NoteKind] = true
 	}
-	if !kinds[domain.NoteObjection] || !kinds[domain.NoteQuestion] {
+	if !kinds[contract.KindObjection] || !kinds[contract.KindQuestion] {
 		t.Errorf("Agenda kinds = %v, want objection and question", kinds)
 	}
 	if len(r.Superseded) != 0 {
@@ -78,7 +79,7 @@ func TestBuildReportSupersededSection(t *testing.T) {
 	// A later unit rewrites auth/token.go, superseding the objection on s-u001.
 	sess.Units = append(sess.Units, domain.Unit{ID: "s-u004", Files: []string{"auth/token.go"}})
 	sess.Notes = append(sess.Notes,
-		domain.Note{ID: "n7", UnitID: "s-u001", Kind: domain.NoteObjection, Text: "bad choice"},
+		contract.Item{Source: contract.SourceHuman, ID: "n7", UnitID: "s-u001", Kind: contract.KindObjection, Message: "bad choice"},
 	)
 
 	r := usecase.BuildReport(sess)
@@ -103,8 +104,8 @@ func TestBuildReportSupersededSection(t *testing.T) {
 func TestBuildReportCollectsDebt(t *testing.T) {
 	sess := reportSession()
 	sess.Notes = append(sess.Notes,
-		domain.Note{ID: "n4", UnitID: "s-u003", Kind: domain.NoteDebt, Text: "add a test for the retry"},
-		domain.Note{ID: "n5", UnitID: "s-u001", Kind: domain.NoteDebt, Text: "document the interface"},
+		contract.Item{Source: contract.SourceHuman, ID: "n4", UnitID: "s-u003", Kind: contract.KindDebt, Message: "add a test for the retry"},
+		contract.Item{Source: contract.SourceHuman, ID: "n5", UnitID: "s-u001", Kind: contract.KindDebt, Message: "document the interface"},
 	)
 
 	r := usecase.BuildReport(sess)
@@ -128,7 +129,7 @@ func TestBuildReportCarriesUnitFlags(t *testing.T) {
 
 	r := usecase.BuildReport(sess)
 
-	obj, found := groupFor(r, domain.NoteObjection)
+	obj, found := groupFor(r, contract.KindObjection)
 	if !found || len(obj.Items) != 1 {
 		t.Fatalf("objection group = %+v, want one item", obj)
 	}
@@ -137,7 +138,7 @@ func TestBuildReportCarriesUnitFlags(t *testing.T) {
 	}
 
 	// s-u001 was never flagged.
-	ok, found := groupFor(r, domain.NoteOK)
+	ok, found := groupFor(r, contract.KindOK)
 	if !found || len(ok.Items) != 1 {
 		t.Fatalf("ok group = %+v, want one item", ok)
 	}
@@ -149,7 +150,7 @@ func TestBuildReportCarriesUnitFlags(t *testing.T) {
 func TestBuildReportGroupsByNoteKind(t *testing.T) {
 	r := usecase.BuildReport(reportSession())
 
-	ok, found := groupFor(r, domain.NoteOK)
+	ok, found := groupFor(r, contract.KindOK)
 	if !found || len(ok.Items) != 1 || ok.Items[0].UnitID != "s-u001" {
 		t.Fatalf("ok group = %+v, want one item on s-u001", ok)
 	}
@@ -157,13 +158,13 @@ func TestBuildReportGroupsByNoteKind(t *testing.T) {
 		t.Errorf("item headline = %q, want the unit's headline", ok.Items[0].Headline.Text)
 	}
 
-	obj, found := groupFor(r, domain.NoteObjection)
+	obj, found := groupFor(r, contract.KindObjection)
 	if !found || len(obj.Items) != 1 || obj.Items[0].NoteText != "wrong layer" {
 		t.Errorf("objection group = %+v, want the note text carried", obj)
 	}
 
 	// Kinds with no notes are not emitted as empty groups.
-	if _, found := groupFor(r, domain.NoteQuestion); found {
+	if _, found := groupFor(r, contract.KindQuestion); found {
 		t.Error("question group should be absent when there are no question notes")
 	}
 }

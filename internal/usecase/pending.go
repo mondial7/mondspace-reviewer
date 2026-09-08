@@ -4,6 +4,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/mondial7/mondspace-reviewer/contract"
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
 )
 
@@ -14,7 +15,7 @@ import (
 // files that have changed beyond it. What makes this worth a function rather
 // than a count is the classification — "three files changed" is a fact, and
 // "one of them is the file you marked ok" is a reason to stop and decide.
-func PendingWork(units []domain.Unit, notes []domain.Note, changed []domain.FileStat,
+func PendingWork(units []domain.Unit, notes []contract.Item, changed []domain.FileStat,
 	from, to domain.SnapshotRef, since time.Time) domain.Pending {
 
 	// Which files the open review covers, and which of those carry a note that

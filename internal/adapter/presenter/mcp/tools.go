@@ -22,7 +22,7 @@ type Review struct {
 	Ref   string
 	Repo  string
 
-	Notes     []domain.Note
+	Notes     []contract.Item
 	Exchanges []domain.Exchange
 	Analyses  []domain.Analysis
 	// Reported is what the deterministic analysers said. Kept apart from
@@ -189,7 +189,7 @@ func fileRecord(r Review, path string) string {
 		}
 		shown++
 		fmt.Fprintf(&b, "\n%d. [%s] %s\n   %s\n",
-			shown, n.Kind, line(n.Anchor), n.Text)
+			shown, n.Kind, line(n.Anchor), n.Message)
 	}
 
 	if shown == 0 {
@@ -215,7 +215,7 @@ func humanFeedback(r Review, path string) string {
 		}
 		shown++
 		fmt.Fprintf(&b, "\n%d. [%s] %s\n", shown, n.Kind, where(file, n.Anchor))
-		fmt.Fprintf(&b, "   %s\n", n.Text)
+		fmt.Fprintf(&b, "   %s\n", n.Message)
 	}
 
 	if shown == 0 {
@@ -428,7 +428,7 @@ func workspaceFeedback(reviews []Review) string {
 	var b strings.Builder
 	shown := 0
 	for _, r := range reviews {
-		var asks []domain.Note
+		var asks []contract.Item
 		for _, n := range r.Notes {
 			if n.Actionable() {
 				asks = append(asks, n)
@@ -441,7 +441,7 @@ func workspaceFeedback(reviews []Review) string {
 		fmt.Fprintf(&b, "\n%s\n", describe(r))
 		for _, n := range asks {
 			fmt.Fprintf(&b, "  [%s] %s\n      %s\n",
-				n.Kind, where(fileOf(r, n), n.Anchor), n.Text)
+				n.Kind, where(fileOf(r, n), n.Anchor), n.Message)
 		}
 	}
 	if shown == 0 {
@@ -506,9 +506,9 @@ func searchResults(query string, reviews []Review) string {
 // humanKinds are the kinds of thing a person wrote. Everything else in the
 // search corpus came out of an audit.
 var humanKinds = map[string]bool{
-	string(domain.NoteOK): true, string(domain.NoteQuestion): true,
-	string(domain.NoteObjection): true, string(domain.NoteDebt): true,
-	string(domain.NoteNote): true, "answer": true,
+	string(contract.KindOK): true, string(contract.KindQuestion): true,
+	string(contract.KindObjection): true, string(contract.KindDebt): true,
+	string(contract.KindNote): true, "answer": true,
 }
 
 // source says who a hit came from.
@@ -558,9 +558,9 @@ func line(anchor string) string {
 
 // fileOf is the file a note concerns, from the note itself or from the review's
 // units for notes written before that was recorded.
-func fileOf(r Review, n domain.Note) string {
-	if n.File != "" {
-		return n.File
+func fileOf(r Review, n contract.Item) string {
+	if n.Location.Path != "" {
+		return n.Location.Path
 	}
 	return r.Files[n.UnitID]
 }

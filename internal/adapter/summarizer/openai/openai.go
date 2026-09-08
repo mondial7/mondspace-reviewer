@@ -342,7 +342,7 @@ func askPrompt(question string, c domain.AskContext) string {
 		b.WriteString("Diff:\n" + c.Diff.Text + "\n")
 	}
 	for _, n := range c.Notes {
-		b.WriteString("Note on " + n.UnitID + " (" + string(n.Kind) + "): " + n.Text + "\n")
+		b.WriteString("Note on " + n.UnitID + " (" + string(n.Kind) + "): " + n.Message + "\n")
 	}
 	b.WriteString("\nQuestion: " + question)
 	return b.String()

@@ -662,7 +662,7 @@
             {{ range . }}
             <li class="notes__item notes__item--{{ .Kind }}">
               <span class="notes__kind">{{ .Kind }}</span>
-              <span class="notes__text">{{ .Text }}</span>
+              <span class="notes__text">{{ .Message }}</span>
               {{ with .SupersededBy }}<span class="notes__superseded">superseded by {{ . }}</span>{{ end }}
             </li>
             {{ end }}
@@ -674,7 +674,7 @@
                on lines (ADR 0028). The anchor is the line's text, so the note
                survives the diff growing above it. -->
           <div class="post__diffbox" data-diff-for="{{ .ID }}">
-            <pre class="post__diff{{ if .Hidden }} post__diff--compact{{ end }}"><code>{{ range .Diff }}<span class="diff__line diff__line--{{ .Kind }}{{ if .Notes }} diff__line--noted{{ end }}"{{ if or (eq .Kind "add") (eq .Kind "del") }} data-anchor="{{ .Text }}" data-nth="{{ .Nth }}" tabindex="0" role="button" title="note this line"{{ end }}>{{ .Text }}</span>{{ range .Notes }}<span class="diff__note diff__note--{{ .Kind }}"><span class="diff__notekind">{{ .Kind }}</span>{{ .Text }}</span>{{ end }}{{ end }}</code></pre>
+            <pre class="post__diff{{ if .Hidden }} post__diff--compact{{ end }}"><code>{{ range .Diff }}<span class="diff__line diff__line--{{ .Kind }}{{ if .Notes }} diff__line--noted{{ end }}"{{ if or (eq .Kind "add") (eq .Kind "del") }} data-anchor="{{ .Text }}" data-nth="{{ .Nth }}" tabindex="0" role="button" title="note this line"{{ end }}>{{ .Text }}</span>{{ range .Notes }}<span class="diff__note diff__note--{{ .Kind }}"><span class="diff__notekind">{{ .Kind }}</span>{{ .Message }}</span>{{ end }}{{ end }}</code></pre>
 
             <!-- Not a sentence dressed as a diff line. A review that cannot
                  show you the whole change is not a review, so this is a
@@ -699,7 +699,7 @@
           <ul class="note--orphaned">
             {{ range . }}
             <li class="note__orphan">
-              <span class="diff__notekind">{{ .Kind }}</span>{{ .Text }}
+              <span class="diff__notekind">{{ .Kind }}</span>{{ .Message }}
               <span class="note__gone">the line this was on has changed</span>
             </li>
             {{ end }}

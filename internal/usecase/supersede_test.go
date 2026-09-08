@@ -3,6 +3,7 @@ package usecase_test
 import (
 	"testing"
 
+	"github.com/mondial7/mondspace-reviewer/contract"
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
 	"github.com/mondial7/mondspace-reviewer/internal/usecase"
 )
@@ -13,15 +14,15 @@ func TestMarkSupersededFileLevel(t *testing.T) {
 		{ID: "u2", Files: []string{"b.go"}},
 		{ID: "u3", Files: []string{"a.go"}}, // later unit touching a.go again
 	}
-	notes := []domain.Note{
-		{ID: "n1", UnitID: "u1", Kind: domain.NoteObjection, Text: "wrong"},
-		{ID: "n2", UnitID: "u2", Kind: domain.NoteQuestion, Text: "why?"},
-		{ID: "n3", UnitID: "u3", Kind: domain.NoteOK},
+	notes := []contract.Item{
+		contract.Item{Source: contract.SourceHuman, ID: "n1", UnitID: "u1", Kind: contract.KindObjection, Message: "wrong"},
+		contract.Item{Source: contract.SourceHuman, ID: "n2", UnitID: "u2", Kind: contract.KindQuestion, Message: "why?"},
+		contract.Item{Source: contract.SourceHuman, ID: "n3", UnitID: "u3", Kind: contract.KindOK},
 	}
 
 	got := usecase.MarkSuperseded(units, notes)
 
-	byID := map[string]domain.Note{}
+	byID := map[string]contract.Item{}
 	for _, n := range got {
 		byID[n.ID] = n
 	}
@@ -36,7 +37,7 @@ func TestMarkSupersededFileLevel(t *testing.T) {
 	}
 
 	// The note is surfaced, never deleted or auto-resolved: text and kind stay.
-	if byID["n1"].Text != "wrong" || byID["n1"].Kind != domain.NoteObjection {
+	if byID["n1"].Message != "wrong" || byID["n1"].Kind != contract.KindObjection {
 		t.Errorf("n1 content changed: %+v", byID["n1"])
 	}
 	if len(got) != 3 {

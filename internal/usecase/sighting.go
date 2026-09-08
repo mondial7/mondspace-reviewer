@@ -92,14 +92,19 @@ func (s Sighting) Seen(found []contract.Item) []contract.Item {
 	return out
 }
 
-// FromNote converts a reviewer's annotation.
+// FromNote finishes a reviewer's annotation into a stored item.
 //
-// A note is anchored to a unit and to a line's text rather than to a number
-// (ADR 0028, ADR 0030), and both of those come with it. Its fingerprint is
-// built from the anchor for the same reason the anchor exists: the line it was
-// written about is what identifies it, wherever that line has moved to.
-func (s Sighting) FromNote(n domain.Note) contract.Item {
-	path := contract.NormalisePath(n.File)
+// A note arrives already carrying most of what an item needs — its own id, the
+// unit, the kind, the anchor — so this fills in only what the lens could not
+// know: the identity, the branch, and how much it should interrupt.
+//
+// Its fingerprint is built from the anchor for the same reason the anchor
+// exists: the line it was written about is what identifies it, wherever that
+// line has moved to (ADR 0028).
+func (s Sighting) FromNote(n contract.Item) contract.Item {
+	n.Location.Path = contract.NormalisePath(n.Location.Path)
+	n.Location.Commit = s.Commit
+
 	anchor := []string{n.Anchor}
 	if n.Anchor == "" {
 		// A note about the file as a whole. Its own id is the only thing that
@@ -108,25 +113,22 @@ func (s Sighting) FromNote(n domain.Note) contract.Item {
 		anchor = []string{n.ID}
 	}
 
-	return contract.Item{
-		ID:          n.ID,
-		Fingerprint: contract.Fingerprint(path, "human:"+string(n.Kind), anchor),
-		Source:      contract.SourceHuman,
-		Producer:    "human",
-		Location:    contract.Location{Path: path, Commit: s.Commit},
-		Severity:    noteSeverity(n.Kind),
-		Title:       title(string(n.Kind), n.Text),
-		Message:     n.Text,
-		Directive:   n.Text,
-		State:       contract.StateOpen,
-		Branch:      s.Branch,
-		SessionID:   n.SessionID,
-		UnitID:      n.UnitID,
-		Anchor:      n.Anchor,
-		AnchorNth:   n.AnchorNth,
-		FirstSeen:   n.TS,
-		LastSeen:    n.TS,
+	n.Fingerprint = contract.Fingerprint(n.Location.Path, "human:"+string(n.Kind), anchor)
+	n.Source = contract.SourceHuman
+	n.Producer = "human"
+	n.Severity = noteSeverity(n.Kind)
+	n.Title = title(string(n.Kind), n.Message)
+	if n.Directive == "" {
+		n.Directive = n.Message
 	}
+	if n.State == "" {
+		n.State = contract.StateOpen
+	}
+	n.Branch = s.Branch
+	if n.LastSeen.IsZero() {
+		n.LastSeen = n.FirstSeen
+	}
+	return n
 }
 
 // lines splits a file, once, for whichever findings are in it.
@@ -162,11 +164,11 @@ func directiveFor(item contract.Item) string {
 // `question` and `debt` are worth answering and worth remembering, neither of
 // which blocks. The kinds that are the reviewer thinking aloud do not become
 // work at all, and are filtered before they reach here.
-func noteSeverity(kind domain.NoteKind) contract.Severity {
+func noteSeverity(kind contract.Kind) contract.Severity {
 	switch kind {
-	case domain.NoteObjection:
+	case contract.KindObjection:
 		return contract.SeverityHigh
-	case domain.NoteQuestion:
+	case contract.KindQuestion:
 		return contract.SeverityMedium
 	default:
 		return contract.SeverityLow

@@ -3,6 +3,7 @@ package usecase_test
 import (
 	"testing"
 
+	"github.com/mondial7/mondspace-reviewer/contract"
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
 	"github.com/mondial7/mondspace-reviewer/internal/usecase"
 )
@@ -12,7 +13,7 @@ const anchorDiff = "@@ -1,4 +1,6 @@\n package auth\n\n-func Valid(t string) bool
 func TestANoteWithoutAnAnchorStaysAboutTheWholeFile(t *testing.T) {
 	// The existing kind of note. Line-level is an addition, not a replacement:
 	// plenty of what a reviewer says is about the file, not a line.
-	notes := []domain.Note{{ID: "n1", UnitID: "u1", Text: "this file needs tests"}}
+	notes := []contract.Item{contract.Item{Source: contract.SourceHuman, ID: "n1", UnitID: "u1", Message: "this file needs tests"}}
 
 	lines, orphaned := usecase.AnchorNotes(domain.Diff{Text: anchorDiff}, notes)
 
@@ -27,9 +28,8 @@ func TestANoteWithoutAnAnchorStaysAboutTheWholeFile(t *testing.T) {
 }
 
 func TestANoteAnchorsToTheLineItWasWrittenOn(t *testing.T) {
-	notes := []domain.Note{
-		{ID: "n1", UnitID: "u1", Anchor: "+func Valid(t, scope string) bool {",
-			Text: "this breaks every caller"},
+	notes := []contract.Item{
+		contract.Item{Source: contract.SourceHuman, ID: "n1", UnitID: "u1", Anchor: "+func Valid(t, scope string) bool {", Message: "this breaks every caller"},
 	}
 
 	lines, orphaned := usecase.AnchorNotes(domain.Diff{Text: anchorDiff}, notes)
@@ -55,8 +55,8 @@ func TestANoteAnchorsToTheLineItWasWrittenOn(t *testing.T) {
 func TestANoteSurvivesTheLineMovingUpOrDown(t *testing.T) {
 	// The whole reason for anchoring to content rather than to a line number:
 	// a diff grows above the line you commented on constantly.
-	notes := []domain.Note{
-		{ID: "n1", Anchor: "+\treturn t != \"\" && scope != \"\"", Text: "no length check"},
+	notes := []contract.Item{
+		contract.Item{Source: contract.SourceHuman, ID: "n1", Anchor: "+\treturn t != \"\" && scope != \"\"", Message: "no length check"},
 	}
 	moved := "@@ -1,9 +1,12 @@\n package auth\n\n+import \"strings\"\n+\n // Valid says whether a token is usable.\n-func Valid(t string) bool {\n+func Valid(t, scope string) bool {\n+\treturn t != \"\" && scope != \"\"\n }\n"
 
@@ -76,8 +76,8 @@ func TestANoteOnALineThatIsGoneIsReportedNotDropped(t *testing.T) {
 	// A judgement about code that no longer exists must not be silently
 	// discarded, and must not be silently shown as though it still applies —
 	// the same discipline as a stale sign-off (ADR 0021).
-	notes := []domain.Note{
-		{ID: "n1", Anchor: "+\tpanic(\"unreachable\")", Text: "why panic here?"},
+	notes := []contract.Item{
+		contract.Item{Source: contract.SourceHuman, ID: "n1", Anchor: "+\tpanic(\"unreachable\")", Message: "why panic here?"},
 	}
 
 	lines, orphaned := usecase.AnchorNotes(domain.Diff{Text: anchorDiff}, notes)
@@ -96,8 +96,8 @@ func TestIdenticalLinesAreToldApartByOccurrence(t *testing.T) {
 	// Closing braces, blank lines and `return nil` are everywhere. Anchoring on
 	// text alone would put every note on the first one.
 	diff := "@@\n+\treturn nil\n+}\n+\n+func B() error {\n+\treturn nil\n+}\n"
-	notes := []domain.Note{
-		{ID: "n1", Anchor: "+\treturn nil", AnchorNth: 1, Text: "the second one"},
+	notes := []contract.Item{
+		contract.Item{Source: contract.SourceHuman, ID: "n1", Anchor: "+\treturn nil", AnchorNth: 1, Message: "the second one"},
 	}
 
 	lines, orphaned := usecase.AnchorNotes(domain.Diff{Text: diff}, notes)
@@ -124,7 +124,7 @@ func TestAnOccurrenceThatNoLongerExistsFallsBackToTheFirst(t *testing.T) {
 	// The line is still there, just not as many times. Better to show the note
 	// somewhere true than to orphan a judgement that still applies.
 	diff := "@@\n+\treturn nil\n+}\n"
-	notes := []domain.Note{{ID: "n1", Anchor: "+\treturn nil", AnchorNth: 3, Text: "still relevant"}}
+	notes := []contract.Item{contract.Item{Source: contract.SourceHuman, ID: "n1", Anchor: "+\treturn nil", AnchorNth: 3, Message: "still relevant"}}
 
 	lines, orphaned := usecase.AnchorNotes(domain.Diff{Text: diff}, notes)
 

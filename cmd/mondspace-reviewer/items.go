@@ -158,11 +158,11 @@ func recordFindings(store *items.Store, found []contract.Item, in sighting) ([]c
 // Only the kinds that are work: `ok` and `note` are the reviewer thinking
 // aloud, and handing those to an agent as tasks is worse than handing it
 // nothing.
-func recordNote(store *items.Store, note domain.Note, branch, repo string) error {
+func recordNote(store *items.Store, note contract.Item, branch, repo string) error {
 	if !note.Actionable() {
 		return nil
 	}
-	sight := usecase.Sighting{Branch: branch, At: note.TS, Mint: newULID, Body: fileBodies(repo)}
+	sight := usecase.Sighting{Branch: branch, At: note.FirstSeen, Mint: newULID, Body: fileBodies(repo)}
 	return store.Append(sight.FromNote(note))
 }
 

@@ -32,9 +32,9 @@ import (
 func wiredServer(t *testing.T) *web.Server {
 	t.Helper()
 	sess := testSession()
-	sess.Notes = []domain.Note{
-		{ID: "n1", UnitID: "s-f001", Kind: domain.NoteOK, Text: "fine"},
-		{ID: "n2", UnitID: "s-f002", Kind: domain.NoteQuestion, Anchor: "+package http", Text: "why here?"},
+	sess.Notes = []contract.Item{
+		contract.Item{Source: contract.SourceHuman, ID: "n1", UnitID: "s-f001", Kind: contract.KindOK, Message: "fine"},
+		contract.Item{Source: contract.SourceHuman, ID: "n2", UnitID: "s-f002", Kind: contract.KindQuestion, Anchor: "+package http", Message: "why here?"},
 	}
 	sess.Target = domain.Target{Kind: domain.TargetCommit, Ref: "abc12345",
 		Title: "a commit", Subtitle: "abc12345 · Someone"}

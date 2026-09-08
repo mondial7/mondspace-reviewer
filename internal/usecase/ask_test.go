@@ -3,6 +3,7 @@ package usecase_test
 import (
 	"testing"
 
+	"github.com/mondial7/mondspace-reviewer/contract"
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
 	"github.com/mondial7/mondspace-reviewer/internal/usecase"
 )
@@ -15,9 +16,9 @@ func askSession() domain.Session {
 			{ID: "s-u001", Files: []string{"auth/token.go"}, Headline: domain.Headline{Text: "extracted validator", Why: "swap lib", WhySrc: domain.WhyStated}},
 			{ID: "s-u002", Files: []string{"http/mw.go"}, Headline: domain.Headline{Text: "wired middleware", WhySrc: domain.WhyInferred}},
 		},
-		Notes: []domain.Note{
-			{ID: "n1", UnitID: "s-u001", Kind: domain.NoteObjection, Text: "why an interface?"},
-			{ID: "n2", UnitID: "s-u002", Kind: domain.NoteOK},
+		Notes: []contract.Item{
+			contract.Item{Source: contract.SourceHuman, ID: "n1", UnitID: "s-u001", Kind: contract.KindObjection, Message: "why an interface?"},
+			contract.Item{Source: contract.SourceHuman, ID: "n2", UnitID: "s-u002", Kind: contract.KindOK},
 		},
 	}
 }

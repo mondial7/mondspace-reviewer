@@ -6,6 +6,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/mondial7/mondspace-reviewer/contract"
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
 )
 
@@ -68,7 +69,7 @@ func ExportMarkdown(r domain.Report) string {
 // directive phrases an open concern as an instruction for the next agent run.
 func directive(it domain.ReportItem) string {
 	verb := "Address the objection on"
-	if it.NoteKind == domain.NoteQuestion {
+	if it.NoteKind == contract.KindQuestion {
 		verb = "Answer the question on"
 	}
 	line := fmt.Sprintf("%s %s (%s)", verb, it.UnitID, it.Headline.Text)
@@ -156,9 +157,9 @@ func slackHeadline(r domain.Report) string {
 	var questions, objections int
 	for _, it := range r.Agenda {
 		switch it.NoteKind {
-		case domain.NoteQuestion:
+		case contract.KindQuestion:
 			questions++
-		case domain.NoteObjection:
+		case contract.KindObjection:
 			objections++
 		}
 	}

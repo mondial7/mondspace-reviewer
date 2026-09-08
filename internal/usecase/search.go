@@ -4,6 +4,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/mondial7/mondspace-reviewer/contract"
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
 )
 
@@ -62,7 +63,7 @@ func Search(query string, in []Searchable) []Searchable {
 
 // SearchableReview turns one review's written record into things that can be
 // found again.
-func SearchableReview(targetID, ref, title string, notes []domain.Note,
+func SearchableReview(targetID, ref, title string, notes []contract.Item,
 	exchanges []domain.Exchange, analyses []domain.Analysis, unitFile func(string) string) []Searchable {
 
 	var out []Searchable
@@ -79,11 +80,11 @@ func SearchableReview(targetID, ref, title string, notes []domain.Note,
 	for _, n := range notes {
 		// The note's own record of what it was about, falling back to the review
 		// for notes written before that was kept.
-		where := n.File
+		where := n.Location.Path
 		if where == "" && unitFile != nil {
 			where = unitFile(n.UnitID)
 		}
-		add(string(n.Kind), where, n.Text)
+		add(string(n.Kind), where, n.Message)
 	}
 	for _, e := range exchanges {
 		add("question", "", e.Question)

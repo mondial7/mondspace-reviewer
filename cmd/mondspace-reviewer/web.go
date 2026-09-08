@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mondial7/mondspace-reviewer/contract"
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/config"
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/presenter/web"
 	gitsnap "github.com/mondial7/mondspace-reviewer/internal/adapter/snapshot/git"
@@ -379,7 +380,7 @@ func discoverSessions(out, repo string) []web.SessionSummary {
 			summary.Flags += len(u.Flags)
 		}
 		for _, n := range s.Notes {
-			if n.Kind == domain.NoteQuestion || n.Kind == domain.NoteObjection {
+			if n.Kind == contract.KindQuestion || n.Kind == contract.KindObjection {
 				summary.Open++
 			}
 		}
@@ -1266,7 +1267,7 @@ func sessionLoader(workspace []web.SessionSummary, out string) web.Loader {
 // with.
 type targetNotes struct{}
 
-func (targetNotes) AppendNote(n domain.Note) error {
+func (targetNotes) AppendNote(n contract.Item) error {
 	entry, known := lookupTarget(n.SessionID)
 	if !known {
 		return fmt.Errorf("no such review %q", n.SessionID)

@@ -108,12 +108,7 @@ func TestSeenSurvivesAnUnreadableFile(t *testing.T) {
 }
 
 func TestFromNote(t *testing.T) {
-	note := domain.Note{
-		ID: "note-1", SessionID: "sess-1", UnitID: "unit-3",
-		Kind: domain.NoteObjection, Text: "this swallows the error",
-		File: "internal/p/p.go", Anchor: "	token := rand.Int()", AnchorNth: 1,
-		TS: time.Date(2026, 9, 8, 11, 0, 0, 0, time.UTC),
-	}
+	note := contract.Item{Source: contract.SourceHuman, Location: contract.Location{Path: "internal/p/p.go"}, ID: "note-1", SessionID: "sess-1", UnitID: "unit-3", Kind: contract.KindObjection, Message: "this swallows the error", Anchor: "	token := rand.Int()", AnchorNth: 1, FirstSeen: time.Date(2026, 9, 8, 11, 0, 0, 0, time.UTC)}
 
 	got := sighter(t).FromNote(note)
 
@@ -129,7 +124,7 @@ func TestFromNote(t *testing.T) {
 	if got.UnitID != "unit-3" || got.Anchor != note.Anchor || got.AnchorNth != 1 {
 		t.Error("the note lost its anchoring on the way to an item")
 	}
-	if got.Directive != note.Text {
+	if got.Directive != note.Message {
 		t.Errorf("directive = %q, want what the reviewer wrote", got.Directive)
 	}
 }
@@ -137,8 +132,8 @@ func TestFromNote(t *testing.T) {
 // Two notes on one file are two items, even when neither is anchored to a line.
 func TestFromNoteSeparatesUnanchoredNotes(t *testing.T) {
 	s := sighter(t)
-	first := s.FromNote(domain.Note{ID: "note-1", Kind: domain.NoteDebt, Text: "a", File: "internal/p/p.go"})
-	second := s.FromNote(domain.Note{ID: "note-2", Kind: domain.NoteDebt, Text: "b", File: "internal/p/p.go"})
+	first := s.FromNote(contract.Item{Source: contract.SourceHuman, Location: contract.Location{Path: "internal/p/p.go"}, ID: "note-1", Kind: contract.KindDebt, Message: "a"})
+	second := s.FromNote(contract.Item{Source: contract.SourceHuman, Location: contract.Location{Path: "internal/p/p.go"}, ID: "note-2", Kind: contract.KindDebt, Message: "b"})
 
 	if first.Fingerprint == second.Fingerprint {
 		t.Error("two file-wide notes share a fingerprint")

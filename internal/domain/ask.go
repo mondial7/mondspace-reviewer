@@ -1,5 +1,7 @@
 package domain
 
+import "github.com/mondial7/mondspace-reviewer/contract"
+
 // AskScope is how wide an interrogation reaches.
 type AskScope string
 
@@ -15,6 +17,6 @@ type AskContext struct {
 	Prompt    string
 	Units     []Unit
 	Diff      Diff
-	Notes     []Note
+	Notes     []contract.Item
 	HasStated bool // whether the current unit carries a stated intent
 }

@@ -295,9 +295,9 @@ func TestOnlyNotesThatAreWorkReachTheStore(t *testing.T) {
 	repo, shared := repoWithAFinding(t)
 	store := storeAt(t, shared)
 
-	for _, note := range []domain.Note{
-		{ID: "n1", Kind: domain.NoteObjection, Text: "this swallows the error", File: "a.go"},
-		{ID: "n2", Kind: domain.NoteOK, Text: "fine", File: "a.go"},
+	for _, note := range []contract.Item{
+		contract.Item{Source: contract.SourceHuman, Location: contract.Location{Path: "a.go"}, ID: "n1", Kind: contract.KindObjection, Message: "this swallows the error"},
+		contract.Item{Source: contract.SourceHuman, Location: contract.Location{Path: "a.go"}, ID: "n2", Kind: contract.KindOK, Message: "fine"},
 	} {
 		if err := recordNote(store, note, "main", repo); err != nil {
 			t.Fatal(err)
