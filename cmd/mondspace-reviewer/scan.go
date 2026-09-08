@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mondial7/mondspace-reviewer/contract"
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/config"
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/presenter/web"
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/scanner/local"
@@ -51,7 +52,7 @@ type scanResult struct {
 	// claim of this layer is that it is exactly right.
 	print   string
 	at      time.Time
-	reports []domain.Reported
+	reports []contract.Item
 	// verified says this was decided by looking at the base rather than by
 	// intersecting lines. The page says which, because the two answers differ
 	// and a reviewer deciding whether to run the expensive one needs to know
@@ -220,7 +221,7 @@ func verifyTarget(ctx context.Context, targetID string) error {
 // same shape as a review with nothing wrong with it, and the settings page is
 // where the difference is stated.
 func reportedOf() web.ReportedOf {
-	return func(targetID string) []domain.Reported {
+	return func(targetID string) []contract.Item {
 		scannersMu.Lock()
 		defer scannersMu.Unlock()
 		return scanned[targetID].reports

@@ -364,3 +364,27 @@ func TestAnAuditNeverRunIsNotAnError(t *testing.T) {
 		t.Errorf("got %+v, want nothing recorded", got)
 	}
 }
+
+// A findings cache written before findings became items holds records this
+// build cannot read. They are dropped rather than shown as empty ones: the file
+// is a cache of something reproducible, and the next scan rewrites it.
+func TestLoadReportedDropsRecordsFromBeforeTheMerge(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "sess-1")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	legacy := `[{"tool":"gosec","rule":"G404","file":"a.go","line":4,"message":"weak random"}]`
+	if err := os.WriteFile(filepath.Join(dir, "reported-found.json"), []byte(legacy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := jsonl.New(root).LoadReported("sess-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(got) != 0 {
+		t.Errorf("LoadReported = %+v, want the unreadable records dropped", got)
+	}
+}

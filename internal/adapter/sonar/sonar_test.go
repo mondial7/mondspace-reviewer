@@ -7,8 +7,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/mondial7/mondspace-reviewer/contract"
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/sonar"
-	"github.com/mondial7/mondspace-reviewer/internal/domain"
 )
 
 func server(t *testing.T, body string) *httptest.Server {
@@ -49,13 +49,13 @@ func TestIssuesBecomeFindings(t *testing.T) {
 	if len(got) != 2 {
 		t.Fatalf("pulled %d issues, want 2", len(got))
 	}
-	if got[0].Tool != sonar.Tool || got[0].Rule != "go:S2245" {
-		t.Errorf("attribution = %q/%q", got[0].Tool, got[0].Rule)
+	if got[0].Producer != sonar.Tool || got[0].RuleID != "go:S2245" {
+		t.Errorf("attribution = %q/%q", got[0].Producer, got[0].RuleID)
 	}
-	if got[0].File != "internal/a.go" {
-		t.Errorf("file = %q, want the project key stripped", got[0].File)
+	if got[0].Location.Path != "internal/a.go" {
+		t.Errorf("file = %q, want the project key stripped", got[0].Location.Path)
 	}
-	if got[0].Severity != domain.SeverityHigh || got[1].Severity != domain.SeverityLow {
+	if got[0].Severity != contract.SeverityHigh || got[1].Severity != contract.SeverityLow {
 		t.Errorf("severities = %q and %q", got[0].Severity, got[1].Severity)
 	}
 }
@@ -81,7 +81,7 @@ func TestImpactsWinOverTheLegacySeverity(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if got[0].Severity != domain.SeverityHigh {
+	if got[0].Severity != contract.SeverityHigh {
 		t.Errorf("severity = %q, want the worst impact", got[0].Severity)
 	}
 }

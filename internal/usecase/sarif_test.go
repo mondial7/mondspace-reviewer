@@ -41,19 +41,19 @@ func TestSARIFIsReadIntoAttributedFindings(t *testing.T) {
 	if len(got) != 2 {
 		t.Fatalf("got %d findings, want 2: %+v", len(got), got)
 	}
-	if got[0].Tool != "gosec" || got[0].Rule != "G404" {
+	if got[0].Producer != "gosec" || got[0].RuleID != "G404" {
 		t.Errorf("first finding = %+v, want it attributed to gosec/G404", got[0])
 	}
 	// An absolute URI and a relative one must both land on the path git uses,
 	// or the finding attaches to no file at all.
-	if got[0].File != "internal/api/handler.go" {
-		t.Errorf("file = %q, want it relative to the repository", got[0].File)
+	if got[0].Location.Path != "internal/api/handler.go" {
+		t.Errorf("file = %q, want it relative to the repository", got[0].Location.Path)
 	}
-	if got[1].File != "internal/store/read.go" {
-		t.Errorf("file = %q", got[1].File)
+	if got[1].Location.Path != "internal/store/read.go" {
+		t.Errorf("file = %q", got[1].Location.Path)
 	}
-	if got[0].Line != 42 {
-		t.Errorf("line = %d", got[0].Line)
+	if got[0].Location.StartLine != 42 {
+		t.Errorf("line = %d", got[0].Location.StartLine)
 	}
 	if got[0].Severity != domain.SeverityMedium || got[1].Severity != domain.SeverityHigh {
 		t.Errorf("severities = %q, %q; want the tool's own words mapped",
@@ -84,14 +84,14 @@ func TestLineOutputIsReadIncludingTheRuleItNamed(t *testing.T) {
 	if len(got) != 2 {
 		t.Fatalf("got %d findings, want 2: %+v", len(got), got)
 	}
-	if got[0].Rule != "SA4006" {
-		t.Errorf("rule = %q, want it pulled out of the message", got[0].Rule)
+	if got[0].RuleID != "SA4006" {
+		t.Errorf("rule = %q, want it pulled out of the message", got[0].RuleID)
 	}
 	if got[0].Message != "this value of err is never used" {
 		t.Errorf("message = %q, want the rule removed from it", got[0].Message)
 	}
-	if got[0].Line != 88 || got[1].Line != 12 {
-		t.Errorf("lines = %d, %d", got[0].Line, got[1].Line)
+	if got[0].Location.StartLine != 88 || got[1].Location.StartLine != 12 {
+		t.Errorf("lines = %d, %d", got[0].Location.StartLine, got[1].Location.StartLine)
 	}
 	// Nothing said how bad it is, so nothing is claimed beyond "worth checking".
 	if got[1].Severity != domain.SeverityMedium {

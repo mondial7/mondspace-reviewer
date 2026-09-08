@@ -26,6 +26,7 @@ import (
 
 	"github.com/oklog/ulid/v2"
 
+	"github.com/mondial7/mondspace-reviewer/contract"
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
 	"github.com/mondial7/mondspace-reviewer/internal/port"
 	"github.com/mondial7/mondspace-reviewer/internal/usecase"
@@ -1738,7 +1739,7 @@ func (s *Server) handleJudge(w http.ResponseWriter, r *http.Request) {
 // broken, or has not finished yet is a review with nothing reported, which is
 // the same shape as a review with nothing wrong with it. The settings page is
 // where the difference is stated.
-type ReportedOf func(targetID string) []domain.Reported
+type ReportedOf func(targetID string) []contract.Item
 
 // DismissFunc records what a reviewer made of one deterministic finding.
 // Keyed by the finding's own identity rather than by its line, so a diff

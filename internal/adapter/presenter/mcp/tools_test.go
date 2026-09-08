@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mondial7/mondspace-reviewer/contract"
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/presenter/mcp"
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
 )
@@ -317,12 +318,9 @@ func TestReportedFindingsAreATooOfTheirOwn(t *testing.T) {
 	// to tell which one it can act on.
 	w := space{open: mcp.Review{
 		ID: "abc123", Title: "the change",
-		Reported: []domain.Reported{
-			{Tool: "gosec", Rule: "G404", File: "api/handler.go", Line: 42,
-				Message:  "Use of weak random number generator",
-				Severity: domain.SeverityMedium, New: true},
-			{Tool: "staticcheck", Rule: "SA4006", File: "api/old.go", Line: 3,
-				Message: "this value of err is never used"},
+		Reported: []contract.Item{
+			contract.Item{Source: contract.SourceAnalyser, Location: contract.Location{Path: "api/handler.go", StartLine: 42, EndLine: 42}, Producer: "gosec", RuleID: "G404", Message: "Use of weak random number generator", Severity: domain.SeverityMedium, New: true},
+			contract.Item{Source: contract.SourceAnalyser, Location: contract.Location{Path: "api/old.go", StartLine: 3, EndLine: 3}, Producer: "staticcheck", RuleID: "SA4006", Message: "this value of err is never used"},
 		},
 	}}
 
@@ -353,11 +351,8 @@ func TestReportedFindingsAreATooOfTheirOwn(t *testing.T) {
 func TestADismissedReportedFindingIsShownAsSettled(t *testing.T) {
 	// An agent that cannot see the dismissal raises the same thing again.
 	w := space{open: mcp.Review{
-		ID: "abc123",
-		Reported: []domain.Reported{{
-			Tool: "gosec", Rule: "G404", File: "a.go", Line: 1, Message: "weak rng",
-			New: true, Verdict: domain.VerdictDismissed,
-		}},
+		ID:       "abc123",
+		Reported: []contract.Item{contract.Item{Source: contract.SourceAnalyser, Location: contract.Location{Path: "a.go", StartLine: 1, EndLine: 1}, Producer: "gosec", RuleID: "G404", Message: "weak rng", New: true, Verdict: domain.VerdictDismissed}},
 	}}
 	got := tool(t, w, "reported_findings", nil)
 	if !strings.Contains(got, "dismissed this — settled, not work") {

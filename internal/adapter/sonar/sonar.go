@@ -24,7 +24,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mondial7/mondspace-reviewer/internal/domain"
+	"github.com/mondial7/mondspace-reviewer/contract"
 )
 
 // Tool is what findings from this adapter are attributed to.
@@ -81,19 +81,24 @@ type issuesResponse struct {
 
 // Issues is every unresolved issue the server holds for this project, as
 // findings attributed to `sonar`.
-func (c *Client) Issues(ctx context.Context) ([]domain.Reported, error) {
-	var out []domain.Reported
+func (c *Client) Issues(ctx context.Context) ([]contract.Item, error) {
+	var out []contract.Item
 	for page := 1; page <= maxPages; page++ {
 		body, err := c.page(ctx, page)
 		if err != nil {
 			return nil, err
 		}
 		for _, issue := range body.Issues {
-			out = append(out, domain.Reported{
-				Tool:     Tool,
-				Rule:     issue.Rule,
-				File:     path(issue.Component, c.Project),
-				Line:     issue.Line,
+			line := issue.Line
+			out = append(out, contract.Item{
+				Source:   contract.SourceAnalyser,
+				Producer: Tool,
+				RuleID:   issue.Rule,
+				Location: contract.Location{
+					Path:      path(issue.Component, c.Project),
+					StartLine: line,
+					EndLine:   line,
+				},
 				Message:  issue.Message,
 				Severity: severity(issue.Severity, impact(issue.Impacts)),
 			})
@@ -171,18 +176,18 @@ func impact(impacts []struct {
 
 // severity maps Sonar's vocabulary onto msr's three levels, preferring the
 // clean-code impact when the server sent one.
-func severity(legacy, impact string) domain.Severity {
+func severity(legacy, impact string) contract.Severity {
 	word := impact
 	if word == "" {
 		word = legacy
 	}
 	switch strings.ToUpper(word) {
 	case "BLOCKER", "CRITICAL", "HIGH":
-		return domain.SeverityHigh
+		return contract.SeverityHigh
 	case "MINOR", "INFO", "LOW":
-		return domain.SeverityLow
+		return contract.SeverityLow
 	default:
-		return domain.SeverityMedium
+		return contract.SeverityMedium
 	}
 }
 

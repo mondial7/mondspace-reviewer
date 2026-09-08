@@ -21,7 +21,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mondial7/mondspace-reviewer/internal/domain"
+	"github.com/mondial7/mondspace-reviewer/contract"
 	"github.com/mondial7/mondspace-reviewer/internal/usecase"
 )
 
@@ -59,7 +59,7 @@ type Scanner struct {
 	// not interrupt it repeatedly.
 	broken map[string]string
 	// answers caches by (tool, version, argv, what every file it will see says).
-	answers map[string][]domain.Reported
+	answers map[string][]contract.Item
 }
 
 // New builds a scanner over a repository. Nothing is detected or run until Look
@@ -68,7 +68,7 @@ func New(repoDir string, analysers []usecase.Analyser) *Scanner {
 	return &Scanner{
 		repoDir: repoDir, analysers: analysers, cap: Cap,
 		version: map[string]string{}, why: map[string]string{},
-		broken: map[string]string{}, answers: map[string][]domain.Reported{},
+		broken: map[string]string{}, answers: map[string][]contract.Item{},
 	}
 }
 
@@ -121,11 +121,11 @@ func (s *Scanner) Detect(ctx context.Context) {
 // already computes it for the incremental readings (ADR 0038), and it is what
 // makes the cache correct: unchanged file, no run.
 func (s *Scanner) Look(ctx context.Context, files []string, prints map[string]string,
-	base string) []domain.Reported {
+	base string) []contract.Item {
 
 	s.Detect(ctx)
 
-	var out []domain.Reported
+	var out []contract.Item
 	for _, a := range s.analysers {
 		s.mu.Lock()
 		version, installed := s.version[a.Name]
@@ -179,13 +179,13 @@ func (s *Scanner) Look(ctx context.Context, files []string, prints map[string]st
 //
 // Detection is shared, because whether gosec is installed is a fact about the
 // machine and not about which copy of the code is being read.
-func (s *Scanner) LookIn(ctx context.Context, dir string, files []string, base string) []domain.Reported {
+func (s *Scanner) LookIn(ctx context.Context, dir string, files []string, base string) []contract.Item {
 	s.Detect(ctx)
 
 	elsewhere := &Scanner{
 		repoDir: dir, analysers: s.analysers, cap: s.cap,
 		version: map[string]string{}, why: map[string]string{},
-		broken: map[string]string{}, answers: map[string][]domain.Reported{},
+		broken: map[string]string{}, answers: map[string][]contract.Item{},
 	}
 	s.mu.Lock()
 	for name, version := range s.version {

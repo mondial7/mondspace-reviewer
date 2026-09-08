@@ -70,10 +70,10 @@ exit 1
 	if len(got) != 1 {
 		t.Fatalf("got %+v, want one finding", got)
 	}
-	if got[0].Tool != "pretend-lint" || got[0].Rule != "X123" {
+	if got[0].Producer != "pretend-lint" || got[0].RuleID != "X123" {
 		t.Errorf("finding = %+v, want it attributed", got[0])
 	}
-	if got[0].File != "api/handler.go" || got[0].Line != 42 {
+	if got[0].Location.Path != "api/handler.go" || got[0].Location.StartLine != 42 {
 		t.Errorf("finding = %+v", got[0])
 	}
 	// Exiting non-zero is what a linter does when it finds something. Treating

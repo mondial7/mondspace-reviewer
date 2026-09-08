@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mondial7/mondspace-reviewer/contract"
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/store/items"
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
 )
@@ -258,10 +259,7 @@ func TestFindingsRefusesAnUnknownId(t *testing.T) {
 func TestALiveFindingIsMatchedByALaterPass(t *testing.T) {
 	repo, shared := repoWithAFinding(t)
 	store := storeAt(t, shared)
-	found := []domain.Reported{{
-		Tool: "gosec", Rule: "G404", File: "a.go", Line: 6,
-		Message: "weak random", Severity: domain.SeverityHigh, New: true,
-	}}
+	found := []contract.Item{contract.Item{Source: contract.SourceAnalyser, Location: contract.Location{Path: "a.go", StartLine: 6, EndLine: 6}, Producer: "gosec", RuleID: "G404", Message: "weak random", Severity: domain.SeverityHigh, New: true}}
 	live := sighting{branch: "main", session: "sess-1", repo: repo,
 		producers: map[string]bool{"gosec": true}, paths: []string{"a.go"}}
 

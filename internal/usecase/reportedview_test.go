@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mondial7/mondspace-reviewer/contract"
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
 	"github.com/mondial7/mondspace-reviewer/internal/usecase"
 )
@@ -17,13 +18,10 @@ func threeFiles() []domain.Unit {
 }
 
 func TestFindingsRollUpPerFileAndIntoOneSentence(t *testing.T) {
-	view := usecase.GroupReported([]domain.Reported{
-		{Tool: "gosec", Rule: "G404", File: "api/handler.go", Line: 42, Message: "weak rng",
-			Severity: domain.SeverityMedium, New: true},
-		{Tool: "gosec", Rule: "G304", File: "api/handler.go", Line: 9, Message: "file inclusion",
-			Severity: domain.SeverityHigh, New: true},
-		{Tool: "staticcheck", Rule: "SA4006", File: "api/routes.go", Line: 3, Message: "unused",
-			Severity: domain.SeverityLow},
+	view := usecase.GroupReported([]contract.Item{
+		contract.Item{Source: contract.SourceAnalyser, Location: contract.Location{Path: "api/handler.go", StartLine: 42, EndLine: 42}, Producer: "gosec", RuleID: "G404", Message: "weak rng", Severity: domain.SeverityMedium, New: true},
+		contract.Item{Source: contract.SourceAnalyser, Location: contract.Location{Path: "api/handler.go", StartLine: 9, EndLine: 9}, Producer: "gosec", RuleID: "G304", Message: "file inclusion", Severity: domain.SeverityHigh, New: true},
+		contract.Item{Source: contract.SourceAnalyser, Location: contract.Location{Path: "api/routes.go", StartLine: 3, EndLine: 3}, Producer: "staticcheck", RuleID: "SA4006", Message: "unused", Severity: domain.SeverityLow},
 	}, threeFiles())
 
 	if view.Files != 1 || view.Of != 3 {
@@ -38,7 +36,7 @@ func TestFindingsRollUpPerFileAndIntoOneSentence(t *testing.T) {
 	// Worst first, so reading the top of a file's list is reading the thing
 	// most worth looking at.
 	at := view.FindingsFor("api/handler.go")
-	if len(at.New) != 2 || at.New[0].Rule != "G304" {
+	if len(at.New) != 2 || at.New[0].RuleID != "G304" {
 		t.Errorf("findings = %+v, want the high one first", at.New)
 	}
 	if at.Worst != domain.SeverityHigh {
@@ -51,9 +49,9 @@ func TestFindingsRollUpPerFileAndIntoOneSentence(t *testing.T) {
 
 func TestNothingNewStillSaysWhatIsAlreadyThere(t *testing.T) {
 	// Silently having none and silently hiding four hundred look the same.
-	view := usecase.GroupReported([]domain.Reported{
-		{Tool: "staticcheck", Rule: "SA1", File: "api/routes.go", Line: 3, Message: "old"},
-		{Tool: "staticcheck", Rule: "SA2", File: "api/routes.go", Line: 9, Message: "older"},
+	view := usecase.GroupReported([]contract.Item{
+		contract.Item{Source: contract.SourceAnalyser, Location: contract.Location{Path: "api/routes.go", StartLine: 3, EndLine: 3}, Producer: "staticcheck", RuleID: "SA1", Message: "old"},
+		contract.Item{Source: contract.SourceAnalyser, Location: contract.Location{Path: "api/routes.go", StartLine: 9, EndLine: 9}, Producer: "staticcheck", RuleID: "SA2", Message: "older"},
 	}, threeFiles())
 
 	if view.Any() {
@@ -83,9 +81,8 @@ func TestAReviewWithNoFilesSaysNothingAtAll(t *testing.T) {
 func TestADismissedFindingStopsCounting(t *testing.T) {
 	// A layer still saying "3 findings" after all three were dismissed has not
 	// listened (ADR 0030).
-	view := usecase.GroupReported([]domain.Reported{
-		{Tool: "gosec", Rule: "G404", File: "api/handler.go", Line: 42, Message: "weak rng",
-			New: true, Verdict: domain.VerdictDismissed},
+	view := usecase.GroupReported([]contract.Item{
+		contract.Item{Source: contract.SourceAnalyser, Location: contract.Location{Path: "api/handler.go", StartLine: 42, EndLine: 42}, Producer: "gosec", RuleID: "G404", Message: "weak rng", New: true, Verdict: domain.VerdictDismissed},
 	}, threeFiles())
 
 	if view.Any() || view.Files != 0 {
@@ -94,8 +91,8 @@ func TestADismissedFindingStopsCounting(t *testing.T) {
 }
 
 func TestStoredRulingsAreStampedOntoAFreshRun(t *testing.T) {
-	fresh := []domain.Reported{
-		{Tool: "gosec", Rule: "G404", File: "a.go", Line: 42, Message: "weak rng"},
+	fresh := []contract.Item{
+		contract.Item{Source: contract.SourceAnalyser, Location: contract.Location{Path: "a.go", StartLine: 42, EndLine: 42}, Producer: "gosec", RuleID: "G404", Message: "weak rng"},
 	}
 	got := usecase.ApplyDismissals(fresh, map[string]domain.Verdict{
 		fresh[0].Key(): domain.VerdictDismissed,
@@ -108,8 +105,8 @@ func TestStoredRulingsAreStampedOntoAFreshRun(t *testing.T) {
 func TestAFindingOnAFileTheReviewDoesNotListIsCountedNotDropped(t *testing.T) {
 	// A finding msr cannot place is still a finding, and pretending otherwise
 	// is how a count comes to disagree with itself.
-	view := usecase.GroupReported([]domain.Reported{
-		{Tool: "gosec", Rule: "G1", File: "somewhere/else.go", Line: 1, Message: "x", New: true},
+	view := usecase.GroupReported([]contract.Item{
+		contract.Item{Source: contract.SourceAnalyser, Location: contract.Location{Path: "somewhere/else.go", StartLine: 1, EndLine: 1}, Producer: "gosec", RuleID: "G1", Message: "x", New: true},
 	}, threeFiles())
 
 	if view.Files != 0 {

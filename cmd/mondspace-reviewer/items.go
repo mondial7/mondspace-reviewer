@@ -128,7 +128,7 @@ type sighting struct {
 // It reconciles rather than appends: the same finding seen twice is one record,
 // a dismissal is never raised again, and a finding whose code has gone is
 // closed (ADR 0045).
-func recordFindings(store *items.Store, found []domain.Reported, in sighting) ([]contract.Item, error) {
+func recordFindings(store *items.Store, found []contract.Item, in sighting) ([]contract.Item, error) {
 	at := time.Now().UTC()
 	sight := usecase.Sighting{
 		Branch:    in.branch,
@@ -143,7 +143,7 @@ func recordFindings(store *items.Store, found []domain.Reported, in sighting) ([
 	if err != nil {
 		return nil, err
 	}
-	changed := usecase.Reconcile(stored, sight.FromReported(found), usecase.Pass{
+	changed := usecase.Reconcile(stored, sight.Seen(found), usecase.Pass{
 		At:        at,
 		Producers: in.producers,
 		Paths:     pathSet(in.paths),
