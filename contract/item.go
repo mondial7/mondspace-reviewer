@@ -207,6 +207,10 @@ type Item struct {
 	Anchor    string `json:"anchor,omitempty"`
 	AnchorNth int    `json:"anchor_nth,omitempty"`
 
+	// FirstSeen is when the item was raised. LastSeen is when a pass last had
+	// something to say about it — not a heartbeat: a run that finds everything
+	// exactly as it was writes nothing at all, which is what keeps a
+	// five-second poll from appending a copy of the whole store every tick.
 	FirstSeen time.Time  `json:"first_seen"`
 	LastSeen  time.Time  `json:"last_seen"`
 	PushedAt  *time.Time `json:"pushed_at,omitempty"`
