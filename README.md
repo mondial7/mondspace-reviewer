@@ -533,6 +533,76 @@ the agent can edit is not a review of the agent.
 
 See [ADR 0031](ADR/0031-an-agent-pulls-the-review.md).
 
+## The findings store
+
+A review that ends when you close the tab is a review nobody acts on. Since 7.1
+everything worth keeping — an analyser's finding, a note you typed, what you
+decided about either — is written to a store that outlives the session, keyed by
+branch rather than by session id.
+
+```
+.mondspace/
+  findings.jsonl   what msr found and what you made of it
+  handoff/         the briefs you pushed to an agent
+  auto.toml        what auto-mode may do, if you turn it on
+  judge.jsonl      every decision auto-mode took, and why
+  items.jsonl      the planner's backlog (written only by --promote)
+```
+
+It is a second directory beside `.mondspace-reviewer/`, on purpose: the session
+log is a per-machine record of what an agent did, and this is the surface
+another tool reads and where a team's dismissals accumulate. Both are ignored by
+git out of the box; committing `.mondspace/` is a decision you make, and the
+cost of it is that JSONL merges badly.
+
+```sh
+msr scan --since=main                  # run the analysers, store what they say
+msr findings                           # what stands, worst first
+msr findings dismiss <id>              # looked at, not a problem — and it stays that way
+msr push <id> <id>                     # hand two of them to your agent as a brief
+msr export --format=agent > tasks.md   # everything outstanding, ordered by file
+msr export --format=plan               # the same thing grouped into themes
+```
+
+**Findings are reconciled, not re-raised.** Run `msr scan` twice over unchanged
+code and the second run writes nothing. A finding you dismissed is never raised
+again, on any branch. A finding whose code has gone is closed without anybody
+saying so. That works because identity is a fingerprint of the code around the
+finding with the whitespace taken out, rather than a line number — so `gofmt`
+over the file changes nothing, and a diff growing above it changes nothing.
+
+**A push is a brief, not a dump.** `msr push` orders what you selected by file
+and then by line, carries the snippet and the directive so an agent with nothing
+loaded can act on it, and flags two directives that touch the same lines before
+they are sent rather than letting the agent silently pick one. It writes
+`.mondspace/handoff/<batch>.md` by default — `--to=stdout` and `--to=clipboard`
+are there too, and `--dry-run` shows you the brief without sending it. The same
+batch id sent twice sends nothing the second time.
+
+Pushed is a state, not a verdict: an item you handed to an agent goes on
+standing until a later scan finds the code gone. A batch that was pushed and
+ignored comes back.
+
+**Auto-mode is off, and off is the default.** With it off, nothing reaches a
+running agent without you typing a command. Turned on, a judge picks from what
+is already in the store — it may select, order and phrase findings, and it may
+never author one — inside four bounds you set, and writes every decision it
+took, including the ones it held back and why, to `judge.jsonl`. `msr auto off`
+lands at the next checkpoint, and any manual `msr push` stands it down for the
+rest of the session.
+
+```sh
+msr auto on                # bounds live in .mondspace/auto.toml
+msr auto run --session=<id>  # consider a push; call it at a checkpoint
+msr auto status            # the policy, this session's pushes, what was logged
+msr auto off
+```
+
+See [ADR 0044](ADR/0044-one-type-for-a-thing-to-be-done.md),
+[ADR 0045](ADR/0045-findings-outlive-the-session-that-found-them.md),
+[ADR 0046](ADR/0046-a-push-is-a-brief-not-a-dump.md) and
+[ADR 0047](ADR/0047-a-judge-that-may-only-choose.md).
+
 ## The command line
 
 The web app is the product. The CLI is there for scripting and for looking at a
@@ -546,6 +616,9 @@ msr export --format=md --session=<id>       # write the review up
 msr export --format=slack --session=<id>    # one message, ready to post
 msr ask --session=<id> "did the retry change have a stated reason?"
 msr review --plain --since=v4.0.0           # line-oriented, scriptable
+msr scan --since=main                       # store what the analysers say
+msr findings                                # what stands, worst first
+msr push --batch --min-severity=high        # hand them over as one brief
 msr gc --dry-run                            # tidy throwaway review refs
 msr mcp                                     # serve the review to a coding agent
 ```
