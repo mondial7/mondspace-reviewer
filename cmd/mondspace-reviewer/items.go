@@ -316,6 +316,9 @@ func runPush(ctx context.Context, args []string, stdout io.Writer) error {
 	if err := store.Append(handoff.MarkPushed(brief, "human")...); err != nil {
 		return err
 	}
+	// A human pushing by hand stands auto-mode down for the rest of the
+	// session: two things steering one agent is worse than either (ADR 0047).
+	suspendAuto(sharedDir(*repo, *dir), "")
 
 	fmt.Fprintf(stdout, "pushed %d item(s) as %s", len(brief.Items), batch)
 	if written, ok := adapter.(*delivery.File); ok {
