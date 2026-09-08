@@ -6,6 +6,41 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added, and the reason for a minor
+
+- **A findings store that outlives the session.** `.mondspace/findings.jsonl`,
+  keyed by branch rather than by session id. ADR 0030 said a dismissal has to
+  survive the next run or it is not a dismissal; until now it survived the next
+  run *of the same session*, and a review of a range had nowhere to write at
+  all.
+- **One type for a thing to be done.** A model's finding, an analyser's finding
+  and a reviewer's note were the same shape three times over. They are now one
+  `contract.Item` with provenance as a field, in a package outside `internal/`
+  so a planner can compile against the same declaration rather than a copy of
+  it that agrees today.
+- **Fingerprints.** Identity across runs: the path, the rule, and the code
+  around the finding with the whitespace taken out. `gofmt` over a file does not
+  close a finding and raise it again, and neither does a diff growing above it.
+- **`msr scan`** runs the installed analysers over a range and reconciles what
+  they said. A second run over unchanged code writes nothing.
+- **`msr findings`** lists what stands and records what you made of it, and the
+  verdict now sticks across sessions and branches.
+- **`msr push`** hands a selection to an implementation agent as an ordered,
+  self-contained brief — by file, then by line, with the snippet and the
+  directive — and flags two directives touching the same lines before they go.
+  `file` by default, `stdout` and `clipboard` beside it. The same batch id sent
+  twice sends nothing.
+- **`msr export --format=agent|plan|markdown|github-issues|jsonl`** renders the
+  store rather than one session's report: a flat list for an agent, themed
+  clusters for a planner, deduplicated issues for GitHub.
+- **A Sonar pull.** Not a scan: the answer a team's server already holds, scoped
+  to the files the change touched, configured by environment because a token
+  does not belong in a checked-in file.
+- **Auto-mode, off by default** (`msr auto on|off|status|run`). A judge that may
+  only select, order and phrase findings that already exist, bounded four ways,
+  logging every decision it took — rejections included — to `judge.jsonl`. Any
+  manual push stands it down for the rest of the session.
+
 ### Changed
 
 - **A new look: the cockpit palette** (ADR 0049). The page was a near-black
@@ -23,6 +58,23 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   deeper mint that clears contrast on white; both Solarized themes keep their
   canonical violet and derive the new greys, tints and signals from their own
   palettes.
+- **The review card's orientation paragraph moved behind an info icon** in the
+  card's corner (ADR 0050). Worth reading once, not on every visit.
+- **The field moved into the card that says what range this is**, as a square in
+  its corner. It was a card of its own that collapsed to a strip when nothing
+  was landing — a picture too small to read taking a whole row to be too small
+  in.
+- **The tour is four steps and four hundred words**, down from six steps and a
+  thousand, each with a sketch of the region it is about and a link to the page
+  it describes.
+- **A long prompt or summary is cut on the card**, with "…read more" opening the
+  whole thing in the same sheet the info icon uses. A recorded run's prompt is
+  whatever was typed at the agent, which can be a thousand characters with a
+  diff in the middle.
+- The live cockpit's own scan and the notes you type are written to the findings
+  store as well as the session log, through the same conversion the commands
+  use — so a finding raised live is matched by a later scan rather than raised
+  again.
 
 The screenshots in this repository are of the old palette until `docs/img/demo.sh`
 is run again.
@@ -39,23 +91,6 @@ is run again.
   search and branches. It asks to be sticky; the same blanket rule made it
   relative. The cockpit hid it, because that page does not scroll and a rail
   that cannot stick looks identical to one that does.
-
-### Changed
-
-- **The review card's orientation paragraph moved behind an info icon** in the
-  card's corner (ADR 0050). Worth reading once, not on every visit.
-- **The field moved into the card that says what range this is**, as a square in
-  its corner. It was a card of its own that collapsed to a strip when nothing
-  was landing — a picture too small to read taking a whole row to be too small
-  in.
-- **The tour is four steps and four hundred words**, down from six steps and a
-  thousand, each with a sketch of the region it is about and a link to the page
-  it describes.
-- **A long prompt or summary is cut on the card**, with "…read more" opening the
-  whole thing in the same sheet the info icon uses. A recorded run's prompt is
-  whatever was typed at the agent, which can be a thousand characters with a
-  diff in the middle.
-
 
 ## [7.0.1] — 2026-09-02
 
