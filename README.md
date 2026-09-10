@@ -603,6 +603,33 @@ See [ADR 0044](ADR/0044-one-type-for-a-thing-to-be-done.md),
 [ADR 0046](ADR/0046-a-push-is-a-brief-not-a-dump.md) and
 [ADR 0047](ADR/0047-a-judge-that-may-only-choose.md).
 
+## From your phone
+
+msr serves a web page, and the phone in your pocket is on the same network as
+the laptop the agent is working on.
+
+```sh
+msr web --allow-remote --addr=0.0.0.0:7777
+```
+
+It prints the addresses another device can reach it on:
+
+```
+reviewing live "Live · uncommitted work" — http://[::]:7777
+  on this network: http://192.168.1.24:7777
+```
+
+Type that into the phone. The cockpit becomes one column in the order the work
+happens — what changed and what to do about it, then the diffs, then the story,
+then the instruments — with the rail as a bottom bar under your thumb. Diffs
+scroll sideways inside their own card; the page never does. You can read, open
+a file, and annotate a line (ADR 0055).
+
+**`--allow-remote` is not a small flag.** msr serves your source, your diffs and
+your review notes over plain HTTP with no authentication of any kind. On a
+network you trust, that is a decision worth making deliberately; `:7777` and
+`0.0.0.0:7777` both require it, because they are the same listener.
+
 ## The command line
 
 The web app is the product. The CLI is there for scripting and for looking at a

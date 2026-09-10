@@ -255,6 +255,17 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 	fmt.Fprintf(stdout, "reviewing %s %q — http://%s\n",
 		entry.target.Kind, usecase.Brief(entry.target.Title, 48), ln.Addr())
 
+	// Somebody who passed --allow-remote wants to open this somewhere else, and
+	// the next thing they do is go and find out this machine's address. Here it
+	// is (ADR 0055).
+	if *allowRemote {
+		if _, port, err := net.SplitHostPort(ln.Addr().String()); err == nil {
+			for _, url := range LANAddresses(port) {
+				fmt.Fprintf(stdout, "  on this network: %s\n", url)
+			}
+		}
+	}
+
 	go func() {
 		<-ctx.Done()
 		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
