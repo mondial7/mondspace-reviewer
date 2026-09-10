@@ -66,17 +66,27 @@ func (s *Store) Append(list ...contract.Item) error {
 	}
 	defer f.Close()
 
-	w := bufio.NewWriter(f)
+	// One write per line, and no buffer in front of it.
+	//
+	// Two worktrees of one repository are two processes appending to this file,
+	// which is a case ADR 0045 chose the format for. A buffered writer breaks
+	// it: bufio copies what fits, flushes, and copies the rest, so a line that
+	// straddles the buffer boundary reaches the file as two writes with another
+	// process's line free to land between them. Measured at one line in five,
+	// on ordinary items, with eight writers.
+	//
+	// Appending whole lines under O_APPEND is what makes this safe, and it only
+	// holds if a line is one write.
 	for _, item := range list {
 		line, err := json.Marshal(item)
 		if err != nil {
 			return err
 		}
-		if _, err := w.Write(append(line, '\n')); err != nil {
+		if _, err := f.Write(append(line, '\n')); err != nil {
 			return err
 		}
 	}
-	return w.Flush()
+	return nil
 }
 
 // All is every item, resolved: the last line written for an id is what that id
