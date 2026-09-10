@@ -247,3 +247,29 @@ func TestSortingKeepsTheLiveTargetOnTop(t *testing.T) {
 			targets[1].Title, targets[2].Title)
 	}
 }
+
+// Both stores are msr's own bookkeeping, and neither is the reviewer's work.
+// The shared one is written by the cockpit while you read, so it arrived in the
+// list of files that had "just changed" — announced by the watcher as though
+// the agent had written it.
+func TestInStoreCoversBothStores(t *testing.T) {
+	inStore := usecase.InStore(".mondspace-reviewer")
+
+	for _, path := range []string{
+		".mondspace-reviewer/sess/events.jsonl",
+		".mondspace-reviewer",
+		".mondspace/findings.jsonl",
+		".mondspace/handoff/batch-1.md",
+		".mondspace",
+	} {
+		if !inStore(path) {
+			t.Errorf("%s is msr's own and should not reach a review", path)
+		}
+	}
+
+	for _, path := range []string{"auth/auth.go", ".mondspace-reviewer.go", ".mondspaces/x"} {
+		if inStore(path) {
+			t.Errorf("%s is the reviewer's work and must not be hidden", path)
+		}
+	}
+}

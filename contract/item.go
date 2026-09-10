@@ -14,6 +14,16 @@ import (
 	"time"
 )
 
+// Dir is the directory both binaries share, at the root of the repository
+// being reviewed: msr writes its findings there, the planner writes its
+// backlog beside them (ADR 0045).
+//
+// It is here rather than in either tool because it is the one path they have to
+// agree on, and because msr itself has to recognise it: a review that lists
+// msr's own bookkeeping as though the agent had written it is a review of the
+// wrong thing.
+const Dir = ".mondspace"
+
 // Source is which reading produced an item.
 //
 // A model's finding, an analyser's finding and a reviewer's note are the same

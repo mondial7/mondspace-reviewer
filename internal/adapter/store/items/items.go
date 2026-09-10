@@ -22,7 +22,7 @@ import (
 
 // SharedDir is the directory both binaries know about. The reviewer writes the
 // findings file in it; the planner reads it and writes its own beside it.
-const SharedDir = ".mondspace"
+const SharedDir = contract.Dir
 
 // FileName is the reviewer's half of that contract.
 const FileName = "findings.jsonl"

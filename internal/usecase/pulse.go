@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/mondial7/mondspace-reviewer/contract"
 	"github.com/mondial7/mondspace-reviewer/internal/domain"
 )
 
@@ -135,10 +136,15 @@ func ResolveLive(t domain.Target, head domain.SnapshotRef) domain.Target {
 // when the store lives outside the repository — in which case nothing inside it
 // is the store, and matching on the empty string would hide everything.
 func InStore(storeRel string) func(string) bool {
-	if storeRel == "" {
-		return func(string) bool { return false }
+	under := func(f, dir string) bool {
+		return dir != "" && (f == dir || strings.HasPrefix(f, dir+"/"))
 	}
 	return func(f string) bool {
-		return f == storeRel || strings.HasPrefix(f, storeRel+"/")
+		// Two stores now: the session log, wherever --out put it, and the
+		// shared directory, which is always at the repository root and is
+		// written by the cockpit itself as you read (ADR 0045). The second one
+		// turned up in the reviewer's own list of changed files, announced by
+		// the watcher as work that had just arrived.
+		return under(f, storeRel) || under(f, contract.Dir)
 	}
 }
