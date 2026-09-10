@@ -3973,3 +3973,124 @@ a.log__branch:hover { text-decoration: underline; }
 }
 
 .prexisting { margin: 0 0 0.5rem; }
+
+/* ── On a phone ─────────────────────────────────────────────────────────────
+   msr runs on a laptop and is read from a phone on the same network, which is
+   a different posture rather than a smaller window: one thumb, one column, and
+   no pointer to hover with (ADR 0055).
+
+   Everything below is one breakpoint. Two would mean a size where the rail is
+   a bottom bar and the cockpit still thinks it is three columns. */
+@media (max-width: 760px) {
+  /* The rail goes to the bottom, where a thumb is. Fixed, because the one
+     control you always want is "somewhere else", and hunting for it at the top
+     of a long page is not that. */
+  .page { display: block; }
+
+  .page > .sidenav {
+    position: fixed; inset: auto 0 0 0;
+    z-index: 40;
+    width: auto; height: auto; min-height: 0;
+    flex-direction: row; align-items: stretch; justify-content: space-around;
+    gap: 0;
+    padding: 0.2rem 0.3rem;
+    padding-bottom: max(0.2rem, env(safe-area-inset-bottom));
+    border-right: none;
+    border-top: 1px solid var(--rule);
+    background: var(--bg-raised);
+  }
+
+  /* The brand, the "also" divider and the fold control are all navigation
+     about navigation. The bar has room for destinations. */
+  .sidenav .storynav__brand,
+  .sidenav .sidenav__aside,
+  .sidenav .storynav__spacer,
+  .sidenav .sidenav__fold { display: none; }
+
+  .sidenav .storynav__link {
+    flex: 1 1 0;
+    flex-direction: column; justify-content: center; gap: 0.15rem;
+    min-width: 0; min-height: 3rem;
+    padding: 0.3rem 0.1rem;
+    border-radius: var(--radius-sm);
+  }
+  /* The word comes back down here: six icons with no labels is a puzzle, and
+     there is room for both at this size. */
+  .sidenav .sidenav__word {
+    display: block;
+    font-size: 0.6rem; line-height: 1;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%;
+  }
+  .sidenav .sidenav__ico { margin: 0; }
+  .sidenav [data-theme-toggle] { display: flex; }
+
+  /* Room for the bar, plus whatever the phone puts below it. */
+  .shell { padding: var(--gutter) var(--gutter) 0; }
+  .page > .shell { padding-bottom: calc(4.5rem + env(safe-area-inset-bottom)); }
+
+  /* The cockpit is one column that scrolls with the page. It was a fixed-height
+     shell holding three columns that scrolled inside themselves, which on a
+     phone is three scroll traps stacked in a window that cannot move. */
+  .page--cockpit, .page--cockpit .shell {
+    height: auto; min-height: 0; overflow: visible;
+  }
+  .page--cockpit .shell { padding: 0 0 calc(4.5rem + env(safe-area-inset-bottom)); }
+  .cockpit {
+    display: block;
+    padding: var(--gutter) var(--gutter) 0;
+  }
+  .cockpit > * + * { margin-top: var(--gutter); }
+  .cockpit__story, .cockpit__changes, .cockpit__panel {
+    overflow: visible; height: auto; min-height: 0;
+  }
+  /* What you came for, in the order you want it: what this is and what to do
+     about it, then the diffs, then the story, then the instruments. */
+  .cockpit__head { order: 1; }
+  .cockpit__changes { order: 2; }
+  .cockpit__story { order: 3; }
+  .cockpit__panel { order: 4; }
+  .cockpit { display: flex; flex-direction: column; }
+
+  /* The three readings are a row of cards on a desk and a stack of three on a
+     phone; the row would give each of them a third of 390px. */
+  .analyses { grid-template-columns: minmax(0, 1fr); }
+
+  /* The story rail folds by width on a desk. Here it is simply a card. */
+  .page--cockpit[data-story="folded"] .cockpit__story { display: none; }
+  .storyrail__strip { display: none; }
+
+  /* A phone has no keyboard to be told about. */
+  .keyhint { display: none; }
+
+  /* Cards give their padding back to the words in them. */
+  .brief, .reviewcard__inner, .cockpit__story, .cockpit__changes, .acard {
+    padding: 0.7rem 0.75rem;
+  }
+  .brief__pulse { width: 5rem; height: 5rem; margin-left: 0.6rem; }
+
+  /* A diff scrolls sideways inside its own card; the page never does. */
+  .post__diff { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+  /* Sheets are the width of the screen, less a margin, and start near the top:
+     14vh of a phone is a third of the sheet's own height. */
+  .palette, .cardinfo__scrim { padding: 1rem 0.6rem calc(1rem + env(safe-area-inset-bottom)); }
+  .palette__sheet, .cardinfo__sheet { width: 100%; }
+
+  /* The stats read as three numbers, not three cards in a row of one. */
+  .cockpit__stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+/* A pointer that cannot hover needs the target it is aiming at to be bigger
+   than a word. This is by input rather than by width: a tablet is wide and
+   still a thumb (ADR 0055). */
+@media (pointer: coarse) {
+  .act, .post__open, .viewswitch__btn, .exports__open, .cardinfo__open,
+  .pulseinfo__open, .storyrail__fold, .board__pick, .log__link {
+    min-height: 2.5rem;
+  }
+  .act--quiet { padding-inline: 0.6rem; }
+  .viewswitch__btn { padding: 0.5rem 0.9rem; }
+  /* Hover states that only appear on hover are invisible here, so the things
+     they were revealing are simply on. */
+  .post__annotate, .diff__line--noted .diff__note { opacity: 1; }
+}
