@@ -3201,3 +3201,34 @@ func TestAShortPromptOffersNoReadMore(t *testing.T) {
 		t.Error("a short prompt should not offer to show more of itself")
 	}
 }
+
+// An embedded file has no modification time, so the stylesheet went out with no
+// validator and browsers cached it heuristically: upgrade msr, reload, and you
+// got this build's markup with last build's stylesheet. That looks exactly like
+// a bug in the new build and cannot be reproduced by whoever wrote it.
+func TestAssetsAreRevalidatedRatherThanCachedBlind(t *testing.T) {
+	h := web.NewServer(testSession(), nil)
+
+	rec := get(t, h, "/assets/app.css")
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /assets/app.css = %d, want 200", rec.Code)
+	}
+	if got := rec.Header().Get("Cache-Control"); got != "no-cache" {
+		t.Errorf("Cache-Control = %q, want no-cache — the browser has to ask", got)
+	}
+	tag := rec.Header().Get("ETag")
+	if tag == "" {
+		t.Fatal("no ETag, so asking costs the whole file every time")
+	}
+
+	// And asking is cheap: the same build answers "you already have it".
+	again := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/assets/app.css", nil)
+	req.Header.Set("If-None-Match", tag)
+	h.ServeHTTP(again, req)
+
+	if again.Code != http.StatusNotModified {
+		t.Errorf("a revalidation with the current tag = %d, want 304", again.Code)
+	}
+}

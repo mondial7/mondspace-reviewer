@@ -9,7 +9,9 @@ package web
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"embed"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -1124,12 +1126,49 @@ func (s *Server) WithWorkspace(sessions []SessionSummary) *Server {
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) { s.mux.ServeHTTP(w, r) }
 
+// assetTag identifies this build's assets. They are embedded, so every process
+// serving them serves the same bytes; a different build is a different tag.
+//
+// It is the binary's own path and start time rather than a hash of the files:
+// the point is only that it changes when the program does.
+var assetTag = func() string {
+	self, err := os.Executable()
+	if err != nil {
+		self = "msr"
+	}
+	stamp := time.Now()
+	if info, err := os.Stat(self); err == nil {
+		stamp = info.ModTime()
+	}
+	sum := sha256.Sum256([]byte(self + stamp.String()))
+	return `"` + hex.EncodeToString(sum[:8]) + `"`
+}()
+
+// revalidated makes the browser ask before reusing an asset it already has.
+//
+// An embedded file has no modification time, so the stylesheet went out with no
+// validator at all and browsers cached it heuristically. Upgrade msr, reload,
+// and you got this build's markup with last build's stylesheet — which looks
+// exactly like a bug in the new build, and is unreproducible for whoever wrote
+// it (ADR 0051).
+//
+// `no-cache` is not `no-store`: the copy is kept and revalidated, so the answer
+// is normally a 304 and nothing crosses the loopback twice.
+func revalidated(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("ETag", assetTag)
+		h.Set("Cache-Control", "no-cache")
+		next.ServeHTTP(w, r)
+	})
+}
+
 func (s *Server) routes() {
 	static, err := fs.Sub(assets, "assets")
 	if err != nil {
 		panic("web: embedded assets missing: " + err.Error())
 	}
-	s.mux.Handle("GET /assets/", http.StripPrefix("/assets/", http.FileServer(http.FS(static))))
+	s.mux.Handle("GET /assets/", http.StripPrefix("/assets/", revalidated(http.FileServer(http.FS(static)))))
 	// The cockpit is the landing page: while an agent is still working, the first
 	// question is "is anything still happening", not "what shall I review first".
 	s.mux.HandleFunc("GET /{$}", s.handleCockpit)

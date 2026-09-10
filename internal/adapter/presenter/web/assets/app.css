@@ -1065,7 +1065,10 @@ button .ico, a .ico, summary .ico { margin-right: 0.35em; }
   margin: 0; font-size: 1rem; line-height: 1.3; color: var(--fg);
   overflow-wrap: anywhere;
 }
-.brief__text { margin: 0.4rem 0 0; color: var(--fg-dim); font-size: 0.83rem; line-height: 1.5; }
+.brief__text {
+  margin: 0.4rem 0 0; color: var(--fg-dim); font-size: 0.83rem; line-height: 1.5;
+  overflow-wrap: anywhere;
+}
 .brief__task { overflow-wrap: anywhere; }
 .brief__src { margin: 0.5rem 0 0; font-size: 0.7rem; color: var(--fg-dim); opacity: 0.85; }
 .brief__busy { margin: 0.5rem 0 0; font-size: 0.75rem; color: var(--fg-dim); }
@@ -3729,6 +3732,10 @@ a.log__branch:hover { text-decoration: underline; }
   display: inline; color: var(--accent);
   font-size: 0.8rem; white-space: nowrap;
 }
+/* Firefox draws the disclosure triangle from ::marker rather than from the
+   webkit pseudo-element, and a triangle in the middle of a sentence reads as a
+   play button — which is what it looked like. */
+.cardinfo__more::marker { content: ""; }
 .cardinfo__more::-webkit-details-marker { display: none; }
 .cardinfo__more:hover { text-decoration: underline; }
 
