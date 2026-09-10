@@ -374,8 +374,8 @@ func TestPreExistingFindingsAreCountedNotListed(t *testing.T) {
 	}
 
 	// And it is still there for anybody who asks.
-	if standing := msr(t, "findings", "--repo="+repo, "--dir="+shared, "--standing"); !strings.Contains(standing, "untouched.go") {
-		t.Errorf("--standing does not show it:\n%s", standing)
+	if shown := msr(t, "findings", "--repo="+repo, "--dir="+shared, "--pre-existing"); !strings.Contains(shown, "untouched.go") {
+		t.Errorf("--pre-existing does not show it:\n%s", shown)
 	}
 }
 
@@ -442,5 +442,34 @@ func TestTheListingShowsStateAndVerdict(t *testing.T) {
 	}
 	if !strings.Contains(listing, "confirmed") {
 		t.Errorf("the listing does not say what was decided:\n%s", listing)
+	}
+}
+
+// `--format=jsonl` is the store itself, for something else to read: it gets
+// every item and the flag to sort them out. Every other format is somebody
+// being handed work.
+func TestJSONLExportKeepsWhatWasAlreadyThere(t *testing.T) {
+	repo, shared := repoWithAFinding(t)
+	store := storeAt(t, shared)
+	old := contract.Item{
+		Source: contract.SourceAnalyser, Producer: "go vet", RuleID: "printf",
+		Location: contract.Location{Path: "untouched.go", StartLine: 7, EndLine: 7},
+		Message:  "wrong verb", Severity: contract.SeverityMedium, New: false,
+	}
+	if _, err := recordFindings(store, []contract.Item{old}, sighting{
+		branch: "main", repo: repo,
+		producers: map[string]bool{"go vet": true}, paths: []string{"untouched.go"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	raw := msr(t, "export", "--format=jsonl", "--repo="+repo, "--dir="+shared)
+	if !strings.Contains(raw, "untouched.go") {
+		t.Errorf("the raw export dropped a finding somebody else may want:\n%s", raw)
+	}
+
+	agent := msr(t, "export", "--format=agent", "--repo="+repo, "--dir="+shared)
+	if strings.Contains(agent, "untouched.go") {
+		t.Errorf("the agent brief carries work this change did not cause:\n%s", agent)
 	}
 }

@@ -230,7 +230,7 @@ func runFindings(ctx context.Context, args []string, stdout io.Writer) error {
 	everywhere := fs.Bool("all-branches", false, "every branch, not just this one")
 	minSeverity := fs.String("min-severity", "", "only findings at least this severe (low|medium|high)")
 	settled := fs.Bool("settled", false, "include what has been dismissed or fixed")
-	standing := fs.Bool("standing", false, "include findings that were already there before this change")
+	preExisting := fs.Bool("pre-existing", false, "include findings that were already there before this change")
 	format := fs.String("format", "text", "output format (text|jsonl)")
 	flags, words := partition(fs, args[1:])
 	if err := fs.Parse(flags); err != nil {
@@ -253,7 +253,7 @@ func runFindings(ctx context.Context, args []string, stdout io.Writer) error {
 			list, _ = usecase.Surface(list, 0, contract.Severity(*minSeverity))
 		}
 		alreadyThere := 0
-		if !*standing {
+		if !*preExisting {
 			list, alreadyThere = usecase.Caused(list)
 		}
 		if *format == "jsonl" {
@@ -277,7 +277,7 @@ func listFindings(stdout io.Writer, list []contract.Item, alreadyThere int) erro
 	// identical otherwise, and one of them means the tool is broken (ADR 0043).
 	defer func() {
 		if alreadyThere > 0 {
-			fmt.Fprintf(stdout, "%d finding(s) were already there before this change — `--standing` to see them\n",
+			fmt.Fprintf(stdout, "%d finding(s) were already there before this change — `--pre-existing` to see them\n",
 				alreadyThere)
 		}
 	}()
@@ -667,10 +667,15 @@ func exportItems(ctx context.Context, format, repo, dir, branch, state string,
 	// What is settled is left out of every renderer here. These are handed to
 	// something that will act on them, and a dismissed finding is one somebody
 	// has already decided not to act on.
-	caused, _ := usecase.Caused(list)
+	// `jsonl` is the store itself, for something else to read and decide about
+	// — the planner, a script — and it gets everything, flag included. Every
+	// other format here is somebody being handed work (ADR 0053).
+	if format != "jsonl" {
+		list, _ = usecase.Caused(list)
+	}
 
 	var open []contract.Item
-	for _, item := range caused {
+	for _, item := range list {
 		if !item.Stands() {
 			continue
 		}

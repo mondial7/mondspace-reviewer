@@ -120,6 +120,15 @@ func readSARIF(a Analyser, output, repoDir string) []contract.Item {
 // just a sentence (ADR 0043).
 var lineFinding = regexp.MustCompile(`^(.+?):(\d+)(?::(\d+))?:\s*(.*)$`)
 
+// toolPrefix is a tool saying its own name before the finding: `vet: ./a.go:5:2:
+// …`, which `go vet` prints when it is reporting about the package rather than
+// about a line.
+//
+// Without stripping it the path becomes "vet: ./a.go" — a file nothing can
+// open, which is a fingerprint of nothing, a snippet of nothing, and a
+// directive pointing an agent at a path that does not exist.
+var toolPrefix = regexp.MustCompile(`^[a-z][\w.-]*:\s+`)
+
 var trailingRule = regexp.MustCompile(`\s*\(([A-Za-z][\w./-]*)\)\s*$`)
 
 func readLines(a Analyser, output, repoDir string) []contract.Item {
@@ -130,6 +139,14 @@ func readLines(a Analyser, output, repoDir string) []contract.Item {
 			continue
 		}
 		m := lineFinding.FindStringSubmatch(line)
+		// A path with ": " in it is not a path: it is the tool's own name in
+		// front of one. Take it off and read the line again.
+		if m != nil && strings.Contains(m[1], ": ") {
+			if stripped := toolPrefix.ReplaceAllString(line, ""); stripped != line {
+				line = stripped
+				m = lineFinding.FindStringSubmatch(line)
+			}
+		}
 		if m == nil {
 			// `go vet` prefixes a package header line, and every tool prints
 			// something that is not a finding sooner or later.

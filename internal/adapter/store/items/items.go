@@ -77,8 +77,16 @@ func (s *Store) locked(fn func() error) error {
 	}
 	defer f.Close()
 
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
-		return fn()
+	// A blocking flock returns EINTR when a signal lands, and giving up on it
+	// would proceed unlocked during exactly the operation the lock is for.
+	for {
+		err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX)
+		if err == nil {
+			break
+		}
+		if !errors.Is(err, syscall.EINTR) {
+			return fn()
+		}
 	}
 	defer func() { _ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN) }()
 

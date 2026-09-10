@@ -95,7 +95,7 @@ var commands = []struct {
 			"--all-branches   every branch, not just this one",
 			"--min-severity   low, medium or high",
 			"--settled        include what has been dismissed or fixed",
-			"--standing       include findings that were already there before this",
+			"--pre-existing   include findings that were already there before this",
 			"                 change; they are counted either way",
 			"--format=<f>     text (default) or jsonl",
 		},
