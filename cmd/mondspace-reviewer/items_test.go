@@ -336,3 +336,140 @@ func TestPromoteWritesTheBacklogOnce(t *testing.T) {
 		t.Errorf("a second promotion said %q, want nothing new", again)
 	}
 }
+
+// A finding about code this change never touched is stored, counted, and kept
+// out of the way. Listing it as work is what ADR 0043 exists to prevent, and
+// handing it to an agent is worse: it cannot tell whose work it is.
+func TestPreExistingFindingsAreCountedNotListed(t *testing.T) {
+	repo, shared := repoWithAFinding(t)
+	store := storeAt(t, shared)
+
+	analysed := func(path string, line int, caused bool) contract.Item {
+		return contract.Item{
+			Source: contract.SourceAnalyser, Producer: "go vet", RuleID: "printf",
+			Location: contract.Location{Path: path, StartLine: line, EndLine: line},
+			Message:  "wrong verb", Severity: contract.SeverityMedium, New: caused,
+		}
+	}
+	if _, err := recordFindings(store, []contract.Item{
+		analysed("untouched.go", 7, false), analysed("a.go", 6, true),
+	}, sighting{
+		branch: "main", repo: repo,
+		producers: map[string]bool{"go vet": true},
+		paths:     []string{"untouched.go", "a.go"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	listing := msr(t, "findings", "--repo="+repo, "--dir="+shared)
+
+	if strings.Contains(listing, "untouched.go") {
+		t.Errorf("a finding from before this change was listed as work:\n%s", listing)
+	}
+	if !strings.Contains(listing, "a.go") {
+		t.Errorf("the finding this change caused is missing:\n%s", listing)
+	}
+	if !strings.Contains(listing, "already there") {
+		t.Errorf("nothing said the other one exists:\n%s", listing)
+	}
+
+	// And it is still there for anybody who asks.
+	if shown := msr(t, "findings", "--repo="+repo, "--dir="+shared, "--pre-existing"); !strings.Contains(shown, "untouched.go") {
+		t.Errorf("--pre-existing does not show it:\n%s", shown)
+	}
+}
+
+// The store is append-only, so a finding that was raised, accepted and pushed
+// is three lines that resolve to one. Housekeeping belongs in the command whose
+// job is housekeeping.
+func TestGCFoldsTheFindingsFile(t *testing.T) {
+	repo, shared := repoWithAFinding(t)
+	msr(t, "scan", "--repo="+repo, "--since=start", "--dir="+shared)
+	id := firstID(t, msr(t, "findings", "--repo="+repo, "--dir="+shared))
+	msr(t, "findings", "accept", id, "--repo="+repo, "--dir="+shared)
+	msr(t, "push", id, "--repo="+repo, "--dir="+shared)
+
+	before := lines(t, filepath.Join(shared, "findings.jsonl"))
+	if before < 3 {
+		t.Fatalf("the store holds %d line(s); this test needs churn to fold", before)
+	}
+
+	// It says what it would do before it does it.
+	if dry := msr(t, "gc", "--repo="+repo, "--dir="+shared, "--dry-run"); !strings.Contains(dry, "would fold") {
+		t.Errorf("--dry-run said %q", dry)
+	}
+	if lines(t, filepath.Join(shared, "findings.jsonl")) != before {
+		t.Error("--dry-run rewrote the file")
+	}
+
+	msr(t, "gc", "--repo="+repo, "--dir="+shared)
+
+	if after := lines(t, filepath.Join(shared, "findings.jsonl")); after != 1 {
+		t.Errorf("the store holds %d line(s) after folding, want 1", after)
+	}
+	// And the item is what it was: everything decided about it survived.
+	listing := msr(t, "findings", "--repo="+repo, "--dir="+shared, "--settled")
+	if !strings.Contains(listing, id) || !strings.Contains(listing, "pushed") ||
+		!strings.Contains(listing, "confirmed") {
+		t.Errorf("folding lost what was decided:\n%s", listing)
+	}
+}
+
+func lines(t *testing.T, path string) int {
+	t.Helper()
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.Count(strings.TrimSpace(string(body)), "\n") + 1
+}
+
+// What happened to an item and what somebody thought of it are different
+// questions (ADR 0044). Printing whichever was written last hid the useful
+// half: an item accepted and then pushed read as "confirmed", with nothing to
+// say it had already gone to an agent.
+func TestTheListingShowsStateAndVerdict(t *testing.T) {
+	repo, shared := repoWithAFinding(t)
+	msr(t, "scan", "--repo="+repo, "--since=start", "--dir="+shared)
+	id := firstID(t, msr(t, "findings", "--repo="+repo, "--dir="+shared))
+	msr(t, "findings", "accept", id, "--repo="+repo, "--dir="+shared)
+	msr(t, "push", id, "--repo="+repo, "--dir="+shared)
+
+	listing := msr(t, "findings", "--repo="+repo, "--dir="+shared)
+
+	if !strings.Contains(listing, "pushed") {
+		t.Errorf("the listing does not say it is in flight:\n%s", listing)
+	}
+	if !strings.Contains(listing, "confirmed") {
+		t.Errorf("the listing does not say what was decided:\n%s", listing)
+	}
+}
+
+// `--format=jsonl` is the store itself, for something else to read: it gets
+// every item and the flag to sort them out. Every other format is somebody
+// being handed work.
+func TestJSONLExportKeepsWhatWasAlreadyThere(t *testing.T) {
+	repo, shared := repoWithAFinding(t)
+	store := storeAt(t, shared)
+	old := contract.Item{
+		Source: contract.SourceAnalyser, Producer: "go vet", RuleID: "printf",
+		Location: contract.Location{Path: "untouched.go", StartLine: 7, EndLine: 7},
+		Message:  "wrong verb", Severity: contract.SeverityMedium, New: false,
+	}
+	if _, err := recordFindings(store, []contract.Item{old}, sighting{
+		branch: "main", repo: repo,
+		producers: map[string]bool{"go vet": true}, paths: []string{"untouched.go"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	raw := msr(t, "export", "--format=jsonl", "--repo="+repo, "--dir="+shared)
+	if !strings.Contains(raw, "untouched.go") {
+		t.Errorf("the raw export dropped a finding somebody else may want:\n%s", raw)
+	}
+
+	agent := msr(t, "export", "--format=agent", "--repo="+repo, "--dir="+shared)
+	if strings.Contains(agent, "untouched.go") {
+		t.Errorf("the agent brief carries work this change did not cause:\n%s", agent)
+	}
+}

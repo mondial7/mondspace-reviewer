@@ -32,6 +32,13 @@ type Pass struct {
 	// Paths is which files they were pointed at, repository-relative. Empty
 	// means the whole tree.
 	Paths map[string]bool
+	// Branch is the branch the pass ran on.
+	//
+	// A pass sees one checkout. What it does not find on that branch is gone
+	// from that branch; on any other branch it has looked at nothing at all,
+	// and closing a finding there would say the other branch was fixed by work
+	// that never touched it (ADR 0045).
+	Branch string
 	// Tentative says this pass's silence is not evidence.
 	//
 	// A deterministic tool that does not report a finding it reported an hour
@@ -44,7 +51,13 @@ type Pass struct {
 
 // Covered reports whether this pass was in a position to see an item at all.
 func (p Pass) Covered(item contract.Item) bool {
-	if len(p.Producers) > 0 && item.Producer != "" && !p.Producers[item.Producer] {
+	if item.Branch != p.Branch {
+		return false
+	}
+	// An item with no producer was raised by something this pass cannot speak
+	// for — a note, a reading — and a list of tools that ran says nothing about
+	// it either way.
+	if len(p.Producers) > 0 && (item.Producer == "" || !p.Producers[item.Producer]) {
 		return false
 	}
 	if len(p.Paths) > 0 && !p.Paths[contract.NormalisePath(item.Location.Path)] {
@@ -168,6 +181,28 @@ func carry(prior, sighting contract.Item, at time.Time) (contract.Item, bool) {
 func sameSighting(a, b contract.Item) bool {
 	a.LastSeen, b.LastSeen = time.Time{}, time.Time{}
 	return reflect.DeepEqual(a, b)
+}
+
+// Caused splits what this change is responsible for from what was already
+// there, and says how many were already there (ADR 0043, ADR 0053).
+//
+// Every repository of any age has hundreds of findings nobody is going to act
+// on today. The cockpit has always folded those away and counted them; the
+// store did not, so `msr findings` listed them as work and `msr push --batch`
+// would have handed an agent a pile of code its change never touched.
+//
+// The flag only means anything for a deterministic analyser: a note a reviewer
+// typed and a reading a model produced are about this change by construction,
+// and neither carries `new`.
+func Caused(items []contract.Item) (caused []contract.Item, alreadyThere int) {
+	for _, item := range items {
+		if item.Source == contract.SourceAnalyser && !item.New {
+			alreadyThere++
+			continue
+		}
+		caused = append(caused, item)
+	}
+	return caused, alreadyThere
 }
 
 // SurfaceCap is how many items a run puts in front of a reviewer.

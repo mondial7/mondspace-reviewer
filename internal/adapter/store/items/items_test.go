@@ -1,9 +1,12 @@
 package items_test
 
 import (
+	"bufio"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -100,12 +103,12 @@ func TestBranchNamesWithSlashesAreOrdinary(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(entries) != 1 || entries[0].Name() != items.FileName {
-		t.Errorf("the store made %v, want one %s", entries, items.FileName)
+	// The store and the lock everybody writing it holds, and nothing else: no
+	// directory per branch, however many slashes the branch name has.
+	for _, name := range names(t, dir) {
+		if name != items.FileName && name != items.LockName {
+			t.Errorf("the store made %q, which is neither the file nor its lock", name)
+		}
 	}
 }
 
@@ -179,11 +182,80 @@ func TestCompactLeavesNoDebris(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	for _, name := range names(t, dir) {
+		if name != items.FileName && name != items.LockName {
+			t.Errorf("compaction left %q behind", name)
+		}
+	}
+}
+
+// Two worktrees of one repository are two processes appending to one file. The
+// store's whole claim is that this is safe.
+func TestConcurrentAppendsAreWholeLines(t *testing.T) {
+	dir := t.TempDir()
+	big := strings.Repeat("x", 700) // an ordinary item: a snippet, a directive, a message
+
+	var wg sync.WaitGroup
+	for w := 0; w < 8; w++ {
+		wg.Add(1)
+		go func(w int) {
+			defer wg.Done()
+			store := items.New(dir)
+			for i := 0; i < 5; i++ {
+				// A batch, as a scan writes one: several items in a single
+				// call, together far larger than a buffer, each line small
+				// enough to be buffered rather than written straight through.
+				batch := make([]contract.Item, 0, 5)
+				for j := 0; j < 5; j++ {
+					batch = append(batch, contract.Item{
+						ID:      string(rune('a'+w)) + string(rune('0'+i)) + string(rune('0'+j)),
+						Snippet: big, Title: "t",
+					})
+				}
+				if err := store.Append(batch...); err != nil {
+					t.Error(err)
+					return
+				}
+			}
+		}(w)
+	}
+	wg.Wait()
+
+	f, err := os.Open(filepath.Join(dir, items.FileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	lines, torn := 0, 0
+	for sc.Scan() {
+		lines++
+		var item contract.Item
+		if err := json.Unmarshal(sc.Bytes(), &item); err != nil {
+			torn++
+		}
+	}
+	t.Logf("%d lines, %d unreadable", lines, torn)
+	if torn > 0 {
+		t.Errorf("%d of %d lines were torn by a concurrent append", torn, lines)
+	}
+	if lines != 200 {
+		t.Errorf("%d lines, want 200 — some were lost", lines)
+	}
+}
+
+// names is what a directory holds, for the two tests that care that it holds
+// nothing else.
+func names(t *testing.T, dir string) []string {
+	t.Helper()
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 1 {
-		t.Errorf("after compaction the directory holds %v, want only the store", entries)
+	var out []string
+	for _, e := range entries {
+		out = append(out, e.Name())
 	}
+	return out
 }

@@ -12,6 +12,7 @@ import (
 	gitsnap "github.com/mondial7/mondspace-reviewer/internal/adapter/snapshot/git"
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/store/auto"
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/store/items"
+	"github.com/mondial7/mondspace-reviewer/internal/usecase"
 	"github.com/mondial7/mondspace-reviewer/internal/usecase/handoff"
 	"github.com/mondial7/mondspace-reviewer/internal/usecase/judge"
 )
@@ -56,13 +57,10 @@ func runAuto(ctx context.Context, args []string, stdout io.Writer) error {
 			return err
 		}
 		// Turning it on clears a suspension: saying so is the explicit act that
-		// a manual push stood down.
-		session, err := state.State(*session)
-		if err != nil {
-			return err
-		}
-		session.Suspended = false
-		if err := state.SaveState(session); err != nil {
+		// a manual push stood down. Through the store rather than through a
+		// read-modify-write of one session's state, which would reset whatever
+		// budget the running session had already spent.
+		if err := state.SetSuspended(false); err != nil {
 			return err
 		}
 		fmt.Fprintf(stdout, "auto-mode on: at most %d push(es) a session, %d item(s) each, %s apart, %s and above\n",
@@ -172,10 +170,18 @@ func autoRun(ctx context.Context, stdout io.Writer, store *auto.Store, policy ju
 	return nil
 }
 
-// standing is what the judge is allowed to see: what is still outstanding.
+// standing is what the judge is allowed to see: what is still outstanding, and
+// what this change caused.
+//
+// The second half matters more for the judge than for anybody else. A human
+// reading a list can tell "this is not mine" at a glance; an agent handed a
+// directive cannot, and would go and change code the work it is doing never
+// touched (ADR 0053).
 func standing(stored []contract.Item) []contract.Item {
+	caused, _ := usecase.Caused(stored)
+
 	var out []contract.Item
-	for _, item := range stored {
+	for _, item := range caused {
 		if item.Stands() {
 			out = append(out, item)
 		}
@@ -186,13 +192,12 @@ func standing(stored []contract.Item) []contract.Item {
 // suspendAuto stands auto-mode down for the rest of the session, which is what
 // a manual push does (ADR 0047).
 //
+// It does not name a session, because `msr push` does not know one: the id
+// belongs to whoever calls `msr auto run`. Asking the store to set the flag on
+// whatever is there is the whole of it.
+//
 // Best effort: a manual push must not fail because auto-mode's state file could
 // not be written, and auto-mode being on is already the opt-in.
-func suspendAuto(shared, session string) {
-	store := auto.New(shared)
-	state, err := store.State(session)
-	if err != nil {
-		return
-	}
-	_ = store.SaveState(judge.Suspend(state))
+func suspendAuto(shared string) {
+	_ = auto.New(shared).SetSuspended(true)
 }

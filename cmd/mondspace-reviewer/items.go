@@ -145,6 +145,7 @@ func recordFindings(store *items.Store, found []contract.Item, in sighting) ([]c
 	}
 	changed := usecase.Reconcile(stored, sight.Seen(found), usecase.Pass{
 		At:        at,
+		Branch:    in.branch,
 		Producers: in.producers,
 		Paths:     pathSet(in.paths),
 	})
@@ -178,7 +179,7 @@ func recordAnalysis(store *items.Store, a domain.Analysis, branch, session, repo
 	if err != nil {
 		return err
 	}
-	changed := usecase.Reconcile(stored, sight.FromAnalysis(a), usecase.Pass{At: at, Tentative: true})
+	changed := usecase.Reconcile(stored, sight.FromAnalysis(a), usecase.Pass{At: at, Branch: branch, Tentative: true})
 	return store.Append(changed...)
 }
 
@@ -198,12 +199,16 @@ func reportScan(stdout io.Writer, store *items.Store, branch string, changed []c
 	if err != nil {
 		return err
 	}
+	onBranch, alreadyThere := usecase.Caused(onBranch)
 	shown, held := usecase.Surface(onBranch, usecase.SurfaceCap, "")
 	for _, item := range shown {
 		fmt.Fprintf(stdout, "  %-9s %-28s %s\n", item.Severity.Normalise(), item.Where(), item.Title)
 	}
 	if held > 0 {
 		fmt.Fprintf(stdout, "  … and %d more, stored\n", held)
+	}
+	if alreadyThere > 0 {
+		fmt.Fprintf(stdout, "  %d finding(s) were already there and are not listed\n", alreadyThere)
 	}
 	for _, rule := range usecase.RulesWorthSuppressing(onBranch) {
 		fmt.Fprintf(stdout, "note: %s has been dismissed %d times — consider turning it off in %s\n",
@@ -225,6 +230,7 @@ func runFindings(ctx context.Context, args []string, stdout io.Writer) error {
 	everywhere := fs.Bool("all-branches", false, "every branch, not just this one")
 	minSeverity := fs.String("min-severity", "", "only findings at least this severe (low|medium|high)")
 	settled := fs.Bool("settled", false, "include what has been dismissed or fixed")
+	preExisting := fs.Bool("pre-existing", false, "include findings that were already there before this change")
 	format := fs.String("format", "text", "output format (text|jsonl)")
 	flags, words := partition(fs, args[1:])
 	if err := fs.Parse(flags); err != nil {
@@ -246,6 +252,10 @@ func runFindings(ctx context.Context, args []string, stdout io.Writer) error {
 		if !*settled {
 			list, _ = usecase.Surface(list, 0, contract.Severity(*minSeverity))
 		}
+		alreadyThere := 0
+		if !*preExisting {
+			list, alreadyThere = usecase.Caused(list)
+		}
 		if *format == "jsonl" {
 			body, err := usecase.ExportItemsJSONL(list)
 			if err != nil {
@@ -254,7 +264,7 @@ func runFindings(ctx context.Context, args []string, stdout io.Writer) error {
 			_, err = stdout.Write(body)
 			return err
 		}
-		return listFindings(stdout, list)
+		return listFindings(stdout, list, alreadyThere)
 	case "dismiss", "accept":
 		return ruleOn(stdout, store, verb, ids)
 	default:
@@ -262,18 +272,29 @@ func runFindings(ctx context.Context, args []string, stdout io.Writer) error {
 	}
 }
 
-func listFindings(stdout io.Writer, list []contract.Item) error {
+func listFindings(stdout io.Writer, list []contract.Item, alreadyThere int) error {
+	// Counted, never silently dropped: having none and hiding four hundred look
+	// identical otherwise, and one of them means the tool is broken (ADR 0043).
+	defer func() {
+		if alreadyThere > 0 {
+			fmt.Fprintf(stdout, "%d finding(s) were already there before this change — `--pre-existing` to see them\n",
+				alreadyThere)
+		}
+	}()
+
 	if len(list) == 0 {
 		fmt.Fprintln(stdout, "nothing outstanding")
 		return nil
 	}
+	// State and verdict are different questions and get different columns: one
+	// is what happened to the item, the other is what somebody thought of it
+	// (ADR 0044). Printing whichever was set last hid the more useful half —
+	// an item accepted and then pushed read as "confirmed", with nothing to say
+	// it had already gone to an agent.
 	for _, item := range list {
-		state := string(item.CurrentState())
-		if item.Verdict != "" {
-			state = string(item.Verdict)
-		}
-		fmt.Fprintf(stdout, "%s  %-8s %-9s %-28s %s\n",
-			item.ID, state, item.Severity.Normalise(), item.Where(), item.Title)
+		fmt.Fprintf(stdout, "%s  %-8s %-9s %-9s %-28s %s\n",
+			item.ID, item.CurrentState(), item.Verdict, item.Severity.Normalise(),
+			item.Where(), item.Title)
 	}
 	return nil
 }
@@ -393,7 +414,7 @@ func runPush(ctx context.Context, args []string, stdout io.Writer) error {
 	}
 	// A human pushing by hand stands auto-mode down for the rest of the
 	// session: two things steering one agent is worse than either (ADR 0047).
-	suspendAuto(sharedDir(*repo, *dir), "")
+	suspendAuto(sharedDir(*repo, *dir))
 
 	fmt.Fprintf(stdout, "pushed %d item(s) as %s", len(brief.Items), batch)
 	if written, ok := adapter.(*delivery.File); ok {
@@ -434,8 +455,13 @@ func chooseForPush(stored []contract.Item, branch string, batchMode bool, ids []
 		return chosen, nil
 	}
 
+	// What the change caused. Handing an agent a finding about code this change
+	// never touched is asking it to do somebody else's work, from a list it
+	// cannot tell apart (ADR 0053).
+	pushable, _ := usecase.Caused(stored)
+
 	var chosen []contract.Item
-	for _, item := range stored {
+	for _, item := range pushable {
 		if item.Branch != branch || !item.Pushable() {
 			continue
 		}
@@ -504,12 +530,13 @@ func fileBodies(repo string) func(string) string {
 // ranProducers is which tools this pass was in a position to speak for.
 //
 // An analyser that is not installed did not fail to find anything; it did not
-// look, and closing its findings because it was silent would be wrong
-// (see usecase.Pass).
+// look, and closing its findings because it was silent would be wrong (see
+// usecase.Pass). A tool that is installed and *crashed* is the same case wearing
+// a disguise: it reported nothing, and nothing is not a clean bill of health.
 func ranProducers(scanner *local.Scanner) map[string]bool {
 	out := map[string]bool{"msr": true}
 	for _, status := range scanner.Report() {
-		if status.Present {
+		if status.Present && status.Failed == "" {
 			out[status.Name] = true
 		}
 	}
@@ -582,6 +609,40 @@ func keys(set map[string]bool) []string {
 	return out
 }
 
+// compactFindings folds the findings file down to one line per item.
+//
+// The store is append-only, and every ruling, push and moved line is another
+// line on the end — during an hour of an agent's work that is thousands. The
+// resolved contents are identical either way; this is the housekeeping, and it
+// belongs in the command whose job is housekeeping rather than in the poll,
+// where it would rewrite the file under a review somebody is reading.
+func compactFindings(repo, dir string, dryRun bool, stdout io.Writer) error {
+	store := items.New(sharedDir(repo, dir))
+	before, err := store.Lines()
+	if err != nil {
+		return err
+	}
+	resolved, err := store.All()
+	if err != nil {
+		return err
+	}
+	if before <= len(resolved) {
+		return nil
+	}
+
+	if dryRun {
+		_, err := fmt.Fprintf(stdout, "would fold %d line(s) in %s down to %d\n",
+			before, items.FileName, len(resolved))
+		return err
+	}
+	if err := store.Compact(); err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(stdout, "folded %d line(s) in %s down to %d\n",
+		before, items.FileName, len(resolved))
+	return err
+}
+
 // isItemFormat says which half of `msr export` a format belongs to: the
 // session's report, or the findings store.
 func isItemFormat(format string) bool {
@@ -606,6 +667,13 @@ func exportItems(ctx context.Context, format, repo, dir, branch, state string,
 	// What is settled is left out of every renderer here. These are handed to
 	// something that will act on them, and a dismissed finding is one somebody
 	// has already decided not to act on.
+	// `jsonl` is the store itself, for something else to read and decide about
+	// — the planner, a script — and it gets everything, flag included. Every
+	// other format here is somebody being handed work (ADR 0053).
+	if format != "jsonl" {
+		list, _ = usecase.Caused(list)
+	}
+
 	var open []contract.Item
 	for _, item := range list {
 		if !item.Stands() {

@@ -113,19 +113,15 @@ func (s *Store) SavePolicy(policy judge.Policy) error {
 // starts the counts again, which is what makes a per-session budget mean
 // anything.
 func (s *Store) State(session string) (judge.State, error) {
-	body, err := os.ReadFile(filepath.Join(s.dir, StateFile))
-	if errors.Is(err, fs.ErrNotExist) {
-		return judge.State{Session: session}, nil
-	}
+	state, err := s.stored()
 	if err != nil {
 		return judge.State{}, err
 	}
-	var state judge.State
-	if err := json.Unmarshal(body, &state); err != nil {
-		return judge.State{Session: session}, nil
-	}
 	if state.Session != session {
-		return judge.State{Session: session}, nil
+		// A different run: the counts start again, which is what makes a
+		// per-session budget mean anything. A suspension does not, because it
+		// is the human saying stop and they did not say it about a session id.
+		return judge.State{Session: session, Suspended: state.Suspended}, nil
 	}
 	return state, nil
 }
@@ -140,6 +136,45 @@ func (s *Store) SaveState(state judge.State) error {
 		return err
 	}
 	return os.WriteFile(filepath.Join(s.dir, StateFile), body, 0o644)
+}
+
+// SetSuspended stands the running session down, or lifts it, without needing to
+// know which session that is.
+//
+// `msr push` is the other half of auto-mode's kill switch (ADR 0047) and it
+// does not know the agent's session id — that belongs to whoever calls
+// `msr auto run`. Reading the state under the wrong id hands back a zero one,
+// and writing that back did two things, both wrong: the running session was not
+// suspended, and the budget it had already spent was reset to nothing. So this
+// reads whatever is stored, changes the one flag, and puts it back.
+func (s *Store) SetSuspended(suspended bool) error {
+	state, err := s.stored()
+	if err != nil {
+		return err
+	}
+	if state.Suspended == suspended {
+		return nil
+	}
+	state.Suspended = suspended
+	return s.SaveState(state)
+}
+
+// stored is the state as written, whatever session it names.
+func (s *Store) stored() (judge.State, error) {
+	body, err := os.ReadFile(filepath.Join(s.dir, StateFile))
+	if errors.Is(err, fs.ErrNotExist) {
+		return judge.State{}, nil
+	}
+	if err != nil {
+		return judge.State{}, err
+	}
+	var state judge.State
+	if err := json.Unmarshal(body, &state); err != nil {
+		// A state nobody can read is a state nobody has: the counts start
+		// again, which is the conservative direction for a budget.
+		return judge.State{}, nil
+	}
+	return state, nil
 }
 
 // Log appends every decision this run took.

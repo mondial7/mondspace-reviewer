@@ -117,3 +117,34 @@ func TestASARIFDocumentIsFoundAmongWhateverElseWasPrinted(t *testing.T) {
 		t.Fatalf("got %d findings, want 2", len(got))
 	}
 }
+
+// `go vet` prefixes its own name when it is reporting about a package rather
+// than a line: `vet: ./a.go:5:2: …`. Left in, the path becomes "vet: ./a.go" —
+// a file nothing can open, so no window, no snippet, and a directive pointing
+// an agent at something that is not there.
+func TestALineFindingLosesTheToolsOwnPrefix(t *testing.T) {
+	a := usecase.Analyser{Name: "go vet", Format: usecase.FormatLines}
+
+	got := usecase.ReadFindings(a, "vet: ./internal/a.go:5:2: imports must appear before other declarations\n", ".")
+
+	if len(got) != 1 {
+		t.Fatalf("read %d findings, want 1", len(got))
+	}
+	if got[0].Location.Path != "internal/a.go" {
+		t.Errorf("path = %q, want the file the tool was talking about", got[0].Location.Path)
+	}
+	if got[0].Location.StartLine != 5 {
+		t.Errorf("line = %d, want 5", got[0].Location.StartLine)
+	}
+}
+
+// And an ordinary line, which has no prefix, is untouched.
+func TestAnOrdinaryLineFindingIsUnchanged(t *testing.T) {
+	a := usecase.Analyser{Name: "staticcheck", Format: usecase.FormatLines}
+
+	got := usecase.ReadFindings(a, "internal/a.go:7:3: this value is never used (SA4006)\n", ".")
+
+	if len(got) != 1 || got[0].Location.Path != "internal/a.go" || got[0].RuleID != "SA4006" {
+		t.Errorf("got %+v", got)
+	}
+}
