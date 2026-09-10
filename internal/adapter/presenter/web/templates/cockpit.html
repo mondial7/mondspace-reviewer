@@ -839,13 +839,26 @@
              the same sentence far more often than not — always, for the live
              target, whose name *is* "Live · uncommitted work" — and three
              copies of one sentence is not a summary. -->
+        <!-- Cut where it is shown, kept whole behind "read more" (ADR 0041,
+             ADR 0050). A recorded run's prompt is whatever was typed at the
+             agent, which for one of these is several thousand characters of
+             diff — printed in full it was longer than everything else on the
+             page put together. -->
         {{ if and .Narrative.Intro (not (echoes .Narrative.Intro .Narrative.Title)) }}
-        <p class="brief__text">{{ .Narrative.Intro }}</p>
+        <div class="brief__text">{{ brief .Narrative.Intro 300 }}
+          {{ if longer .Narrative.Intro 300 }}
+          {{ template "readmore.html" dict "Label" "the whole summary" "Text" .Narrative.Intro }}
+          {{ end }}
+        </div>
         {{ end }}
         {{ if and .Session.Prompt
                   (not (echoes .Session.Prompt .Narrative.Title))
                   (not (echoes .Session.Prompt .Narrative.Intro)) }}
-        <p class="brief__task">{{ .Session.Prompt }}</p>
+        <div class="brief__task">{{ brief .Session.Prompt 260 }}
+          {{ if longer .Session.Prompt 260 }}
+          {{ template "readmore.html" dict "Label" "what the agent was asked" "Text" .Session.Prompt }}
+          {{ end }}
+        </div>
         {{ end }}
         <p class="brief__src brief__src--{{ .Narrative.Source }}">
           <!-- Quiet here. The stated/inferred distinction is load-bearing on a

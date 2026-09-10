@@ -3165,3 +3165,47 @@ func TestWorkWaitingOnAnotherReviewIsNotThisOnesNews(t *testing.T) {
 		t.Error("another review's pending work must not appear here")
 	}
 }
+
+// A recorded run's prompt is whatever was typed at the agent, and for one of
+// these that is several thousand characters with a diff in the middle of it.
+// Printed in full on the card it was longer than everything else on the page
+// put together.
+func TestALongPromptIsCutWithTheRestBehindReadMore(t *testing.T) {
+	sess := testSession()
+	sess.Prompt = "You explain what a code change is for, to a reviewer. " +
+		strings.Repeat("The developer asked the agent to rewrite the summarizer so it can shell out to a CLI. ", 8)
+	h := web.NewServer(sess, nil)
+
+	body := get(t, h, "/").Body.String()
+
+	if !strings.Contains(body, "…read more") {
+		t.Error("a prompt this long should offer the rest behind a link")
+	}
+	// Cut where it is shown, kept whole behind the link: the sheet has the
+	// ending that the card does not.
+	tail := "shell out to a CLI."
+	if strings.Count(body, tail) < 2 {
+		t.Error("the whole prompt should still be on the page, inside the sheet")
+	}
+	if !strings.Contains(body, "cardinfo__prose") {
+		t.Error("the rest should open in the same sheet everything else uses")
+	}
+	// And the card itself must not carry the whole thing.
+	card := body[strings.Index(body, `class="brief__task"`):]
+	card = card[:strings.Index(card, "<details")]
+	if len(card) > 600 {
+		t.Errorf("the card shows %d characters of prompt, want it cut", len(card))
+	}
+}
+
+// A prompt that fits is left alone: a "read more" that opens the sentence you
+// have already read is worse than no link at all.
+func TestAShortPromptOffersNoReadMore(t *testing.T) {
+	h := web.NewServer(testSession(), nil)
+
+	body := get(t, h, "/").Body.String()
+
+	if strings.Contains(body, "…read more") {
+		t.Error("a short prompt should not offer to show more of itself")
+	}
+}
