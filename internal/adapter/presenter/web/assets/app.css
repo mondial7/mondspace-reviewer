@@ -3283,7 +3283,9 @@ a.toast:hover { border-color: var(--kind, var(--accent)); }
   text-decoration: none;
 }
 
-.branch__link:hover .branch__name { text-decoration: underline; }
+/* Only when it is a link: a card whose branch the graph does not reach is the
+   same card without the affordance. */
+a.branch__link:hover .branch__name { text-decoration: underline; }
 
 .branch__head {
   display: flex;
@@ -4178,11 +4180,12 @@ a.log__branch:hover { text-decoration: underline; }
 }
 .graph__row:hover { background: var(--bg-hover); }
 .graph__hash { color: var(--hunk); font-size: 0.72rem; }
-/* The subject takes whatever is left after the hash, the branch name and the
-   age, and gives it all back on a narrow screen. It is the only part of the
-   row that can be cut and still leave a row worth reading. */
+/* The subject is the only thing in the row that gives up width, and it sizes
+   to its own text so the branch name stays beside it rather than being flung
+   to the far edge. It is also the only part that can be cut and still leave a
+   row worth reading. */
 .graph__subject {
-  flex: 1 1 0;
+  flex: 0 1 auto;
   overflow: hidden; text-overflow: ellipsis; min-width: 0; font-size: 0.85rem;
 }
 .graph__when {

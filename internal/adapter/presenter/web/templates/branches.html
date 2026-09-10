@@ -69,7 +69,10 @@
     <ul class="branchlist">
       {{ range .Branches }}
       <li class="branch {{ if .Merged }}branch--merged{{ end }} {{ if .Mine }}branch--mine{{ end }}">
-        <a class="branch__link" href="#ref-{{ .Short }}">
+        <!-- Linked into the graph only where the graph reaches: history is
+             bounded, and a link to an anchor that is not on the page is a
+             click that does nothing (ADR 0056). -->
+        {{ if $.Graph.Has .Short }}<a class="branch__link" href="#ref-{{ .Short }}">{{ else }}<span class="branch__link">{{ end }}
           <span class="branch__head">
             <span class="branch__name">{{ .Short }}</span>
             {{ if .Mine }}<span class="branch__tag branch__tag--mine">yours</span>{{ end }}
@@ -82,7 +85,7 @@
             {{ if .Behind }}<span class="branch__behind">{{ .Behind }} behind</span>{{ end }}
             {{ if .Merged }}<span class="branch__tag">nothing to review</span>{{ end }}
           </span>
-        </a>
+        {{ if $.Graph.Has .Short }}</a>{{ else }}</span>{{ end }}
 
         <!-- Reviewing a colleague's branch is the range base..branch, which is
              an ordinary comparison — so this opens a real review rather than

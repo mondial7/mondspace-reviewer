@@ -2613,6 +2613,31 @@ func TestEveryBranchCardLinksToADotInTheGraph(t *testing.T) {
 	}
 }
 
+// History is bounded, so a branch whose tip is older than the window has a card
+// and no dot. A link to an anchor that is not on the page is a click that does
+// nothing (ADR 0056).
+func TestABranchTheGraphDoesNotReachIsNotALink(t *testing.T) {
+	h := web.NewServer(testSession(), nil).
+		WithBranches(func(string) web.BranchView {
+			return web.BranchView{
+				Base: "origin/main",
+				Branches: []domain.Branch{
+					{Name: "origin/ancient", Short: "ancient", Subject: "long ago",
+						Author: "Alice", TS: time.Now(), Base: "origin/main"},
+				},
+			}
+		}).
+		WithGraph(func(string, int) []domain.GraphCommit {
+			return []domain.GraphCommit{
+				{Hash: "aaa", Short: "aaa", Subject: "recent", TS: time.Now()},
+			}
+		})
+
+	if body := get(t, h, "/branches").Body.String(); strings.Contains(body, "#ref-ancient") {
+		t.Errorf("a branch with no dot should not link into the graph:\n%s", body)
+	}
+}
+
 func TestNoBranchesPageWithoutARemote(t *testing.T) {
 	h := web.NewServer(testSession(), nil)
 	if rec := get(t, h, "/branches"); rec.Code != http.StatusNotFound {
