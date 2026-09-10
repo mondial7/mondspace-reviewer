@@ -786,6 +786,43 @@
       {{ end }}
 
       <section class="brief">
+        <!-- The field, in the corner of the card that says what range this is
+             (ADR 0050). It was a card of its own below, which idle meant a
+             three-rem strip: a picture too small to read, taking a row to be
+             too small in. Nothing changed means nothing to draw. -->
+        {{ if not .Empty }}
+        <div class="brief__pulse">
+        <canvas class="cockpit__scene" id="cockpit-scene" aria-hidden="true"></canvas>
+
+        <!-- What the colours mean is a thing you read once. It sat under the
+             field permanently, taking a third of a card whose whole point is
+             the picture. -->
+        <details class="pulseinfo">
+          <summary class="pulseinfo__open" title="what the colours mean"
+                   aria-label="What the colours mean">
+            <svg class="ico" aria-hidden="true"><use href="#i-info"/></svg>
+          </summary>
+          <div class="pulseinfo__panel">
+            <p class="pulseinfo__title">what you are looking at</p>
+            <p class="cockpit__legend">
+              <span class="cockpit__key cockpit__key--add">growth</span>
+              <span class="cockpit__key cockpit__key--del">deletion</span>
+            </p>
+            <p class="pulseinfo__note">
+              One block per changed file, tallest where the most changed, and
+              split green over red in the proportion it added to what it took
+              away.
+              {{ if .Stats.Live }}It turns faster while work is landing.
+              {{ else }}Nothing has landed for a while.{{ end }}
+            </p>
+          </div>
+        </details>
+
+        <p class="cockpit__status cockpit__status--{{ if .Stats.Live }}live{{ else }}idle{{ end }}">
+          <span class="cockpit__dot"></span>{{ if .Stats.Live }}working{{ else }}idle{{ end }}
+        </p>
+        </div>
+        {{ end }}
         {{ with .Session.Target.Kind }}<p class="brief__kind brief__kind--{{ . }}">{{ . }}</p>{{ end }}
         <!-- Three to five pictographs for what this change is about. Inferred
              like everything else on this card, and absent whenever the model
@@ -819,42 +856,6 @@
           {{ else }}no model has read this yet{{ end }}
         </p>
       </section>
-
-      <!-- Nothing changed means nothing to draw, and an empty field is a large
-           box of nothing where the history could be. -->
-      {{ if not .Empty }}
-      <section class="cockpit__pulse">
-        <canvas class="cockpit__scene" id="cockpit-scene" aria-hidden="true"></canvas>
-
-        <!-- What the colours mean is a thing you read once. It sat under the
-             field permanently, taking a third of a card whose whole point is
-             the picture. -->
-        <details class="pulseinfo">
-          <summary class="pulseinfo__open" title="what the colours mean"
-                   aria-label="What the colours mean">
-            <svg class="ico" aria-hidden="true"><use href="#i-info"/></svg>
-          </summary>
-          <div class="pulseinfo__panel">
-            <p class="pulseinfo__title">what you are looking at</p>
-            <p class="cockpit__legend">
-              <span class="cockpit__key cockpit__key--add">growth</span>
-              <span class="cockpit__key cockpit__key--del">deletion</span>
-            </p>
-            <p class="pulseinfo__note">
-              One block per changed file, tallest where the most changed, and
-              split green over red in the proportion it added to what it took
-              away.
-              {{ if .Stats.Live }}It turns faster while work is landing.
-              {{ else }}Nothing has landed for a while.{{ end }}
-            </p>
-          </div>
-        </details>
-
-        <p class="cockpit__status cockpit__status--{{ if .Stats.Live }}live{{ else }}idle{{ end }}">
-          <span class="cockpit__dot"></span>{{ if .Stats.Live }}working{{ else }}idle{{ end }}
-        </p>
-      </section>
-      {{ end }}
 
       <!-- Where you are against everything that has landed, and what the rest
            of the team has pushed (issue #18). Scrolls on its own so a long
