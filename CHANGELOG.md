@@ -27,6 +27,28 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 The screenshots in this repository are of the old palette until `docs/img/demo.sh`
 is run again.
 
+### Fixed
+
+- **`?` opened the keyboard sheet in the corner of the page, half off the
+  screen.** The command palette and the sheet are appended to the body, and the
+  rule that lifts every child of the page above the starfield caught them both
+  — an overlay that is not fixed is not an overlay. The same rule put them under
+  the rail. Both now open over the page, with padding, and scroll inside
+  themselves on a short window.
+
+### Changed
+
+- **The review card's orientation paragraph moved behind an info icon** in the
+  card's corner (ADR 0050). Worth reading once, not on every visit.
+- **The field moved into the card that says what range this is**, as a square in
+  its corner. It was a card of its own that collapsed to a strip when nothing
+  was landing — a picture too small to read taking a whole row to be too small
+  in.
+- **The tour is four steps and four hundred words**, down from six steps and a
+  thousand, each with a sketch of the region it is about and a link to the page
+  it describes.
+
+
 ## [7.0.1] — 2026-09-02
 
 ### Fixed
