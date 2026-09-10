@@ -583,6 +583,16 @@ a:hover { color: var(--accent); }
    cell and pushed the page up from the bottom. */
 .page > .toasts { position: fixed; }
 
+/* The command palette and the keyboard sheet are appended to the body, so the
+   rule above caught them too: both were laid out in flow, at the end of a grid,
+   as a panel wedged into the bottom-left corner of the page. An overlay that is
+   not fixed is not an overlay.
+
+   The z-index goes with it: the rule above also flattened both to layer 1,
+   under the rail at 30 — so even fixed, the sheet would have opened behind the
+   sidebar. */
+.page > .palette { position: fixed; z-index: 50; }
+
 /* Zen strips the shell — backdrop and rail — leaving only the work. */
 /* Zen: the shell and nothing else. One shortcut over the top of the two things
    that fold on their own, because "get out of my way" is one thought. */
@@ -644,10 +654,18 @@ a:hover { color: var(--accent); }
   background: color-mix(in srgb, var(--bg) 72%, transparent);
   backdrop-filter: blur(3px);
   display: flex; align-items: flex-start; justify-content: center;
-  padding-top: 14vh;
+  /* A fraction of the window, capped. At 14vh flat, a short window put the top
+     of the sheet a third of the way down and the bottom of it off the screen —
+     with nothing to scroll, because the overlay is fixed. */
+  padding: min(14vh, 4.5rem) 1rem 1.5rem;
+  overflow-y: auto;
 }
 .palette__sheet {
   width: min(560px, 92vw);
+  /* Never taller than the window it is centred in. What does not fit scrolls
+     inside the sheet rather than off the bottom of the screen. */
+  max-height: 100%;
+  display: flex; flex-direction: column; min-height: 0;
   background: var(--panel);
   border: 1px solid var(--accent); border-radius: var(--radius);
   box-shadow: 0 18px 60px rgba(0, 0, 0, 0.72);
@@ -2351,6 +2369,14 @@ a.toast:hover { border-color: var(--kind, var(--accent)); }
 .post[data-cursor='true'] > .post__head {
   background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
+
+/* ── The keyboard sheet ─────────────────────────────────────────────────────
+   It borrows the command palette's overlay, which is right — one shell, one
+   place to change how a sheet looks. What it cannot borrow is the padding: the
+   palette's input and list each bring their own, so a sheet made of plain
+   paragraphs sat with its heading and its footer under the rounded border. */
+.keysheet .palette__sheet { padding: 0.9rem 1.1rem; }
+.keysheet .keysheet__list { overflow-y: auto; min-height: 0; }
 
 .keysheet__title {
   margin: 0 0 0.5rem;
