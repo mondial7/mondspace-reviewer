@@ -3228,15 +3228,25 @@ a.toast:hover { border-color: var(--kind, var(--accent)); }
 /* Full width, like every other board. Centred inside 62rem under a full-bleed
    masthead, the list read as though it had been indented by accident — and it
    left a column of nothing on either side of cards that tile perfectly well. */
-.branches { display: block; }
+/* The list is the index and the graph is the shape (ADR 0056). A fifth of the
+   width holds a branch name, its subject and how far it has drifted; the rest
+   is the picture, which is the part a column of cards cannot give you. */
+.branches {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 4fr);
+  gap: var(--gutter);
+  align-items: start;
+  min-height: 0;
+}
 
 .branchlist {
-  display: grid;
-  gap: 0.6rem;
-  grid-template-columns: repeat(auto-fit, minmax(19rem, 1fr));
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
   margin: 0;
   padding: 0;
   list-style: none;
+  min-width: 0;
 }
 
 .branch {
@@ -3260,6 +3270,20 @@ a.toast:hover { border-color: var(--kind, var(--accent)); }
 }
 
 .branch--mine { border-left-color: var(--accent); }
+
+/* The whole card is one target for the graph beside it, so the card is the
+   link. A link that large must not look like body text set in blue and
+   underlined: the affordance is the branch name, and the rest is the card. */
+.branch__link {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+}
+
+.branch__link:hover .branch__name { text-decoration: underline; }
 
 .branch__head {
   display: flex;
@@ -3307,18 +3331,36 @@ a.toast:hover { border-color: var(--kind, var(--accent)); }
 .branch__ahead { color: var(--add); }
 .branch__behind { color: var(--fg-dim); }
 
+/* Two lines of subject. A commit message that needs more than that is one the
+   reader opens rather than one they skim in a column an eighth of the page
+   wide. */
 .branch__subject {
   margin: 0;
   font-size: 0.8rem;
   line-height: 1.45;
   overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .branch__meta {
   margin: 0;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.15rem 0.45rem;
   color: var(--fg-dim);
   font-family: var(--mono);
   font-size: 0.66rem;
+}
+
+.branch__who {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .branch__open {
@@ -4093,4 +4135,65 @@ a.log__branch:hover { text-decoration: underline; }
   /* Hover states that only appear on hover are invisible here, so the things
      they were revealing are simply on. */
   .post__annotate, .diff__line--noted .diff__note { opacity: 1; }
+}
+
+/* ── The network ────────────────────────────────────────────────────────────
+   Drawn on the server, from the commits themselves (ADR 0056): the lanes are a
+   pure function of the parents, and a page that needs a script to show you a
+   picture shows you nothing while the script is loading. */
+.graph {
+  min-width: 0;
+  border: 1px solid var(--rule); border-radius: var(--radius);
+  background: var(--panel); box-shadow: var(--panel-glow);
+  padding: 0.4rem 0.6rem;
+}
+.graph__scroll { overflow: auto; max-height: calc(100vh - 12rem); }
+.graph__rows { position: relative; min-width: 0; }
+.graph__lines { position: absolute; left: 0; top: 0; overflow: visible; }
+.graph__edge { fill: none; stroke: currentColor; stroke-width: 1.6; opacity: 0.75; }
+.graph__dot { fill: var(--panel); stroke: currentColor; stroke-width: 2.5; }
+/* A merge is the one thing a reader is looking for in a shape rather than a
+   list, so it is filled rather than hollow. */
+.graph__dot--merge { fill: currentColor; }
+
+/* Lanes cycle through the palette. Colour here means "a different line", not
+   "a different kind of thing", so any six that are told apart will do. */
+.graph__lane--0 { color: var(--accent); }
+.graph__lane--1 { color: var(--blue); }
+.graph__lane--2 { color: var(--warm); }
+.graph__lane--3 { color: var(--hot); }
+.graph__lane--4 { color: var(--fg-dim); }
+.graph__lane--5 { color: var(--inferred); }
+
+/* One row per commit, at the height its dot is drawn at, so the words and the
+   picture are one thing rather than two lists that agree. */
+.graph__row {
+  position: absolute; left: var(--graph-width); right: 0;
+  transform: translateY(-50%);
+  display: flex; align-items: baseline; gap: 0.5rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: var(--radius-sm);
+  color: var(--fg); text-decoration: none;
+  min-width: 0; white-space: nowrap;
+}
+.graph__row:hover { background: var(--bg-hover); }
+.graph__hash { color: var(--hunk); font-size: 0.72rem; }
+.graph__subject {
+  overflow: hidden; text-overflow: ellipsis; min-width: 0; font-size: 0.85rem;
+}
+.graph__when { color: var(--fg-faint); font-size: 0.72rem; margin-left: auto; }
+.graph__tip {
+  font-size: 0.68rem; padding: 0.05rem 0.4rem; border-radius: 999px;
+  background: var(--accent-wash); color: var(--accent);
+  border: 1px solid var(--accent-edge);
+}
+
+/* The branch a reader clicked, in the graph. */
+.graph__row:target { background: var(--accent-wash); }
+
+@media (max-width: 1000px) {
+  /* Below this the list has no room to be a column beside a picture, so the
+     picture goes underneath it. */
+  .branches { grid-template-columns: minmax(0, 1fr); }
+  .graph__scroll { max-height: 60vh; }
 }

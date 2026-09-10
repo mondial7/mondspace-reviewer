@@ -291,6 +291,7 @@ type Server struct {
 	dismissReported DismissFunc
 	verifyReported  VerifyFunc
 	toolsOf         ToolsFunc
+	graphOf         GraphOf
 	judge           JudgeFindingFunc
 	search          SearchFunc
 	analysisOf      AnalysisOf
@@ -1534,6 +1535,13 @@ func (s *Server) WithRemoteWatch(state RemoteWatchState, set SetRemoteWatch) *Se
 	return s
 }
 
+// graphLimit is how much history the picture covers.
+//
+// Enough to show where the branches on screen came from, and not so much that
+// the page becomes a mile of SVG nobody scrolls to the end of. The list beside
+// it is the index; this is the shape.
+const graphLimit = 80
+
 // handleBranches lists what everyone is working on.
 func (s *Server) handleBranches(w http.ResponseWriter, r *http.Request) {
 	s.mu.RLock()
@@ -1559,17 +1567,62 @@ func (s *Server) handleBranches(w http.ResponseWriter, r *http.Request) {
 		rows = append(rows, branchRow{Branch: b, Ago: usecase.Ago(s.now().Sub(b.TS))})
 	}
 
+	// The shape of the same thing the list describes. Laid out here rather than
+	// drawn in the browser: it is a pure function of the commits, and a page
+	// that needs a script to show you a picture shows you nothing while the
+	// script is loading (ADR 0056).
+	s.mu.RLock()
+	graphOf := s.graphOf
+	s.mu.RUnlock()
+
+	var graph usecase.GraphView
+	if graphOf != nil {
+		commits := graphOf(s.openSession(r).ID, graphLimit)
+		graph = usecase.LayOutGraph(commits)
+		for i := range graph.Nodes {
+			graph.Nodes[i].Ago = usecase.Ago(s.now().Sub(graph.Nodes[i].TS))
+		}
+	}
+
 	s.render(w, "branches.html", struct {
 		Base     string
 		Repo     string
 		Branches []branchRow
+		Graph    usecase.GraphView
 		Work     []Work
 		Watching bool
 		Every    string
 	}{
-		Base: view.Base, Repo: s.openSession(r).Repo, Branches: rows, Work: work,
-		Watching: on, Every: every.String(),
+		Base: view.Base, Repo: s.openSession(r).Repo, Branches: rows, Graph: graph,
+		Work: work, Watching: on, Every: everyLabel(every),
 	})
+}
+
+// everyLabel is an interval as a reader would say it.
+//
+// Go writes a round minute as "1m0s", which is a duration printed for a log
+// rather than a sentence read on a page.
+func everyLabel(d time.Duration) string {
+	label := d.Truncate(time.Second).String()
+	label = strings.TrimSuffix(label, "0s")
+	label = strings.TrimSuffix(label, "0m")
+	if label == "" {
+		return d.String()
+	}
+	return label
+}
+
+// GraphOf is recent history across every branch, for the picture on the
+// branches page (ADR 0056). It takes the open session's target, the same way
+// BranchesOf does, and leaves resolving that to a checkout to the caller.
+type GraphOf func(targetID string, limit int) []domain.GraphCommit
+
+// WithGraph wires it. Without it the branches page is the list it always was.
+func (s *Server) WithGraph(fn GraphOf) *Server {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.graphOf = fn
+	return s
 }
 
 // handleRemoteWatch turns fetching on or off while msr runs.
@@ -3849,6 +3902,15 @@ func funcs() template.FuncMap {
 	return template.FuncMap{
 		"base": filepath.Base,
 		"add":  func(a, b int) int { return a + b },
+		// Lane colours cycle, so the graph needs a remainder. Go's templates
+		// have no arithmetic at all, which is usually the right answer and is
+		// not here.
+		"mod": func(a, b int) int {
+			if b == 0 {
+				return 0
+			}
+			return a % b
+		},
 		// Cutting a sentence to fit a card. It exists so the *store* does not
 		// have to: text is kept whole and shortened where it is shown, so the
 		// ellipsis on a card has somewhere to expand to (ADR 0041).

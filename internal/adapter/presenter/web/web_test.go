@@ -2575,6 +2575,44 @@ func TestTheBranchesPageShowsWhatTheTeamIsWorkingOn(t *testing.T) {
 	}
 }
 
+// The list is an index into the picture: every branch card links to a dot, and
+// the dot has to be there. A name that decorates two commits — a checkout
+// behind what it tracks — must still land on exactly one (ADR 0056).
+func TestEveryBranchCardLinksToADotInTheGraph(t *testing.T) {
+	now := time.Now()
+	h := web.NewServer(testSession(), nil).
+		WithBranches(func(string) web.BranchView {
+			return web.BranchView{
+				Base: "origin/main",
+				Branches: []domain.Branch{
+					{Name: "origin/main", Short: "main", Subject: "the mainline",
+						Author: "Alice", TS: now, Base: "origin/main"},
+				},
+			}
+		}).
+		WithGraph(func(string, int) []domain.GraphCommit {
+			return []domain.GraphCommit{
+				{Hash: "bbb", Short: "bbb", Parent: []string{"aaa"},
+					Refs: []string{"main"}, Subject: "newer", TS: now},
+				// The local checkout, still sitting on the commit before.
+				{Hash: "aaa", Short: "aaa", Refs: []string{"main"},
+					Subject: "older", TS: now.Add(-time.Hour)},
+			}
+		})
+
+	body := get(t, h, "/branches").Body.String()
+
+	if !strings.Contains(body, `href="#ref-main"`) {
+		t.Errorf("the branch card should link into the graph:\n%s", body)
+	}
+	if n := strings.Count(body, `id="ref-main"`); n != 1 {
+		t.Errorf("%d commits answer to #ref-main; a link needs exactly one", n)
+	}
+	if !strings.Contains(body, "graph__dot") {
+		t.Errorf("the page should draw the history beside the list:\n%s", body)
+	}
+}
+
 func TestNoBranchesPageWithoutARemote(t *testing.T) {
 	h := web.NewServer(testSession(), nil)
 	if rec := get(t, h, "/branches"); rec.Code != http.StatusNotFound {

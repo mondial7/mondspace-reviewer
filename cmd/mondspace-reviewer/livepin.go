@@ -382,6 +382,29 @@ func targetIDForCommit(hash string) (string, bool) {
 
 // branchesOf lists every remote branch with how far it has drifted, for the
 // wider view (ADR 0026).
+// graphOf is recent history across every branch, for the picture beside the
+// list (ADR 0056).
+func graphOf(fallback string) web.GraphOf {
+	return func(targetID string, limit int) []domain.GraphCommit {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+
+		// The same resolution the list beside it does: a session names a
+		// target, a target names a checkout. The session's Repo is the repo's
+		// name, which is a label, not somewhere `git log` can be run.
+		repo := fallback
+		if entry, known := lookupTarget(targetID); known {
+			repo = entry.repo
+		}
+
+		commits, err := gitsnap.New(repo, "graph").Graph(ctx, limit)
+		if err != nil {
+			return nil
+		}
+		return commits
+	}
+}
+
 func branchesOf(fallback string) web.BranchesOf {
 	return func(targetID string) web.BranchView {
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
