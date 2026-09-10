@@ -35,6 +35,10 @@ is run again.
   — an overlay that is not fixed is not an overlay. The same rule put them under
   the rail. Both now open over the page, with padding, and scroll inside
   themselves on a short window.
+- **The rail scrolled away with the page** on the tour, settings, activity,
+  search and branches. It asks to be sticky; the same blanket rule made it
+  relative. The cockpit hid it, because that page does not scroll and a rail
+  that cannot stick looks identical to one that does.
 
 ### Changed
 
