@@ -4174,15 +4174,24 @@ a.log__branch:hover { text-decoration: underline; }
   padding: 0.15rem 0.5rem;
   border-radius: var(--radius-sm);
   color: var(--fg); text-decoration: none;
-  min-width: 0; white-space: nowrap;
+  min-width: 0; white-space: nowrap; overflow: hidden;
 }
 .graph__row:hover { background: var(--bg-hover); }
 .graph__hash { color: var(--hunk); font-size: 0.72rem; }
+/* The subject takes whatever is left after the hash, the branch name and the
+   age, and gives it all back on a narrow screen. It is the only part of the
+   row that can be cut and still leave a row worth reading. */
 .graph__subject {
+  flex: 1 1 0;
   overflow: hidden; text-overflow: ellipsis; min-width: 0; font-size: 0.85rem;
 }
-.graph__when { color: var(--fg-faint); font-size: 0.72rem; margin-left: auto; }
+.graph__when {
+  flex: none; color: var(--fg-faint); font-size: 0.72rem; margin-left: auto;
+}
+/* A branch name is not worth truncating: half of it names nothing. It keeps
+   its width and the subject beside it gives up as much as it takes. */
 .graph__tip {
+  flex: none;
   font-size: 0.68rem; padding: 0.05rem 0.4rem; border-radius: 999px;
   background: var(--accent-wash); color: var(--accent);
   border: 1px solid var(--accent-edge);
@@ -4196,4 +4205,11 @@ a.log__branch:hover { text-decoration: underline; }
      picture goes underneath it. */
   .branches { grid-template-columns: minmax(0, 1fr); }
   .graph__scroll { max-height: 60vh; }
+}
+
+@media (max-width: 760px) {
+  /* The hash goes. A row on a phone has space for about three of its four
+     parts, and an abbreviated hash is the one nobody reads off a screen —
+     the dot beside it, the branch name and the age are the row (ADR 0055). */
+  .graph__hash { display: none; }
 }
