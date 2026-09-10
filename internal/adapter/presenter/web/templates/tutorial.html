@@ -45,209 +45,161 @@
   <header class="masthead">
     <h1 class="masthead__title">how to use this</h1>
     <p class="masthead__meta">
-      <span class="masthead__hint">Four things, in order. Everything else is
-        discoverable by clicking around — this is for the first five minutes.</span>
+      <span class="masthead__hint">Four steps, in order. Everything else is a
+        click away — this is the first five minutes.</span>
     </p>
   </header>
 
   <main class="board tour">
 
     <!-- Ordered, because the order is the content: you cannot annotate a review
-         you have not chosen, and signing off is last by definition. -->
+         you have not chosen, and signing off is last by definition.
+
+         Each step carries a sketch of the region it is about rather than a
+         screenshot (ADR 0050): a screenshot of this app is out of date the next
+         time anybody moves a card, and it cannot follow the theme. These are
+         drawn from the same tokens as the page they describe. -->
     <ol class="tour__steps">
 
       <li class="tour__step">
-        <h2 class="tour__title">Pick what to review</h2>
-        <p class="tour__body">
-          From the <em>history</em> card on the right: every commit, the tags on
-          them and your recorded runs, in time order, with <kbd>[</kbd> and
-          <kbd>]</kbd> to walk it. Or leave it on <strong>live</strong>, which is
-          your working tree against HEAD and where msr opens.
-        </p>
-        <p class="tour__body tour__body--dim">
-          Anything in git is reviewable: one commit, a tag (everything since the
-          previous one), a pull request, a recorded agent session, or any two
-          points compared against each other. A signed-off review is ticked in
-          the list, so what is left to look at is readable without opening it.
-        </p>
+        <svg class="tour__shot" viewBox="0 0 160 100" role="img"
+             aria-label="The panel column on the right of the cockpit, with the history card marked">
+          <rect class="s-page" x="0" y="0" width="160" height="100"/>
+          <rect class="s-rail" x="0" y="0" width="16" height="100"/>
+          <rect class="s-card" x="22" y="6" width="88" height="18"/>
+          <rect class="s-card" x="22" y="30" width="88" height="64"/>
+          <rect class="s-card" x="116" y="6" width="38" height="20"/>
+          <rect class="s-mark" x="116" y="32" width="38" height="62"/>
+          <rect class="s-line s-line--on" x="121" y="40" width="28" height="3"/>
+          <rect class="s-line" x="121" y="49" width="28" height="3"/>
+          <rect class="s-line" x="121" y="58" width="22" height="3"/>
+        </svg>
+        <div class="tour__said">
+          <h2 class="tour__title">pick what to review</h2>
+          <p class="tour__body">
+            The <strong>history</strong> card lists every commit, tag and
+            recorded run, newest first. Click a row, or walk it with
+            <kbd class="keysheet__key">[</kbd> and <kbd class="keysheet__key">]</kbd>.
+            msr opens on <strong>live</strong> — your working tree against HEAD.
+          </p>
+          <p class="tour__where">
+            <a href="/">cockpit</a> · <a href="/branches">branches</a> for what
+            everyone else is pushing
+          </p>
+        </div>
       </li>
 
       <li class="tour__step">
-        <h2 class="tour__title">Ask the assistant to read it</h2>
-        <p class="tour__body">
-          The card across the top says whether it has. Press
-          <strong>start review</strong> and it groups the files by folder,
-          writes one sentence about what each group is <em>for</em>, and tells the
-          whole change as two to five chapters. About seven seconds on a local
-          model.
-        </p>
-        <p class="tour__body tour__body--dim">
-          Optional, always. Without a model you still get the grouping, the flags,
-          the diffs and the review log — just no prose. The review never waits on
-          the model, and the model can never assert a reason nobody gave: a
-          rationale in the agent's own words is labelled
-          <span class="why why--stated">stated</span>, one the model guessed is
-          labelled <span class="why why--inferred">inferred</span>.
-        </p>
+        <svg class="tour__shot" viewBox="0 0 160 100" role="img"
+             aria-label="The card across the top of the cockpit, with its button marked">
+          <rect class="s-page" x="0" y="0" width="160" height="100"/>
+          <rect class="s-rail" x="0" y="0" width="16" height="100"/>
+          <rect class="s-mark" x="22" y="6" width="132" height="24"/>
+          <rect class="s-btn" x="27" y="18" width="30" height="8" rx="3"/>
+          <rect class="s-card" x="22" y="36" width="42" height="18"/>
+          <rect class="s-card" x="68" y="36" width="42" height="18"/>
+          <rect class="s-card" x="114" y="36" width="40" height="18"/>
+          <rect class="s-card" x="22" y="60" width="132" height="34"/>
+        </svg>
+        <div class="tour__said">
+          <h2 class="tour__title">have it read</h2>
+          <p class="tour__body">
+            <strong>start review</strong> groups the files, says what each group
+            is for, and tells the change as a few chapters. The two cards beside
+            it — a security pass and a breaking-change check — run one at a time,
+            only when you press them.
+          </p>
+          <p class="tour__body tour__body--dim">
+            All of it optional. Without a model you still get the grouping, the
+            flags, the diffs and the log. A reason the agent gave is marked
+            <span class="why why--stated">stated</span>; one a model guessed is
+            marked <span class="why why--inferred">inferred</span>; what an
+            analyser found is <span class="why why--reported">reported</span>,
+            and names its tool and rule.
+          </p>
+        </div>
       </li>
 
       <li class="tour__step">
-        <h2 class="tour__title">Ask it something more specific</h2>
-        <p class="tour__body">
-          Beside the story sit two more cards: a <strong>security pass</strong>
-          and a <strong>breaking-change check</strong>. Each runs only when you
-          press it, and each is a separate reading of the same diff — no card is
-          ever shown what another found.
-        </p>
-        <p class="tour__body tour__body--dim">
-          They are short on purpose: at most five findings, each a file and one
-          sentence. A card that finds nothing says so plainly, and one that
-          could not run says that instead — those two never look alike. What
-          they report is labelled
-          <span class="why why--inferred">inferred</span>: worth a look, not a
-          verdict.
-        </p>
+        <svg class="tour__shot" viewBox="0 0 160 100" role="img"
+             aria-label="A file's diff with a note written under one line">
+          <rect class="s-page" x="0" y="0" width="160" height="100"/>
+          <rect class="s-rail" x="0" y="0" width="16" height="100"/>
+          <rect class="s-card" x="22" y="6" width="132" height="12"/>
+          <rect class="s-line" x="27" y="26" width="60" height="3"/>
+          <rect class="s-line s-line--add" x="27" y="34" width="94" height="3"/>
+          <rect class="s-line s-line--del" x="27" y="42" width="76" height="3"/>
+          <rect class="s-mark" x="27" y="50" width="122" height="16"/>
+          <rect class="s-line s-line--on" x="32" y="56" width="46" height="3"/>
+          <rect class="s-line" x="27" y="74" width="88" height="3"/>
+          <rect class="s-line" x="27" y="82" width="64" height="3"/>
+        </svg>
+        <div class="tour__said">
+          <h2 class="tour__title">read, then annotate</h2>
+          <p class="tour__body">
+            Click a filename for its diff; <kbd class="keysheet__key">j</kbd> and
+            <kbd class="keysheet__key">k</kbd> walk them. Any line takes a note,
+            filed as <code>ok</code>, <code>question</code>,
+            <code>objection</code>, <code>debt</code> or <code>note</code>.
+          </p>
+          <p class="tour__body">
+            <strong>That log is the thing you are producing.</strong> The prose
+            and the readings exist to help you produce it.
+          </p>
+        </div>
       </li>
 
       <li class="tour__step">
-        <h2 class="tour__title">Read, then annotate</h2>
-        <p class="tour__body">
-          Click a filename for its diff. Under each one the assistant calls out
-          the one to three lines actually worth reading, and flags like
-          <code>no-test</code>, <code>new-dep</code> or <code>swallowed-err</code>
-          mark what deserves a second look — those are computed offline, with no
-          model involved at all.
-        </p>
-        <p class="tour__body tour__body--dim">
-          So is the fourth reading. Whatever analysers you already have on your
-          <code>PATH</code> — golangci-lint, gosec, staticcheck, ruff, eslint —
-          are run over the files you changed and reported against them, scoped to
-          the lines this change actually added. They are labelled
-          <strong>reported</strong> rather than <code>inferred</code>: each names
-          its tool and its rule, and it is the one class here you can act on
-          without checking it first. msr ships none of them, and a machine with
-          none installed sees nothing about any of this.
-        </p>
-        <p class="tour__body">
-          Every change takes a note and one of <code>ok</code> ·
-          <code>question</code> · <code>objection</code> · <code>debt</code> ·
-          <code>note</code>. <strong>That log is the thing you are producing.</strong>
-          The prose and the assistant exist only to help you produce it.
-        </p>
-      </li>
-
-      <li class="tour__step">
-        <h2 class="tour__title">Mark it reviewed</h2>
-        <p class="tour__body">
-          When you are done, <strong>mark this reviewed</strong> on the card, with
-          a closing comment on the change as a whole if you have one. Reopening it
-          tomorrow says so.
-        </p>
-        <p class="tour__body tour__body--dim">
-          And if the code moved after you signed off, it says that instead of
-          reading as current — a verdict about a version that no longer exists is
-          worse than no verdict.
-        </p>
-      </li>
-
-      <li class="tour__step">
-        <h2 class="tour__title">Hand it back to your agent</h2>
-        <p class="tour__body">
-          Retyping your notes into the agent's prompt is the last manual step, and
-          it does not have to be. Point your coding agent's MCP client at
-          <code>msr mcp</code> and it can read the review itself —
-          <em>when it asks</em>. msr never interrupts it.
-        </p>
-        <p class="tour__body tour__body--dim">
-          What you wrote and what a model inferred arrive through separate calls,
-          and the inferred half says on every reply that it needs checking. The
-          judge is a small local model; an agent that cannot tell its guess from
-          your objection will act on both.
-        </p>
+        <svg class="tour__shot" viewBox="0 0 160 100" role="img"
+             aria-label="The review leaving msr for a coding agent">
+          <rect class="s-page" x="0" y="0" width="160" height="100"/>
+          <rect class="s-rail" x="0" y="0" width="16" height="100"/>
+          <rect class="s-mark" x="22" y="20" width="52" height="60"/>
+          <rect class="s-line s-line--on" x="27" y="30" width="42" height="3"/>
+          <rect class="s-line s-line--on" x="27" y="39" width="34" height="3"/>
+          <rect class="s-line" x="27" y="48" width="38" height="3"/>
+          <path class="s-arrow" d="M80 50 h26 m-6 -5 l6 5 l-6 5"/>
+          <rect class="s-card" x="112" y="20" width="42" height="60"/>
+          <rect class="s-line" x="117" y="30" width="32" height="3"/>
+          <rect class="s-line" x="117" y="39" width="26" height="3"/>
+        </svg>
+        <div class="tour__said">
+          <h2 class="tour__title">mark it reviewed, and hand it back</h2>
+          <p class="tour__body">
+            <strong>mark this reviewed</strong> closes it, with a comment on the
+            change as a whole if you have one. If the code moves afterwards, the
+            review says so rather than reading as current.
+          </p>
+          <p class="tour__body">
+            Point your agent's MCP client at <code>msr mcp</code> and it reads
+            the review itself, when it asks. msr never speaks first, and what you
+            wrote arrives through a different call from what a model guessed.
+          </p>
+        </div>
       </li>
 
     </ol>
 
     <section class="board__panel tour__panel">
-      <h2 class="board__title">while the agent keeps working</h2>
-      <p class="tour__body">
-        The page you are reading <strong>holds still</strong>. Work the agent does
-        after you opened a review does not appear underneath you — it queues in a
-        banner above the card, naming the files and flagging any you have already
-        annotated. Then you choose: <strong>keep reading</strong>,
-        <strong>include them</strong>, or <strong>review just these</strong>,
-        which opens the new work on its own.
-      </p>
-      <p class="tour__body tour__body--dim">
-        Separately, a small toast in the corner says when the repository moves —
-        a commit, a tag, files changing. Clicking it opens what it names.
-      </p>
-    </section>
-
-    <section class="board__panel tour__panel">
-      <h2 class="board__title">where you are, and what the team is doing</h2>
-      <p class="tour__body">
-        The <strong>history</strong> card in the panel lists recent commits and
-        marks three things: the one you are reviewing, the ones you have already
-        signed off, and the ones that have not left your machine. Click any row
-        to review that commit.
-      </p>
-      <p class="tour__body tour__body--dim">
-        If the branch tracks a remote it also shows how far ahead or behind you
-        are, and a colleague's commit appears at the top marked
-        <em>incoming</em>. msr only fetches if you start it with
-        <code>--fetch</code> — otherwise it reads whatever your own last fetch
-        brought in, because fetching talks to the network and writes refs, and
-        msr does neither without being asked — you can turn that on from
-        <a href="/settings?s=model">settings</a> without restarting.
-      </p>
-      <p class="tour__body tour__body--dim">
-        <a href="/branches">Branches</a> is the wider view: every branch on the
-        remote, how far each has drifted, and how much there would be to review.
-        Each row opens a review of exactly that branch's work.
-      </p>
-    </section>
-
-    <section class="board__panel tour__panel">
-      <h2 class="board__title">keys</h2>
-      <p class="tour__body tour__body--dim">
-        Reading is the common case, so it has the short keys. All of them are
-        ignored while you are typing. Press <kbd class="keysheet__key">?</kbd>
-        anywhere for this list.
-      </p>
-      <ul class="keysheet__list tour__keys">
-        <li class="keysheet__row"><kbd class="keysheet__key">j</kbd><span class="keysheet__what">next file</span></li>
-        <li class="keysheet__row"><kbd class="keysheet__key">k</kbd><span class="keysheet__what">previous file</span></li>
-        <li class="keysheet__row"><kbd class="keysheet__key">o</kbd><span class="keysheet__what">open or close the file</span></li>
-        <li class="keysheet__row"><kbd class="keysheet__key">g / G</kbd><span class="keysheet__what">first / last file</span></li>
-        <li class="keysheet__row"><kbd class="keysheet__key">[ / ]</kbd><span class="keysheet__what">previous / next review</span></li>
-        <li class="keysheet__row"><kbd class="keysheet__key">{ / }</kbd><span class="keysheet__what">previous / next repository</span></li>
-        <li class="keysheet__row"><kbd class="keysheet__key">/</kbd><span class="keysheet__what">jump to the picker</span></li>
-        <li class="keysheet__row"><kbd class="keysheet__key">a</kbd><span class="keysheet__what">ask about these changes</span></li>
-        <li class="keysheet__row"><kbd class="keysheet__key">r</kbd><span class="keysheet__what">mark this review done</span></li>
-        <li class="keysheet__row"><kbd class="keysheet__key">⌘K</kbd><span class="keysheet__what">go to anything</span></li>
-        <li class="keysheet__row"><kbd class="keysheet__key">⌘Z</kbd><span class="keysheet__what">hide the sidebar and the panel</span></li>
-        <li class="keysheet__row"><kbd class="keysheet__key">⌘J</kbd><span class="keysheet__what">dark, light, or follow the system</span></li>
+      <h2 class="board__title">worth knowing</h2>
+      <ul class="tour__facts">
+        <li><strong>It never writes to your repository.</strong> No commits, no
+          branches, nothing touched in HEAD, the index or your working tree.</li>
+        <li><strong>Everything is local.</strong> The only network call is to the
+          model endpoint you started yourself — <a href="/settings">settings</a>
+          says which one is answering and what it has cost.</li>
+        <li><strong>The page holds still.</strong> Work the agent does while you
+          are reading queues in a banner instead of moving what you are looking
+          at.</li>
+        <li><kbd class="keysheet__key">?</kbd> lists every key,
+          <kbd class="keysheet__key">⌘K</kbd> goes to anything, and
+          <a href="/search">search</a> finds anything anybody wrote.</li>
       </ul>
     </section>
 
-    <section class="board__panel tour__panel">
-      <h2 class="board__title">two things worth knowing</h2>
-      <p class="tour__body">
-        <strong>It never writes to your repository.</strong> No commits, no
-        branches, no changes to HEAD, the index or your working tree. Snapshots go
-        to refs of their own.
-      </p>
-      <p class="tour__body">
-        <strong>Everything is local.</strong> The only network call msr makes is
-        to the model endpoint you started yourself. No account, no telemetry.
-        <a href="/settings">Settings</a> shows which model is answering and
-        what it has cost.
-      </p>
-    </section>
-
     <p class="tour__out">
-      <a class="hero__retrybtn" href="/">start reviewing</a>
+      <a class="act act--primary" href="/">start reviewing</a>
+      <a class="act act--quiet" href="/activity">see what has run</a>
     </p>
 
   </main>

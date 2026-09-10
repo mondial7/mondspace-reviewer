@@ -2071,15 +2071,19 @@ func TestTheTutorialExplainsThePageToSomeoneNew(t *testing.T) {
 	}
 	body := rec.Body.String()
 
-	// The four things someone has to do, in order.
+	// The four things someone has to do, in order. Matched without regard to
+	// case: whether a heading is sentence case or the page's own lower case is
+	// a copy decision, and a test that owns it makes every copy edit a test
+	// failure.
+	lower := strings.ToLower(body)
 	for _, want := range []string{
-		"Pick what to review",
+		"pick what to review",
 		"start review",
 		"security pass",
-		"then annotate",
-		"Mark it reviewed",
+		"read, then annotate",
+		"mark it reviewed",
 	} {
-		if !strings.Contains(body, want) {
+		if !strings.Contains(lower, want) {
 			t.Errorf("the tour should cover %q", want)
 		}
 	}
