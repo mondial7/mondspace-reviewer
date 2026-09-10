@@ -2634,13 +2634,60 @@ a.toast:hover { border-color: var(--kind, var(--accent)); }
   border-radius: var(--radius);
   background: var(--panel);
   box-shadow: var(--panel-glow);
+  /* The sketch beside the words, not above them: a step you can see the shape
+     of is a step you can find on the page afterwards. */
+  display: grid;
+  grid-template-columns: 11rem minmax(0, 1fr);
+  gap: 1.1rem;
+  align-items: start;
 }
+
+@media (max-width: 720px) {
+  .tour__step { grid-template-columns: minmax(0, 1fr); }
+  .tour__shot { max-width: 14rem; }
+}
+
+/* A sketch of the region the step is about, drawn from the page's own tokens.
+   Not a screenshot: a screenshot of this app is stale the next time anybody
+   moves a card, it cannot follow the theme, and it would have to be fetched
+   (ADR 0050). */
+.tour__shot {
+  width: 100%; height: auto; display: block;
+  border: 1px solid var(--rule-soft);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+.tour__shot .s-page { fill: var(--bg); }
+.tour__shot .s-rail { fill: var(--hull); }
+.tour__shot .s-card { fill: var(--bg-raised); stroke: var(--rule-soft); stroke-width: 1; }
+/* The one region the step is about. */
+.tour__shot .s-mark {
+  fill: var(--accent-wash); stroke: var(--accent-edge); stroke-width: 1;
+}
+.tour__shot .s-btn { fill: var(--accent-wash-strong); stroke: var(--accent-edge); }
+.tour__shot .s-line { fill: var(--fg-faint); }
+.tour__shot .s-line--on { fill: var(--accent); }
+.tour__shot .s-line--add { fill: var(--add); }
+.tour__shot .s-line--del { fill: var(--del); }
+.tour__shot .s-arrow { fill: none; stroke: var(--fg-dim); stroke-width: 1.5; }
+
+.tour__where { margin: 0.6rem 0 0; font-size: 0.8rem; color: var(--fg-dim); }
+
+.tour__facts {
+  margin: 0; padding-left: 1.1rem;
+  display: flex; flex-direction: column; gap: 0.5rem;
+  font-size: 0.88rem; line-height: 1.6; color: var(--fg-dim);
+}
+.tour__facts strong { color: var(--fg); font-weight: 600; }
+
+.tour__out { display: flex; gap: 0.8rem; align-items: center; }
 
 .tour__step::before {
   content: counter(tourstep);
   position: absolute;
   left: 1.1rem;
   top: 1.05rem;
+  z-index: 1;
   display: grid;
   place-items: center;
   width: 1.7rem;
@@ -2677,6 +2724,7 @@ a.toast:hover { border-color: var(--kind, var(--accent)); }
 }
 
 .tour__out { margin: 1.6rem 0 3rem; }
+
 
 .keysheet__more {
   margin: 0.8rem 0 0;
