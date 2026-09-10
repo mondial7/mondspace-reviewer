@@ -9,9 +9,14 @@
 // #refs is the picker's option list. It is swapped on its own rather than with
 // the panel around it: the panel holds the isometric canvas, and replacing that
 // would restart the animation every time a commit landed.
+//
+// .branches and .masthead__meta are the branches page. It used to say
+// "refreshed every 30s" and then not refresh, because no region on it was ever
+// swapped: the header made a promise the page could not keep.
 const REGIONS = ['.cockpit__story', '.cockpit__changes', '.cockpit__stats',
   '.cockpit__status', '.reviewcard', '.brief', '.board', '.activity', '.queue',
-  '.storynav', '#refs', '#pending', '#analyses', '#hidden'];
+  '.storynav', '.branches', '.masthead__meta', '#refs', '#pending', '#analyses',
+  '#hidden'];
 
 let pending = false;
 

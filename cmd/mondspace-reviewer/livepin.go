@@ -446,6 +446,16 @@ func watchRemote(ctx context.Context, handler *web.Server, repo string, watch *r
 		case <-time.After(every):
 		}
 
+		if handler.Subscribers() == 0 {
+			// The same gate refreshReview uses: polling git — and, worse,
+			// fetching from somebody else's server — on behalf of a page
+			// nobody has open is work with no reader. Nothing is lost by
+			// standing down, because the branches page reads git in the
+			// request that renders it; only the toast is skipped, and a toast
+			// about a push nobody was there to see is not news.
+			continue
+		}
+
 		if fetch {
 			// A failed fetch is not worth reporting: it is usually a laptop
 			// that went to sleep, or a network that is not there. The next one
