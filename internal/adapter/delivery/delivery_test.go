@@ -73,18 +73,48 @@ func TestStdoutWritesTheBrief(t *testing.T) {
 }
 
 func TestClipboardSendsTheBriefOnStdin(t *testing.T) {
-	var got string
-	adapter := delivery.Clipboard{Run: func(name string, args []string, stdin string) error {
-		got = stdin
-		return nil
-	}}
+	var got, ran string
+	adapter := delivery.Clipboard{
+		// Said here rather than looked up, so this asks what the adapter does
+		// on a machine with a clipboard rather than what the machine running
+		// the test happens to have.
+		Look: func() (string, []string) { return "pbcopy", nil },
+		Run: func(name string, args []string, stdin string) error {
+			ran, got = name, stdin
+			return nil
+		},
+	}
 
 	if err := adapter.Send(brief("batch-1")); err != nil {
 		t.Fatal(err)
 	}
 
+	if ran != "pbcopy" {
+		t.Errorf("ran %q, want the command the machine reported", ran)
+	}
 	if !strings.Contains(got, "use crypto/rand") {
 		t.Errorf("the clipboard got %q", got)
+	}
+}
+
+// And on a machine with none of them, it says so and names the alternative
+// rather than quietly writing a file somebody will never look at.
+func TestClipboardWithoutAClipboard(t *testing.T) {
+	adapter := delivery.Clipboard{
+		Look: func() (string, []string) { return "", nil },
+		Run: func(string, []string, string) error {
+			t.Error("nothing should be run when the machine has no clipboard")
+			return nil
+		},
+	}
+
+	err := adapter.Send(brief("batch-1"))
+
+	if err == nil {
+		t.Fatal("sending to a clipboard that does not exist reported success")
+	}
+	if !strings.Contains(err.Error(), "--to file") {
+		t.Errorf("the error is %q, and does not say what to do instead", err)
 	}
 }
 
