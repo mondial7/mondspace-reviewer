@@ -502,3 +502,26 @@ for (const button of document.querySelectorAll('[data-compare-picks]')) {
     sync();
   });
 }
+
+// A <details> used as a dialog toggles itself, which is why it needs no
+// JavaScript to open. Closing is the part a summary cannot do on its own:
+// nobody expects to have to find the icon again to dismiss something covering
+// the page. Escape and a click on the scrim, and nothing else.
+(function cardInfoDialogs() {
+  const open = () => document.querySelector('details.cardinfo[open]');
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    const it = open();
+    if (!it) return;
+    e.preventDefault();
+    e.stopPropagation();
+    it.removeAttribute('open');
+  }, true);
+
+  document.addEventListener('click', (e) => {
+    const it = open();
+    // The scrim is the click target only when the sheet itself was missed.
+    if (it && e.target.classList.contains('cardinfo__scrim')) it.removeAttribute('open');
+  });
+})();

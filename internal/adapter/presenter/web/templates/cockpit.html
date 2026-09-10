@@ -164,28 +164,39 @@
         {{ end }}
       </div>
 
-      <!-- The first impression, designed rather than left over (ADR 0040).
-           Everything below the button is already true and already usable: the
-           diffs are there, the flags are there, annotation works. Saying so is
-           what stops the page reading as though it were waiting for something
-           before it becomes useful. -->
+      <!-- The first impression, designed rather than left over (ADR 0040), and
+           folded away since (ADR 0050). Everything below the button is already
+           true and already usable: the diffs are there, the flags are there,
+           annotation works. Saying so is worth a paragraph the first time and
+           nothing at all the fifth, so it lives behind the corner icon. -->
       {{ if eq .Review.State "unread" }}
-      <div class="firstrun">
-        <p class="firstrun__lead">
-          {{ len .Session.Units }} file(s) changed, and none of it has been read
-          by a model yet. Nothing here needs one: the diffs below are git's, the
-          flags are mechanical, and you can annotate any line right now.
-        </p>
-        <ul class="firstrun__list">
-          <li><strong>start review</strong> writes the story — what changed and
-            why, in chapters — and describes each group of files.</li>
-          <li>The <a href="#analyses">readings</a> beside it are separate and
-            asked for one at a time: a security pass and a breaking-change pass,
-            each run only when you press it.</li>
-          <li><strong>j</strong> and <strong>k</strong> walk the files;
-            <strong>?</strong> is the rest of the keys.</li>
-        </ul>
-      </div>
+      <details class="cardinfo">
+        <summary class="cardinfo__open" title="what you can do here already"
+                 aria-label="What you can do here already">
+          <svg class="ico" aria-hidden="true"><use href="#i-info"/></svg>
+        </summary>
+        <div class="cardinfo__scrim">
+          <div class="cardinfo__sheet" role="dialog" aria-modal="true"
+               aria-label="What you can do here already">
+            <p class="cardinfo__title">what you can do here already</p>
+            <p class="cardinfo__lead">
+              {{ len .Session.Units }} file(s) changed, and none of it has been
+              read by a model yet. Nothing here needs one: the diffs below are
+              git's, the flags are mechanical, and you can annotate any line
+              right now.
+            </p>
+            <ul class="cardinfo__list">
+              <li><strong>start review</strong> writes the story — what changed
+                and why, in chapters — and describes each group of files.</li>
+              <li>The <a href="#analyses">readings</a> beside it are separate and
+                asked for one at a time: a security pass and a breaking-change
+                pass, each run only when you press it.</li>
+              <li><strong>j</strong> and <strong>k</strong> walk the files;
+                <strong>?</strong> is the rest of the keys.</li>
+            </ul>
+          </div>
+        </div>
+      </details>
       {{ end }}
 
       <!-- The progress and the button that changes it, on one line. They were
