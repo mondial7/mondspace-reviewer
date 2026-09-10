@@ -861,6 +861,93 @@ func (s *Snapshotter) Branches(ctx context.Context, base string) ([]domain.Branc
 	return branches, nil
 }
 
+// Graph is recent history across every branch, with the parents, which is what
+// makes it a graph rather than a list (ADR 0056).
+//
+// `--date-order` rather than `--topo-order`: the reader is looking for "what
+// happened lately", and topological order will happily put a month-old commit
+// above yesterday's to keep a chain unbroken. The lanes still come out right
+// because the layout is told the parents, not inferred from the order.
+func (s *Snapshotter) Graph(ctx context.Context, limit int) ([]domain.GraphCommit, error) {
+	if limit <= 0 {
+		limit = 120
+	}
+
+	const sep = "\x1f"
+	out, err := s.run(ctx, os.Environ(), "log", "--all", "--date-order",
+		fmt.Sprintf("--max-count=%d", limit),
+		"--pretty=format:%H"+sep+"%P"+sep+"%D"+sep+"%an"+sep+"%cI"+sep+"%s")
+	if err != nil {
+		// A repository with no commits is not a failure; it is a graph of
+		// nothing.
+		return nil, nil
+	}
+
+	var commits []domain.GraphCommit
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Split(strings.TrimSpace(line), sep)
+		if len(fields) != 6 || fields[0] == "" {
+			continue
+		}
+		ts, err := time.Parse(time.RFC3339, fields[4])
+		if err != nil {
+			continue
+		}
+		commits = append(commits, domain.GraphCommit{
+			Hash:    fields[0],
+			Short:   short(fields[0]),
+			Parent:  strings.Fields(fields[1]),
+			Refs:    graphRefs(fields[2]),
+			Author:  fields[3],
+			TS:      ts,
+			Subject: fields[5],
+		})
+	}
+	return commits, nil
+}
+
+// graphRefs reads `%D` — "HEAD -> main, origin/main, tag: v1.0.0" — into the
+// names worth putting on a lane.
+//
+// The tags go: a graph of branches labelled with tags is a graph about
+// releases. HEAD's arrow goes too, and the branch it points at stays.
+//
+// The remote prefix goes as well, and what is left is deduplicated. A branch
+// that has been pushed and not moved since decorates its commit twice, once as
+// `x` and once as `origin/x`, and two pills saying the same name is not twice
+// the information. It also makes these names the ones the list beside the graph
+// links to: that list has always used short names, so the anchors only line up
+// once both sides say `x`.
+func graphRefs(decoration string) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, ref := range strings.Split(decoration, ",") {
+		ref = strings.TrimSpace(ref)
+		switch {
+		case ref == "":
+			continue
+		case strings.HasPrefix(ref, "tag: "):
+			continue
+		case strings.HasPrefix(ref, "HEAD -> "):
+			ref = strings.TrimPrefix(ref, "HEAD -> ")
+		case ref == "HEAD":
+			continue
+		}
+		if remote, name, cut := strings.Cut(ref, "/"); cut && remote == "origin" {
+			ref = name
+		}
+		// `origin/HEAD` is the remote's default branch under another name, and
+		// once the prefix is off it is a pill that says HEAD on whatever main
+		// happens to be.
+		if ref == "" || ref == "HEAD" || seen[ref] {
+			continue
+		}
+		seen[ref] = true
+		out = append(out, ref)
+	}
+	return out
+}
+
 // divergence counts how far two refs have drifted, in one command.
 func (s *Snapshotter) divergence(ctx context.Context, base, ref string) (behind, ahead int) {
 	out, err := s.run(ctx, os.Environ(), "rev-list", "--left-right", "--count", base+"..."+ref)

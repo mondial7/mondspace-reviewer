@@ -175,6 +175,7 @@ func runWeb(ctx context.Context, args []string, stdout io.Writer) error {
 		WithSearch(searchWorkspace()).
 		WithLog(buildLog(repo)).
 		WithBranches(branchesOf(repo)).
+		WithGraph(graphOf(repo)).
 		WithConfigure(configureAgent(pool, *configPath, &agent)).
 		WithExchanges(exchangeStore(store), sess.Exchanges).
 		WithConversations(conversationsOf()).
