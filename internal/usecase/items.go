@@ -183,6 +183,28 @@ func sameSighting(a, b contract.Item) bool {
 	return reflect.DeepEqual(a, b)
 }
 
+// Caused splits what this change is responsible for from what was already
+// there, and says how many were already there (ADR 0043, ADR 0053).
+//
+// Every repository of any age has hundreds of findings nobody is going to act
+// on today. The cockpit has always folded those away and counted them; the
+// store did not, so `msr findings` listed them as work and `msr push --batch`
+// would have handed an agent a pile of code its change never touched.
+//
+// The flag only means anything for a deterministic analyser: a note a reviewer
+// typed and a reading a model produced are about this change by construction,
+// and neither carries `new`.
+func Caused(items []contract.Item) (caused []contract.Item, alreadyThere int) {
+	for _, item := range items {
+		if item.Source == contract.SourceAnalyser && !item.New {
+			alreadyThere++
+			continue
+		}
+		caused = append(caused, item)
+	}
+	return caused, alreadyThere
+}
+
 // SurfaceCap is how many items a run puts in front of a reviewer.
 //
 // The overflow is stored, not dropped: silently having none and silently

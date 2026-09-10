@@ -372,3 +372,34 @@ func TestReconcileNeverClosesWhatHasNoProducer(t *testing.T) {
 		t.Errorf("an analyser pass closed something it did not produce: %+v", got)
 	}
 }
+
+// What the change caused, and what was already there. Every repository of any
+// age has hundreds of the second kind, and listing them as work is the thing
+// ADR 0043 exists to prevent.
+func TestCausedSeparatesWhatThisChangeDid(t *testing.T) {
+	fresh := sighting("fp1", "id1")
+	fresh.New = true
+	old := sighting("fp2", "id2")
+	old.New = false
+
+	note := sighting("fp3", "note-1")
+	note.Source = contract.SourceHuman
+	note.Producer = "human"
+	reading := sighting("fp4", "llm-1")
+	reading.Source = contract.SourceLLM
+
+	got, alreadyThere := usecase.Caused([]contract.Item{fresh, old, note, reading})
+
+	if alreadyThere != 1 {
+		t.Errorf("counted %d already there, want 1", alreadyThere)
+	}
+	// A note and a reading are about this change by construction, and neither
+	// carries the flag.
+	var ids []string
+	for _, item := range got {
+		ids = append(ids, item.ID)
+	}
+	if strings.Join(ids, " ") != "id1 note-1 llm-1" {
+		t.Errorf("kept %v, want the finding this change caused plus the human's and the model's", ids)
+	}
+}

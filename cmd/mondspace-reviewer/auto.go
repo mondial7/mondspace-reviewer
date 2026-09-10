@@ -12,6 +12,7 @@ import (
 	gitsnap "github.com/mondial7/mondspace-reviewer/internal/adapter/snapshot/git"
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/store/auto"
 	"github.com/mondial7/mondspace-reviewer/internal/adapter/store/items"
+	"github.com/mondial7/mondspace-reviewer/internal/usecase"
 	"github.com/mondial7/mondspace-reviewer/internal/usecase/handoff"
 	"github.com/mondial7/mondspace-reviewer/internal/usecase/judge"
 )
@@ -169,10 +170,18 @@ func autoRun(ctx context.Context, stdout io.Writer, store *auto.Store, policy ju
 	return nil
 }
 
-// standing is what the judge is allowed to see: what is still outstanding.
+// standing is what the judge is allowed to see: what is still outstanding, and
+// what this change caused.
+//
+// The second half matters more for the judge than for anybody else. A human
+// reading a list can tell "this is not mine" at a glance; an agent handed a
+// directive cannot, and would go and change code the work it is doing never
+// touched (ADR 0053).
 func standing(stored []contract.Item) []contract.Item {
+	caused, _ := usecase.Caused(stored)
+
 	var out []contract.Item
-	for _, item := range stored {
+	for _, item := range caused {
 		if item.Stands() {
 			out = append(out, item)
 		}

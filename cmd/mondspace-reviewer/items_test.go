@@ -336,3 +336,45 @@ func TestPromoteWritesTheBacklogOnce(t *testing.T) {
 		t.Errorf("a second promotion said %q, want nothing new", again)
 	}
 }
+
+// A finding about code this change never touched is stored, counted, and kept
+// out of the way. Listing it as work is what ADR 0043 exists to prevent, and
+// handing it to an agent is worse: it cannot tell whose work it is.
+func TestPreExistingFindingsAreCountedNotListed(t *testing.T) {
+	repo, shared := repoWithAFinding(t)
+	store := storeAt(t, shared)
+
+	analysed := func(path string, line int, caused bool) contract.Item {
+		return contract.Item{
+			Source: contract.SourceAnalyser, Producer: "go vet", RuleID: "printf",
+			Location: contract.Location{Path: path, StartLine: line, EndLine: line},
+			Message:  "wrong verb", Severity: contract.SeverityMedium, New: caused,
+		}
+	}
+	if _, err := recordFindings(store, []contract.Item{
+		analysed("untouched.go", 7, false), analysed("a.go", 6, true),
+	}, sighting{
+		branch: "main", repo: repo,
+		producers: map[string]bool{"go vet": true},
+		paths:     []string{"untouched.go", "a.go"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	listing := msr(t, "findings", "--repo="+repo, "--dir="+shared)
+
+	if strings.Contains(listing, "untouched.go") {
+		t.Errorf("a finding from before this change was listed as work:\n%s", listing)
+	}
+	if !strings.Contains(listing, "a.go") {
+		t.Errorf("the finding this change caused is missing:\n%s", listing)
+	}
+	if !strings.Contains(listing, "already there") {
+		t.Errorf("nothing said the other one exists:\n%s", listing)
+	}
+
+	// And it is still there for anybody who asks.
+	if standing := msr(t, "findings", "--repo="+repo, "--dir="+shared, "--standing"); !strings.Contains(standing, "untouched.go") {
+		t.Errorf("--standing does not show it:\n%s", standing)
+	}
+}

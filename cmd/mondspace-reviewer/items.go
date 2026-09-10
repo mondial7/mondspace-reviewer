@@ -199,12 +199,16 @@ func reportScan(stdout io.Writer, store *items.Store, branch string, changed []c
 	if err != nil {
 		return err
 	}
+	onBranch, alreadyThere := usecase.Caused(onBranch)
 	shown, held := usecase.Surface(onBranch, usecase.SurfaceCap, "")
 	for _, item := range shown {
 		fmt.Fprintf(stdout, "  %-9s %-28s %s\n", item.Severity.Normalise(), item.Where(), item.Title)
 	}
 	if held > 0 {
 		fmt.Fprintf(stdout, "  … and %d more, stored\n", held)
+	}
+	if alreadyThere > 0 {
+		fmt.Fprintf(stdout, "  %d finding(s) were already there and are not listed\n", alreadyThere)
 	}
 	for _, rule := range usecase.RulesWorthSuppressing(onBranch) {
 		fmt.Fprintf(stdout, "note: %s has been dismissed %d times — consider turning it off in %s\n",
@@ -226,6 +230,7 @@ func runFindings(ctx context.Context, args []string, stdout io.Writer) error {
 	everywhere := fs.Bool("all-branches", false, "every branch, not just this one")
 	minSeverity := fs.String("min-severity", "", "only findings at least this severe (low|medium|high)")
 	settled := fs.Bool("settled", false, "include what has been dismissed or fixed")
+	standing := fs.Bool("standing", false, "include findings that were already there before this change")
 	format := fs.String("format", "text", "output format (text|jsonl)")
 	flags, words := partition(fs, args[1:])
 	if err := fs.Parse(flags); err != nil {
@@ -247,6 +252,10 @@ func runFindings(ctx context.Context, args []string, stdout io.Writer) error {
 		if !*settled {
 			list, _ = usecase.Surface(list, 0, contract.Severity(*minSeverity))
 		}
+		alreadyThere := 0
+		if !*standing {
+			list, alreadyThere = usecase.Caused(list)
+		}
 		if *format == "jsonl" {
 			body, err := usecase.ExportItemsJSONL(list)
 			if err != nil {
@@ -255,7 +264,7 @@ func runFindings(ctx context.Context, args []string, stdout io.Writer) error {
 			_, err = stdout.Write(body)
 			return err
 		}
-		return listFindings(stdout, list)
+		return listFindings(stdout, list, alreadyThere)
 	case "dismiss", "accept":
 		return ruleOn(stdout, store, verb, ids)
 	default:
@@ -263,7 +272,16 @@ func runFindings(ctx context.Context, args []string, stdout io.Writer) error {
 	}
 }
 
-func listFindings(stdout io.Writer, list []contract.Item) error {
+func listFindings(stdout io.Writer, list []contract.Item, alreadyThere int) error {
+	// Counted, never silently dropped: having none and hiding four hundred look
+	// identical otherwise, and one of them means the tool is broken (ADR 0043).
+	defer func() {
+		if alreadyThere > 0 {
+			fmt.Fprintf(stdout, "%d finding(s) were already there before this change — `--standing` to see them\n",
+				alreadyThere)
+		}
+	}()
+
 	if len(list) == 0 {
 		fmt.Fprintln(stdout, "nothing outstanding")
 		return nil
@@ -435,8 +453,13 @@ func chooseForPush(stored []contract.Item, branch string, batchMode bool, ids []
 		return chosen, nil
 	}
 
+	// What the change caused. Handing an agent a finding about code this change
+	// never touched is asking it to do somebody else's work, from a list it
+	// cannot tell apart (ADR 0053).
+	pushable, _ := usecase.Caused(stored)
+
 	var chosen []contract.Item
-	for _, item := range stored {
+	for _, item := range pushable {
 		if item.Branch != branch || !item.Pushable() {
 			continue
 		}
@@ -608,8 +631,10 @@ func exportItems(ctx context.Context, format, repo, dir, branch, state string,
 	// What is settled is left out of every renderer here. These are handed to
 	// something that will act on them, and a dismissed finding is one somebody
 	// has already decided not to act on.
+	caused, _ := usecase.Caused(list)
+
 	var open []contract.Item
-	for _, item := range list {
+	for _, item := range caused {
 		if !item.Stands() {
 			continue
 		}
