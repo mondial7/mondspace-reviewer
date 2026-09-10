@@ -56,13 +56,10 @@ func runAuto(ctx context.Context, args []string, stdout io.Writer) error {
 			return err
 		}
 		// Turning it on clears a suspension: saying so is the explicit act that
-		// a manual push stood down.
-		session, err := state.State(*session)
-		if err != nil {
-			return err
-		}
-		session.Suspended = false
-		if err := state.SaveState(session); err != nil {
+		// a manual push stood down. Through the store rather than through a
+		// read-modify-write of one session's state, which would reset whatever
+		// budget the running session had already spent.
+		if err := state.SetSuspended(false); err != nil {
 			return err
 		}
 		fmt.Fprintf(stdout, "auto-mode on: at most %d push(es) a session, %d item(s) each, %s apart, %s and above\n",
@@ -186,13 +183,12 @@ func standing(stored []contract.Item) []contract.Item {
 // suspendAuto stands auto-mode down for the rest of the session, which is what
 // a manual push does (ADR 0047).
 //
+// It does not name a session, because `msr push` does not know one: the id
+// belongs to whoever calls `msr auto run`. Asking the store to set the flag on
+// whatever is there is the whole of it.
+//
 // Best effort: a manual push must not fail because auto-mode's state file could
 // not be written, and auto-mode being on is already the opt-in.
-func suspendAuto(shared, session string) {
-	store := auto.New(shared)
-	state, err := store.State(session)
-	if err != nil {
-		return
-	}
-	_ = store.SaveState(judge.Suspend(state))
+func suspendAuto(shared string) {
+	_ = auto.New(shared).SetSuspended(true)
 }

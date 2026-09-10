@@ -131,3 +131,46 @@ func TestAutoOnClearsTheSuspension(t *testing.T) {
 		t.Errorf("the suspension survived `auto on`:\n%s", status)
 	}
 }
+
+// The kill switch has to work when auto-mode is running under a session id,
+// which is the only way it is meant to be run: `msr push` does not know that
+// id, and used to stand down a session called "" instead — leaving the real one
+// running and, worse, handing it back a spent budget.
+func TestAManualPushSuspendsTheSessionItDoesNotKnowAbout(t *testing.T) {
+	repo, shared := repoWithAFinding(t)
+	// A second file to find something in, so the judge can take one and leave
+	// the other for a human.
+	write(t, repo, "b.go", "package a\n\nimport \"os\"\n\nfunc G() {\n\t_ = os.Remove(\"y\")\n}\n")
+	msr(t, "scan", "--repo="+repo, "--since=start", "--dir="+shared)
+	write(t, shared, "auto.toml",
+		"[auto]\n  enabled = true\n  min_severity = \"low\"\n  cooldown = \"0s\"\n  max_per_batch = 1\n")
+	msr(t, "auto", "run", "--repo="+repo, "--dir="+shared, "--session=agent-7")
+
+	// One push has been spent by the judge; now a human takes the other one —
+	// the one still open, since a push of something already in flight sends
+	// nothing and steers nobody.
+	id := firstOpenID(t, msr(t, "findings", "--repo="+repo, "--dir="+shared))
+	msr(t, "push", id, "--repo="+repo, "--dir="+shared, "--batch-id=by-hand")
+
+	got := msr(t, "auto", "run", "--repo="+repo, "--dir="+shared, "--session=agent-7")
+
+	if !strings.Contains(got, "suspended") {
+		t.Errorf("the running session was not stood down: %q", got)
+	}
+	if status := msr(t, "auto", "status", "--repo="+repo, "--dir="+shared, "--session=agent-7"); !strings.Contains(status, "1 push") {
+		t.Errorf("the session's spent budget was lost:\n%s", status)
+	}
+}
+
+// firstOpenID is the first listed finding nobody has sent anywhere: id, state,
+// severity, where, title.
+func firstOpenID(t *testing.T, listing string) string {
+	t.Helper()
+	for _, line := range strings.Split(strings.TrimSpace(listing), "\n") {
+		if fields := strings.Fields(line); len(fields) > 1 && fields[1] == "open" {
+			return fields[0]
+		}
+	}
+	t.Fatalf("nothing open in:\n%s", listing)
+	return ""
+}
