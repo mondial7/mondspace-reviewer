@@ -4,6 +4,29 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **A new look: the cockpit palette** (ADR 0049). The page was a near-black
+  hull with a violet cast and every word on it in monospace. It is now a slate
+  hull with one mint accent, three steps of grey text, and the interface set in
+  the system sans — monospace stays for the things that are actually mechanical:
+  a path, a sha, a rule id, a diff, a log line. Monospace is a signal now rather
+  than the medium.
+- **Four primitives that did not exist as such.** One shape for every control,
+  three weights of button with the primary tinted rather than filled, a base
+  colour for links — anything nobody had styled was rendering in the browser's
+  own violet, which belonged to no theme and answered to nothing — and two
+  radii in place of nine different numbers.
+- **Every theme keeps working, in its own colours.** The light theme takes a
+  deeper mint that clears contrast on white; both Solarized themes keep their
+  canonical violet and derive the new greys, tints and signals from their own
+  palettes.
+
+The screenshots in this repository are of the old palette until `docs/img/demo.sh`
+is run again.
+
 ## [7.0.1] — 2026-09-02
 
 ### Fixed
