@@ -51,6 +51,10 @@ is run again.
 - **The tour is four steps and four hundred words**, down from six steps and a
   thousand, each with a sketch of the region it is about and a link to the page
   it describes.
+- **A long prompt or summary is cut on the card**, with "…read more" opening the
+  whole thing in the same sheet the info icon uses. A recorded run's prompt is
+  whatever was typed at the agent, which can be a thousand characters with a
+  diff in the middle.
 
 
 ## [7.0.1] — 2026-09-02
