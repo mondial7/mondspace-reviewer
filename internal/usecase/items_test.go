@@ -24,7 +24,7 @@ func sighting(fingerprint, id string) contract.Item {
 }
 
 func pass(at time.Time) usecase.Pass {
-	return usecase.Pass{At: at, Producers: map[string]bool{"gosec": true}}
+	return usecase.Pass{At: at, Branch: "main", Producers: map[string]bool{"gosec": true}}
 }
 
 var (
@@ -137,7 +137,7 @@ func TestReconcileDoesNotCloseWhatThisPassCouldNotSee(t *testing.T) {
 	stored := usecase.Reconcile(nil, []contract.Item{sighting("fp1", "id1")}, pass(first))
 
 	t.Run("a tool that did not run", func(t *testing.T) {
-		other := usecase.Pass{At: second, Producers: map[string]bool{"gitleaks": true}}
+		other := usecase.Pass{At: second, Branch: "main", Producers: map[string]bool{"gitleaks": true}}
 		if got := usecase.Reconcile(stored, nil, other); len(got) != 0 {
 			t.Errorf("closed %d items on a pass that did not run gosec: %+v", len(got), got)
 		}
@@ -146,6 +146,7 @@ func TestReconcileDoesNotCloseWhatThisPassCouldNotSee(t *testing.T) {
 	t.Run("a file that was not looked at", func(t *testing.T) {
 		elsewhere := usecase.Pass{
 			At:        second,
+			Branch:    "main",
 			Producers: map[string]bool{"gosec": true},
 			Paths:     map[string]bool{"internal/b.go": true},
 		}
@@ -316,9 +317,58 @@ func TestRulesWorthSuppressing(t *testing.T) {
 func TestReconcileTentativePassClosesNothing(t *testing.T) {
 	stored := usecase.Reconcile(nil, []contract.Item{sighting("fp1", "id1")}, pass(first))
 
-	got := usecase.Reconcile(stored, nil, usecase.Pass{At: second, Tentative: true})
+	got := usecase.Reconcile(stored, nil, usecase.Pass{At: second, Branch: "main", Tentative: true})
 
 	if len(got) != 0 {
 		t.Errorf("a tentative pass closed %d item(s): %+v", len(got), got)
+	}
+}
+
+// A pass runs on one branch. Everything it does not see there is gone from
+// there — but a finding on another branch is not, and closing it says that
+// branch was fixed by work which never touched it (ADR 0045: one of them may
+// be fixed while the other is not).
+func TestReconcileLeavesOtherBranchesAlone(t *testing.T) {
+	stored := usecase.Reconcile(nil, []contract.Item{sighting("fp1", "id-main")}, pass(first))
+
+	elsewhere := usecase.Pass{
+		At: second, Branch: "feature/x",
+		Producers: map[string]bool{"gosec": true},
+		Paths:     map[string]bool{"internal/a.go": true},
+	}
+	got := usecase.Reconcile(stored, nil, elsewhere)
+
+	if len(got) != 0 {
+		t.Errorf("a scan on feature/x wrote %d change(s) to main's findings: %+v", len(got), got)
+	}
+}
+
+// A tool that is installed and crashed reported nothing, and nothing is not a
+// clean bill of health. Its findings stand until something actually looks.
+func TestReconcileDoesNotCloseForATooThatFailed(t *testing.T) {
+	stored := usecase.Reconcile(nil, []contract.Item{sighting("fp1", "id1")}, pass(first))
+
+	// gosec is not in the set: it is installed, it broke, and it spoke for
+	// nothing this time.
+	crashed := usecase.Pass{At: second, Branch: "main", Producers: map[string]bool{"msr": true}}
+	got := usecase.Reconcile(stored, nil, crashed)
+
+	if len(got) != 0 {
+		t.Errorf("closed %d finding(s) on a pass whose tool had crashed: %+v", len(got), got)
+	}
+}
+
+// A human's note and a model's reading have no producer. A list of analysers
+// that ran says nothing about either.
+func TestReconcileNeverClosesWhatHasNoProducer(t *testing.T) {
+	note := sighting("fp-note", "note-1")
+	note.Source = contract.SourceHuman
+	note.Producer = ""
+	stored := usecase.Reconcile(nil, []contract.Item{note}, usecase.Pass{At: first, Branch: "main"})
+
+	got := usecase.Reconcile(stored, nil, pass(second))
+
+	if len(got) != 0 {
+		t.Errorf("an analyser pass closed something it did not produce: %+v", got)
 	}
 }

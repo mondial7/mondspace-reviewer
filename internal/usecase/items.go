@@ -32,6 +32,13 @@ type Pass struct {
 	// Paths is which files they were pointed at, repository-relative. Empty
 	// means the whole tree.
 	Paths map[string]bool
+	// Branch is the branch the pass ran on.
+	//
+	// A pass sees one checkout. What it does not find on that branch is gone
+	// from that branch; on any other branch it has looked at nothing at all,
+	// and closing a finding there would say the other branch was fixed by work
+	// that never touched it (ADR 0045).
+	Branch string
 	// Tentative says this pass's silence is not evidence.
 	//
 	// A deterministic tool that does not report a finding it reported an hour
@@ -44,7 +51,13 @@ type Pass struct {
 
 // Covered reports whether this pass was in a position to see an item at all.
 func (p Pass) Covered(item contract.Item) bool {
-	if len(p.Producers) > 0 && item.Producer != "" && !p.Producers[item.Producer] {
+	if item.Branch != p.Branch {
+		return false
+	}
+	// An item with no producer was raised by something this pass cannot speak
+	// for — a note, a reading — and a list of tools that ran says nothing about
+	// it either way.
+	if len(p.Producers) > 0 && (item.Producer == "" || !p.Producers[item.Producer]) {
 		return false
 	}
 	if len(p.Paths) > 0 && !p.Paths[contract.NormalisePath(item.Location.Path)] {

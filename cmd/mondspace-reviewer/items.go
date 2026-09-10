@@ -145,6 +145,7 @@ func recordFindings(store *items.Store, found []contract.Item, in sighting) ([]c
 	}
 	changed := usecase.Reconcile(stored, sight.Seen(found), usecase.Pass{
 		At:        at,
+		Branch:    in.branch,
 		Producers: in.producers,
 		Paths:     pathSet(in.paths),
 	})
@@ -178,7 +179,7 @@ func recordAnalysis(store *items.Store, a domain.Analysis, branch, session, repo
 	if err != nil {
 		return err
 	}
-	changed := usecase.Reconcile(stored, sight.FromAnalysis(a), usecase.Pass{At: at, Tentative: true})
+	changed := usecase.Reconcile(stored, sight.FromAnalysis(a), usecase.Pass{At: at, Branch: branch, Tentative: true})
 	return store.Append(changed...)
 }
 
@@ -504,12 +505,13 @@ func fileBodies(repo string) func(string) string {
 // ranProducers is which tools this pass was in a position to speak for.
 //
 // An analyser that is not installed did not fail to find anything; it did not
-// look, and closing its findings because it was silent would be wrong
-// (see usecase.Pass).
+// look, and closing its findings because it was silent would be wrong (see
+// usecase.Pass). A tool that is installed and *crashed* is the same case wearing
+// a disguise: it reported nothing, and nothing is not a clean bill of health.
 func ranProducers(scanner *local.Scanner) map[string]bool {
 	out := map[string]bool{"msr": true}
 	for _, status := range scanner.Report() {
-		if status.Present {
+		if status.Present && status.Failed == "" {
 			out[status.Name] = true
 		}
 	}
