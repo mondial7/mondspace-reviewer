@@ -378,3 +378,69 @@ func TestPreExistingFindingsAreCountedNotListed(t *testing.T) {
 		t.Errorf("--standing does not show it:\n%s", standing)
 	}
 }
+
+// The store is append-only, so a finding that was raised, accepted and pushed
+// is three lines that resolve to one. Housekeeping belongs in the command whose
+// job is housekeeping.
+func TestGCFoldsTheFindingsFile(t *testing.T) {
+	repo, shared := repoWithAFinding(t)
+	msr(t, "scan", "--repo="+repo, "--since=start", "--dir="+shared)
+	id := firstID(t, msr(t, "findings", "--repo="+repo, "--dir="+shared))
+	msr(t, "findings", "accept", id, "--repo="+repo, "--dir="+shared)
+	msr(t, "push", id, "--repo="+repo, "--dir="+shared)
+
+	before := lines(t, filepath.Join(shared, "findings.jsonl"))
+	if before < 3 {
+		t.Fatalf("the store holds %d line(s); this test needs churn to fold", before)
+	}
+
+	// It says what it would do before it does it.
+	if dry := msr(t, "gc", "--repo="+repo, "--dir="+shared, "--dry-run"); !strings.Contains(dry, "would fold") {
+		t.Errorf("--dry-run said %q", dry)
+	}
+	if lines(t, filepath.Join(shared, "findings.jsonl")) != before {
+		t.Error("--dry-run rewrote the file")
+	}
+
+	msr(t, "gc", "--repo="+repo, "--dir="+shared)
+
+	if after := lines(t, filepath.Join(shared, "findings.jsonl")); after != 1 {
+		t.Errorf("the store holds %d line(s) after folding, want 1", after)
+	}
+	// And the item is what it was: everything decided about it survived.
+	listing := msr(t, "findings", "--repo="+repo, "--dir="+shared, "--settled")
+	if !strings.Contains(listing, id) || !strings.Contains(listing, "pushed") ||
+		!strings.Contains(listing, "confirmed") {
+		t.Errorf("folding lost what was decided:\n%s", listing)
+	}
+}
+
+func lines(t *testing.T, path string) int {
+	t.Helper()
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.Count(strings.TrimSpace(string(body)), "\n") + 1
+}
+
+// What happened to an item and what somebody thought of it are different
+// questions (ADR 0044). Printing whichever was written last hid the useful
+// half: an item accepted and then pushed read as "confirmed", with nothing to
+// say it had already gone to an agent.
+func TestTheListingShowsStateAndVerdict(t *testing.T) {
+	repo, shared := repoWithAFinding(t)
+	msr(t, "scan", "--repo="+repo, "--since=start", "--dir="+shared)
+	id := firstID(t, msr(t, "findings", "--repo="+repo, "--dir="+shared))
+	msr(t, "findings", "accept", id, "--repo="+repo, "--dir="+shared)
+	msr(t, "push", id, "--repo="+repo, "--dir="+shared)
+
+	listing := msr(t, "findings", "--repo="+repo, "--dir="+shared)
+
+	if !strings.Contains(listing, "pushed") {
+		t.Errorf("the listing does not say it is in flight:\n%s", listing)
+	}
+	if !strings.Contains(listing, "confirmed") {
+		t.Errorf("the listing does not say what was decided:\n%s", listing)
+	}
+}

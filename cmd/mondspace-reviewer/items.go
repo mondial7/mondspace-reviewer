@@ -286,13 +286,15 @@ func listFindings(stdout io.Writer, list []contract.Item, alreadyThere int) erro
 		fmt.Fprintln(stdout, "nothing outstanding")
 		return nil
 	}
+	// State and verdict are different questions and get different columns: one
+	// is what happened to the item, the other is what somebody thought of it
+	// (ADR 0044). Printing whichever was set last hid the more useful half —
+	// an item accepted and then pushed read as "confirmed", with nothing to say
+	// it had already gone to an agent.
 	for _, item := range list {
-		state := string(item.CurrentState())
-		if item.Verdict != "" {
-			state = string(item.Verdict)
-		}
-		fmt.Fprintf(stdout, "%s  %-8s %-9s %-28s %s\n",
-			item.ID, state, item.Severity.Normalise(), item.Where(), item.Title)
+		fmt.Fprintf(stdout, "%s  %-8s %-9s %-9s %-28s %s\n",
+			item.ID, item.CurrentState(), item.Verdict, item.Severity.Normalise(),
+			item.Where(), item.Title)
 	}
 	return nil
 }
@@ -605,6 +607,40 @@ func keys(set map[string]bool) []string {
 		out = append(out, key)
 	}
 	return out
+}
+
+// compactFindings folds the findings file down to one line per item.
+//
+// The store is append-only, and every ruling, push and moved line is another
+// line on the end — during an hour of an agent's work that is thousands. The
+// resolved contents are identical either way; this is the housekeeping, and it
+// belongs in the command whose job is housekeeping rather than in the poll,
+// where it would rewrite the file under a review somebody is reading.
+func compactFindings(repo, dir string, dryRun bool, stdout io.Writer) error {
+	store := items.New(sharedDir(repo, dir))
+	before, err := store.Lines()
+	if err != nil {
+		return err
+	}
+	resolved, err := store.All()
+	if err != nil {
+		return err
+	}
+	if before <= len(resolved) {
+		return nil
+	}
+
+	if dryRun {
+		_, err := fmt.Fprintf(stdout, "would fold %d line(s) in %s down to %d\n",
+			before, items.FileName, len(resolved))
+		return err
+	}
+	if err := store.Compact(); err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(stdout, "folded %d line(s) in %s down to %d\n",
+		before, items.FileName, len(resolved))
+	return err
 }
 
 // isItemFormat says which half of `msr export` a format belongs to: the

@@ -103,12 +103,12 @@ func TestBranchNamesWithSlashesAreOrdinary(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(entries) != 1 || entries[0].Name() != items.FileName {
-		t.Errorf("the store made %v, want one %s", entries, items.FileName)
+	// The store and the lock everybody writing it holds, and nothing else: no
+	// directory per branch, however many slashes the branch name has.
+	for _, name := range names(t, dir) {
+		if name != items.FileName && name != items.LockName {
+			t.Errorf("the store made %q, which is neither the file nor its lock", name)
+		}
 	}
 }
 
@@ -182,12 +182,10 @@ func TestCompactLeavesNoDebris(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(entries) != 1 {
-		t.Errorf("after compaction the directory holds %v, want only the store", entries)
+	for _, name := range names(t, dir) {
+		if name != items.FileName && name != items.LockName {
+			t.Errorf("compaction left %q behind", name)
+		}
 	}
 }
 
@@ -245,4 +243,19 @@ func TestConcurrentAppendsAreWholeLines(t *testing.T) {
 	if lines != 200 {
 		t.Errorf("%d lines, want 200 — some were lost", lines)
 	}
+}
+
+// names is what a directory holds, for the two tests that care that it holds
+// nothing else.
+func names(t *testing.T, dir string) []string {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []string
+	for _, e := range entries {
+		out = append(out, e.Name())
+	}
+	return out
 }

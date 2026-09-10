@@ -273,8 +273,13 @@ func runGC(ctx context.Context, args []string, stdout io.Writer) error {
 	session := fs.String("session", "", "delete only this session's review ref")
 	repo := fs.String("repo", ".", "repository containing the review refs")
 	out := fs.String("out", ".mondspace-reviewer", "store root directory")
+	dir := fs.String("dir", "", "shared directory holding the findings store (default <repo>/.mondspace)")
 	dryRun := fs.Bool("dry-run", false, "print what would be removed, without deleting")
 	if err := fs.Parse(args[1:]); err != nil {
+		return err
+	}
+
+	if err := compactFindings(*repo, *dir, *dryRun, stdout); err != nil {
 		return err
 	}
 
@@ -296,7 +301,7 @@ func runGC(ctx context.Context, args []string, stdout io.Writer) error {
 	}
 
 	if len(targets) == 0 {
-		_, err := fmt.Fprintln(stdout, "nothing to garbage-collect: no review refs are eligible")
+		_, err := fmt.Fprintln(stdout, "no review refs are eligible")
 		return err
 	}
 

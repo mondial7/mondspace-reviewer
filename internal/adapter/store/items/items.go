@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"syscall"
 
 	"github.com/mondial7/mondspace-reviewer/contract"
 )
@@ -26,6 +27,14 @@ const SharedDir = contract.Dir
 
 // FileName is the reviewer's half of that contract.
 const FileName = "findings.jsonl"
+
+// LockName is what everybody writing the file holds while they do it.
+//
+// A lock on the file itself would not survive compaction: rewriting it is a
+// rename, and a writer waiting on the old inode would wake up holding a lock on
+// a file nothing reads any more, and append into it. So the lock is a file of
+// its own, and it is never replaced.
+const LockName = "findings.lock"
 
 // BacklogFile is the planner's half of the shared directory. msr writes it only
 // when asked to (`msr export --promote`): promotion is the planner's job by
@@ -50,16 +59,42 @@ func New(dir string) *Store {
 // Path is where the store is, for a message that has to tell somebody.
 func (s *Store) Path() string { return s.path }
 
+// locked runs fn while holding the store's write lock.
+//
+// Whole-line appends are already safe against each other (see Append); this is
+// what makes them safe against a compaction, which replaces the file underneath
+// everyone. A lock nobody can take is not worth failing a write over — a
+// findings file is not worth losing to a permissions problem on a lock file —
+// so an unlockable store proceeds unlocked.
+func (s *Store) locked(fn func() error) error {
+	if err := os.MkdirAll(filepath.Dir(s.path), 0o755); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(filepath.Join(filepath.Dir(s.path), LockName),
+		os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		return fn()
+	}
+	defer f.Close()
+
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+		return fn()
+	}
+	defer func() { _ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN) }()
+
+	return fn()
+}
+
 // Append writes items as they are, in one open. A run that changed nothing
 // calls this with nothing and writes nothing.
 func (s *Store) Append(list ...contract.Item) error {
 	if len(list) == 0 {
 		return nil
 	}
-	if err := os.MkdirAll(filepath.Dir(s.path), 0o755); err != nil {
-		return err
-	}
+	return s.locked(func() error { return s.append(list) })
+}
 
+func (s *Store) append(list []contract.Item) error {
 	f, err := os.OpenFile(s.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		return err
@@ -130,6 +165,28 @@ func (s *Store) All() ([]contract.Item, error) {
 	return out, nil
 }
 
+// Lines is how many lines the file holds, which is how many writes it has taken
+// rather than how many items it holds. The difference between this and the
+// length of All is what a compaction would save.
+func (s *Store) Lines() (int, error) {
+	f, err := os.Open(s.path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	defer f.Close()
+
+	count := 0
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for sc.Scan() {
+		count++
+	}
+	return count, sc.Err()
+}
+
 // OnBranch is every item raised against one branch.
 func (s *Store) OnBranch(branch string) ([]contract.Item, error) {
 	all, err := s.All()
@@ -151,6 +208,10 @@ func (s *Store) OnBranch(branch string) ([]contract.Item, error) {
 // rather than half of it. Sorted by when each item was first seen, because a
 // file somebody reads in a diff should have new things at the bottom.
 func (s *Store) Compact() error {
+	return s.locked(func() error { return s.compact() })
+}
+
+func (s *Store) compact() error {
 	all, err := s.All()
 	if err != nil {
 		return err
