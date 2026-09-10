@@ -2004,6 +2004,7 @@ button:disabled:hover, .btn:disabled:hover {
 
 .reviewcard { min-width: 0; }
 .reviewcard__inner {
+  position: relative;                  /* the corner the info icon hangs in */
   display: flex; flex-direction: column; gap: 0.5rem; min-width: 0;
   padding: 0.7rem 0.9rem;
   border: 1px solid var(--rule); border-radius: var(--radius);
@@ -3469,36 +3470,57 @@ a.log__branch:hover { text-decoration: underline; }
    say is that the page already works: git's diffs, mechanical flags and
    annotation are all there before a model is involved at all. */
 
-.firstrun {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  margin: 0.2rem 0 0.1rem;
-  padding: 0.7rem 0.85rem;
-  border: 1px dashed var(--rule);
-  border-radius: var(--radius);
-  background: var(--bg-raised, transparent);
-}
+/* ── A card's own explanation ───────────────────────────────────────────────
+   Orientation is worth a paragraph the first time you see a page and nothing
+   at all the fifth, and it was taking the widest band on the card to say it
+   every time (ADR 0050). It lives behind an icon in the corner now, and opens
+   over the page rather than pushing it about.
 
-.firstrun__lead {
-  margin: 0;
-  color: var(--fg);
-  font-size: 0.85rem;
-  line-height: 1.5;
+   The same shape as the field's legend beside it — an icon you can ignore —
+   with the palette's sheet for the thing it opens, because a page with two
+   kinds of dialog in it is a page nobody trusts. */
+.cardinfo { position: absolute; top: 0.5rem; right: 0.6rem; z-index: 2; }
+.cardinfo__open {
+  list-style: none; cursor: pointer; line-height: 1;
+  display: inline-flex; padding: 0.2rem;
+  border-radius: var(--radius-sm); color: var(--fg-faint);
 }
+.cardinfo__open::-webkit-details-marker { display: none; }
+.cardinfo__open:hover { color: var(--accent); }
+.cardinfo[open] .cardinfo__open { color: var(--accent); }
+.cardinfo__open .ico { margin: 0; width: 0.95rem; height: 0.95rem; }
 
-.firstrun__list {
-  margin: 0;
-  padding-left: 1.1rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
+.cardinfo__scrim {
+  position: fixed; inset: 0; z-index: 50;
+  background: color-mix(in srgb, var(--bg) 72%, transparent);
+  backdrop-filter: blur(3px);
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: min(14vh, 4.5rem) 1rem 1.5rem;
+  overflow-y: auto;
+}
+.cardinfo__sheet {
+  width: min(34rem, 92vw);
+  max-height: 100%;
+  padding: 0.9rem 1.1rem;
+  background: var(--panel);
+  border: 1px solid var(--accent); border-radius: var(--radius);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.72);
+  overflow-y: auto;
+  cursor: default;
+}
+.cardinfo__title {
+  margin: 0 0 0.5rem;
   color: var(--fg-dim);
-  font-size: 0.8rem;
-  line-height: 1.5;
+  font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em;
 }
-
-.firstrun__list strong { color: var(--fg); font-weight: 600; }
+.cardinfo__lead { margin: 0; color: var(--fg); font-size: 0.85rem; line-height: 1.5; }
+.cardinfo__list {
+  margin: 0.6rem 0 0;
+  padding-left: 1.1rem;
+  display: flex; flex-direction: column; gap: 0.35rem;
+  color: var(--fg-dim); font-size: 0.8rem; line-height: 1.5;
+}
+.cardinfo__list strong { color: var(--fg); font-weight: 600; }
 
 /* ── Narration ──────────────────────────────────────────────────────────────
    Everything on this page used to be monospace, which said that a chapter a
@@ -3527,8 +3549,8 @@ a.log__branch:hover { text-decoration: underline; }
 .ask__a,
 .signoff__state,
 .signoff__comment,
-.firstrun__lead,
-.firstrun__list,
+.cardinfo__lead,
+.cardinfo__list,
 .report__what,
 .pulseinfo__note {
   font-family: var(--sans);
