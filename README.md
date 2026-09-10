@@ -809,8 +809,31 @@ MSR_SUMMARIZER_URL=http://127.0.0.1:8081/v1 MSR_MODEL=qwen3-4b-instruct-2507 \
 
 ## Status
 
-**v7.0.1** — the page you review in.
+**v7.1.0** — the page you review in, and the store behind it.
 
+- **A findings store** (`.mondspace/findings.jsonl`) — every finding, note and
+  model reading in one type, keyed by branch rather than by session, with an
+  identity that survives a formatter. `msr scan` reconciles a pass instead of
+  re-raising it: run it twice on unchanged code and the second run writes
+  nothing, a dismissal is never raised again, and a finding whose code has gone
+  is closed
+  ([ADR 0044](ADR/0044-one-type-for-a-thing-to-be-done.md),
+  [ADR 0045](ADR/0045-findings-outlive-the-session-that-found-them.md),
+  [ADR 0048](ADR/0048-the-three-types-become-one.md)).
+- **Handing work back** — `msr push` sends a selection to an implementation
+  agent as an ordered brief, by file then by line, with overlapping directives
+  flagged before anything goes. `msr export --format=agent|plan|github-issues`
+  writes the same store for whoever is consuming it
+  ([ADR 0046](ADR/0046-a-push-is-a-brief-not-a-dump.md)).
+- **Auto-mode, off by default** — a judge that may only select, order and phrase
+  findings that already exist, bounded four ways, logging every decision it took
+  — the ones it held back included
+  ([ADR 0047](ADR/0047-a-judge-that-may-only-choose.md)).
+- **A new look** — a slate hull, one mint accent, the interface in the system
+  sans with monospace kept for what is actually mechanical
+  ([ADR 0049](ADR/0049-the-cockpit-palette.md),
+  [ADR 0050](ADR/0050-what-a-card-says-when-nobody-asked.md),
+  [ADR 0052](ADR/0052-the-end-of-the-row-is-where-you-leave.md)).
 - **Cockpit** (`msr web`) — one page: the change as a story, the diffs,
   annotation, re-analysis, a live isometric field, and a workspace spanning any
   number of repositories.
@@ -818,8 +841,8 @@ MSR_SUMMARIZER_URL=http://127.0.0.1:8081/v1 MSR_MODEL=qwen3-4b-instruct-2507 \
   recorded sessions, all reviewed by the same net-change-per-file engine
   ([ADR 0017](ADR/0017-git-first-review.md)).
 - **The review log is a real artefact** — notes on individual lines, searchable
-  across the workspace, exportable as markdown, JSON or Slack, and signed off
-  per target with a closing comment.
+  across the workspace, exportable as markdown or JSON from the app (and Slack
+  from the CLI), and signed off per target with a closing comment.
 - **Live watching** — a target that follows HEAD and keeps its identity across a
   commit, a toast when the repository moves, and work that arrives mid-review
   queued as a choice rather than folded in silently

@@ -14,17 +14,17 @@
 /* The site wears the application's own palette. Someone arriving here and then
    running msr should recognise the second from the first. */
 :root {
-  --bg: #05070e;
-  --bg-raised: #0c0f1b;
-  --panel: #090c16;
-  --rule: #2b3455;
-  --fg: #ccd4ec;
-  --fg-dim: #737e9e;
-  --add: #4fdc95;
-  --del: #ff6b83;
-  --hunk: #5cc2ff;
-  --accent: #a78bfa;
-  --inferred: #ffcc70;
+  --bg: #0d1117;
+  --bg-raised: #151b23;
+  --panel: #151b23;
+  --rule: #262d38;
+  --fg: #e6edf3;
+  --fg-dim: #8b98a8;
+  --add: #4dd4ac;
+  --del: #f2637e;
+  --hunk: #58a6ff;
+  --accent: #4dd4ac;
+  --inferred: #f0a04b;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
   --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif;
   --gutter: clamp(1rem, 4vw, 2.5rem);
@@ -53,11 +53,11 @@ body::before {
   inset: -50%;
   z-index: -1;
   background-image:
-    radial-gradient(1px 1px at 20% 30%, rgba(167,139,250,.35), transparent),
-    radial-gradient(1px 1px at 70% 12%, rgba(92,194,255,.30), transparent),
-    radial-gradient(1px 1px at 40% 70%, rgba(204,212,236,.22), transparent),
-    radial-gradient(1px 1px at 85% 55%, rgba(167,139,250,.25), transparent),
-    radial-gradient(1px 1px at 12% 85%, rgba(204,212,236,.18), transparent),
+    radial-gradient(1px 1px at 20% 30%, rgba(77,212,172,.22), transparent),
+    radial-gradient(1px 1px at 70% 12%, rgba(88,166,255,.20), transparent),
+    radial-gradient(1px 1px at 40% 70%, rgba(230,237,243,.14), transparent),
+    radial-gradient(1px 1px at 85% 55%, rgba(77,212,172,.16), transparent),
+    radial-gradient(1px 1px at 12% 85%, rgba(230,237,243,.12), transparent),
     radial-gradient(1px 1px at 60% 92%, rgba(92,194,255,.22), transparent);
   background-size: 55rem 55rem;
   opacity: .7;
@@ -606,6 +606,21 @@ footer p { margin: 0.3rem 0; }
   </p>
 
   <div class="grid">
+    <div class="card">
+      <h3>The review outlives the session</h3>
+      <p>Findings, notes and model readings are one record in <code>.mondspace/findings.jsonl</code>, keyed by the branch rather than by whichever run raised them. Identity is a fingerprint of the code around a finding, so <code>gofmt</code> does not close it and raise it again — run <code>msr scan</code> twice on unchanged code and the second run writes nothing.</p>
+    </div>
+
+    <div class="card">
+      <h3>A dismissal that stays dismissed</h3>
+      <p>Wave a finding away and it is gone for good, on that branch and every other. What is fixed closes itself: the next pass looks for the fingerprint, does not find it, and says so without anybody ticking a box.</p>
+    </div>
+
+    <div class="card">
+      <h3>Hand the work back as a brief</h3>
+      <p><code>msr push</code> sends a selection to your implementation agent ordered by file and then by line, each entry carrying the snippet and what to do, with two directives about the same lines flagged before anything is sent. Nothing reaches an agent without you asking — auto-mode exists, is off, and logs every decision it takes, including the ones it holds back.</p>
+    </div>
+
     <div class="card">
       <h3>Net change, not keystrokes</h3>
       <p>One reviewable unit per changed file, so an agent editing the same file eleven times reads as one change — and you can still open the eleven.</p>

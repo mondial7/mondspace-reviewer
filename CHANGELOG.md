@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [7.1.0] — 2026-09-10
 
 ### Added, and the reason for a minor
 
@@ -71,6 +71,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   whole thing in the same sheet the info icon uses. A recorded run's prompt is
   whatever was typed at the agent, which can be a thousand characters with a
   diff in the middle.
+- **The way out is at the end of the row** (ADR 0052): the verdict hard against
+  the right edge, the log beside it as one icon offering markdown or json, and
+  "not reviewed yet" gone — it sat beside an enabled button offering to mark it
+  reviewed, which is the button read twice. The button is called what it does:
+  **skip review** when nothing has read the change, **mark as reviewed** once
+  something has.
 - The live cockpit's own scan and the notes you type are written to the findings
   store as well as the session log, through the same conversion the commands
   use — so a finding raised live is matched by a later scan rather than raised
@@ -115,6 +121,14 @@ is run again.
   search and branches. It asks to be sticky; the same blanket rule made it
   relative. The cockpit hid it, because that page does not scroll and a rail
   that cannot stick looks identical to one that does.
+- **msr reviewed its own bookkeeping.** The cockpit writes findings to
+  `.mondspace/` while you read, and nothing kept that directory out of the
+  review of the repository it sits in — so the watcher announced msr's own
+  writes as work that had just arrived.
+- **An upgraded msr could serve new markup with an old stylesheet** (ADR 0051).
+  Embedded assets went out with no validator at all, so browsers cached them
+  heuristically; they now carry an ETag and `Cache-Control: no-cache`, and the
+  usual answer is a 304.
 
 ## [7.0.1] — 2026-09-02
 
@@ -942,6 +956,7 @@ First public release. Watching one agent, one session, one repo.
 - Session identifiers are validated to prevent path traversal outside the store
   root.
 
+[7.1.0]: https://github.com/mondial7/mondspace-reviewer/releases/tag/v7.1.0
 [7.0.1]: https://github.com/mondial7/mondspace-reviewer/releases/tag/v7.0.1
 [7.0.0]: https://github.com/mondial7/mondspace-reviewer/releases/tag/v7.0.0
 [6.2.0]: https://github.com/mondial7/mondspace-reviewer/releases/tag/v6.2.0
