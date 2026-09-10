@@ -64,6 +64,12 @@ func (s Stdout) Send(b handoff.Brief) error {
 // file: somebody who asked for the clipboard and got a file on disk would paste
 // nothing and not know why.
 type Clipboard struct {
+	// Look reports which clipboard command this machine has, or "" for none.
+	// It is a field for the same reason Run is: what a test needs to say is
+	// "this machine has one" or "this machine has none", and a lookup wired
+	// straight to PATH lets the machine running the test answer instead — which
+	// is a test that passes on a laptop and fails on a build server.
+	Look func() (string, []string)
 	// Run is the exec hook, so a test can watch what would have been run.
 	Run func(name string, args []string, stdin string) error
 }
@@ -71,7 +77,11 @@ type Clipboard struct {
 func (c Clipboard) Name() string { return "clipboard" }
 
 func (c Clipboard) Send(b handoff.Brief) error {
-	name, args := clipboardCommand()
+	look := c.Look
+	if look == nil {
+		look = clipboardCommand
+	}
+	name, args := look()
 	if name == "" {
 		return fmt.Errorf("no clipboard command found (tried pbcopy, wl-copy, xclip) — try --to file")
 	}
