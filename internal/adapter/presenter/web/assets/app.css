@@ -2203,6 +2203,13 @@ button:disabled:hover, .btn:disabled:hover {
 .exports__label { color: var(--fg-dim); }
 .reviewcard__partial { color: var(--inferred); }
 .reviewcard__go { margin-left: auto; }
+
+/* What you do when you are finished, at the end of the row: the log beside the
+   verdict, both hard against the right edge (ADR 0052). */
+.reviewcard__decide {
+  margin-left: auto;
+  display: flex; align-items: center; gap: 0.4rem;
+}
 .reviewcard__inner.reviewcard--reading { border-color: var(--inferred); }
 .reviewcard__inner.reviewcard--unread { border-color: color-mix(in srgb, var(--del) 45%, var(--rule)); }
 .reviewcard__inner.reviewcard--read { border-color: color-mix(in srgb, var(--add) 35%, var(--rule)); }
@@ -2475,14 +2482,11 @@ a.toast:hover { border-color: var(--kind, var(--accent)); }
 /* Inside the review card, below the assistant's line: the two together are the
    answer to "where is this review up to". */
 .signoff {
-  grid-column: 1 / -1;
+  min-width: 0;
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   gap: 0.35rem 0.7rem;
-  margin-top: 0.5rem;
-  padding-top: 0.5rem;
-  border-top: 1px solid var(--rule);
 }
 
 .signoff__state {
@@ -3412,23 +3416,38 @@ a.log__branch:hover { text-decoration: underline; }
 
 /* Leaving with the review log, from where it was made (issue #19). Quiet: it
    is the last thing you do, not the first thing you look for. */
-.exports {
-  grid-column: 1 / -1;
-  display: flex;
-  align-items: baseline;
-  gap: 0.5rem;
-  margin: 0.4rem 0 0;
-  color: var(--fg-dim);
-  font-size: 0.72rem;
-}
+/* The log, behind an icon. It was a sentence and three links across the widest
+   row on the card, for something you take once, at the end (ADR 0052). */
+.exports { position: relative; }
 
-.exports a {
+.exports__open {
+  list-style: none; cursor: pointer; line-height: 1;
+  display: inline-flex; padding: 0.34rem;
   color: var(--fg-dim);
-  border-bottom: 1px dotted var(--rule);
-  text-decoration: none;
+  border: 1px solid var(--rule); border-radius: var(--radius-sm);
+  background: var(--bg);
 }
+.exports__open::-webkit-details-marker { display: none; }
+.exports__open::marker { content: ""; }
+.exports__open:hover { color: var(--fg); background: var(--bg-hover); border-color: var(--accent-dim); }
+.exports[open] .exports__open { color: var(--accent); border-color: var(--accent-edge); }
+.exports__open .ico { margin: 0; width: 0.95rem; height: 0.95rem; }
 
-.exports a:hover { color: var(--accent); border-bottom-color: var(--accent); }
+/* Upwards: this row is the bottom of the card, and a menu opening downwards
+   would hang over whatever card is below it. */
+.exports__menu {
+  position: absolute; right: 0; bottom: calc(100% + 0.35rem); z-index: 5;
+  display: flex; flex-direction: column; min-width: 8rem;
+  padding: 0.25rem;
+  background: var(--panel);
+  border: 1px solid var(--rule); border-radius: var(--radius);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+}
+.exports__menu a {
+  padding: 0.35rem 0.5rem; border-radius: var(--radius-sm);
+  color: var(--fg); text-decoration: none; font-size: 0.78rem;
+}
+.exports__menu a:hover { background: var(--bg-hover); color: var(--accent); }
 
 /* ── Notes on a line ────────────────────────────────────────────────────────
    Real review happens on lines (ADR 0028). An annotatable line says so on

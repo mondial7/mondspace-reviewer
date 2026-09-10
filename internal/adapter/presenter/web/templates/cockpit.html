@@ -231,21 +231,50 @@
 
       <!-- The bottom row is what *you* have decided about this change, and how
            to leave with the log — your verdict on the whole thing as opposed to
-           a note on one file (ADR 0021), and the product itself (issue #19). -->
+           a note on one file (ADR 0021), and the product itself (issue #19).
+
+           The verdict is the rightmost thing on the card, where the button that
+           ends a job belongs, with the log beside it as an icon (ADR 0052). -->
       <div class="reviewcard__row reviewcard__row--yours">
       {{ if or .HasSignoff .CanSignoff }}
       <div class="signoff {{ if .Signoff.Done }}signoff--done{{ end }} {{ if .Signoff.Moved }}signoff--moved{{ end }}">
-        <p class="signoff__state">{{ .Signoff.Sentence }}</p>
+        <!-- Only when it says something. "Not reviewed yet" beside an enabled
+             button offering to mark it reviewed is the button read twice. -->
+        {{ if .Signoff.Done }}<p class="signoff__state">{{ .Signoff.Sentence }}</p>{{ end }}
         {{ with .Signoff.Comment }}<p class="signoff__comment">{{ . }}</p>{{ end }}
+      </div>
+      {{ end }}
+
+      <div class="reviewcard__decide">
+        <!-- The log, as an icon. It is a thing you take once, at the end, and
+             it had three words and three links across the widest row on the
+             card. Slack is gone from here: it is one paste of a message, and
+             `msr export --format=slack` still writes it. -->
+        <details class="exports">
+          <summary class="exports__open" title="take the log"
+                   aria-label="Take the log">
+            <svg class="ico" aria-hidden="true"><use href="#i-export"/></svg>
+          </summary>
+          <div class="exports__menu">
+            <a href="/export?target={{ .Session.ID }}&amp;format=md">markdown</a>
+            <a href="/export?target={{ .Session.ID }}&amp;format=json">json</a>
+          </div>
+        </details>
 
         {{ if .CanSignoff }}
         <details class="signoff__form">
           <!-- The other action that matters. It was small text behind a
                disclosure triangle, which is where you put a footnote, not the
-               verdict this whole page exists to record (ADR 0040). -->
+               verdict this whole page exists to record (ADR 0040).
+
+               What it is called depends on what was read: signing off on a
+               change no model has looked at is skipping the review, not
+               finishing one, and the button should not claim otherwise. -->
           <summary class="act act--summary {{ if .Signoff.Done }}act--quiet{{ else }}act--primary{{ end }}">
             <svg class="ico" aria-hidden="true"><use href="#i-done"/></svg>
-            {{ if .Signoff.Done }}review it again{{ else }}mark this reviewed{{ end }}
+            {{ if .Signoff.Done }}review it again
+            {{ else if eq .Review.State "read" }}mark as reviewed
+            {{ else }}skip review{{ end }}
           </summary>
           <form method="post" action="/review/signoff?target={{ .Session.ID }}">
             <input type="hidden" name="target" value="{{ .Session.ID }}">
@@ -256,15 +285,6 @@
         </details>
         {{ end }}
       </div>
-      {{ end }}
-
-        <p class="exports">
-          <svg class="ico" aria-hidden="true"><use href="#i-export"/></svg>
-          <span class="exports__label">take the log:</span>
-          <a href="/export?target={{ .Session.ID }}&amp;format=md">markdown</a>
-          <a href="/export?target={{ .Session.ID }}&amp;format=json">json</a>
-          <a href="/export?target={{ .Session.ID }}&amp;format=slack">slack</a>
-        </p>
       </div>
 
       </div>

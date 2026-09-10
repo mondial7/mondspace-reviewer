@@ -256,7 +256,10 @@ func TestAReviewWithSomethingInItStillOffersEverything(t *testing.T) {
 	// The guard above must not switch the page off for a real review.
 	body := get(t, wiredServer(t).WithNarrate(func(context.Context, string) {}), "/cockpit").Body.String()
 
-	for _, want := range []string{"mark this reviewed", "take the log", `action="/analysis/`} {
+	// Named by what they do rather than by what they are called: the sign-off
+	// button's label depends on whether a model has read the change, and a test
+	// that owns the wording makes every copy edit a failure.
+	for _, want := range []string{`action="/review/signoff`, `format=md`, `action="/analysis/`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("a review with changes in it should still offer %q", want)
 		}

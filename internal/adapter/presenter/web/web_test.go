@@ -3232,3 +3232,41 @@ func TestAssetsAreRevalidatedRatherThanCachedBlind(t *testing.T) {
 		t.Errorf("a revalidation with the current tag = %d, want 304", again.Code)
 	}
 }
+
+// Signing off on a change no model has looked at is skipping the review, not
+// finishing one, and the button should not claim otherwise.
+func TestTheSignoffButtonSaysWhichOneItIs(t *testing.T) {
+	t.Run("nothing has read it", func(t *testing.T) {
+		body := get(t, wiredServer(t), "/").Body.String()
+
+		if !strings.Contains(body, "skip review") {
+			t.Error(`want "skip review" when no model has read the change`)
+		}
+		if strings.Contains(body, "mark as reviewed") {
+			t.Error(`"mark as reviewed" claims a review that never ran`)
+		}
+	})
+
+	t.Run("a model has read it", func(t *testing.T) {
+		h := wiredServer(t).WithNarrative(domain.Narrative{
+			Title: "a title", Source: "model", Model: "qwen3-4b",
+			Chapters: []domain.Chapter{{Title: "one"}},
+		})
+
+		body := get(t, h, "/").Body.String()
+
+		if !strings.Contains(body, "mark as reviewed") {
+			t.Error(`want "mark as reviewed" once a model has read the change`)
+		}
+	})
+}
+
+// "Not reviewed yet" beside an enabled button offering to mark it reviewed is
+// the button read twice.
+func TestAnUnreviewedChangeDoesNotSaySoTwice(t *testing.T) {
+	body := get(t, wiredServer(t), "/").Body.String()
+
+	if strings.Contains(body, "not reviewed yet") {
+		t.Error("the card says what the button beside it already says")
+	}
+}
