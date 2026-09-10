@@ -711,7 +711,13 @@ a:hover { color: var(--accent); }
    first card on the page painted over everything but its top row. Written
    against `.page >` because the blanket rule that puts every child on layer 1
    is written that way too, and a bare selector loses to it on specificity. */
-.page > .sidenav { z-index: 30; }
+/* And its position, for exactly the same reason. The rail asks to be sticky;
+   the blanket rule made it relative, so on every page that scrolls — the tour,
+   settings, activity, search, branches — it scrolled away with the content and
+   left the theme button stranded halfway down. The cockpit hid it: that page
+   does not scroll, so a rail that cannot stick looks identical to one that
+   does. */
+.page > .sidenav { position: sticky; z-index: 30; }
 
 .storynav__brand {
   display: flex; align-items: center; gap: 0.5rem;
