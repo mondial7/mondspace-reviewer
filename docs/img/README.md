@@ -60,4 +60,14 @@ centre and is easy to get wrong, so a five-line Go program using `image/png` is
 the more reliable way.
 
 The page follows the viewer's theme, so pass `data-theme="dark"` on `<html>` (or
-run with a dark system setting) to match the ones committed here.
+run with a dark system setting) to match the ones committed here. Headless
+Chrome follows the system setting, so on a machine already in dark mode there is
+nothing to pass.
+
+The analysers panel and the engines panel are both under `/settings?s=usage` and
+`/settings?s=model`, and the analysers one only has anything in it once a scan
+has run in that process — open a review first, or it renders empty.
+
+The set committed here was taken with `--summarizer-url=claude://cli`, which is
+why the narration and both readings are attributed to the Claude CLI rather than
+to a local model. Either engine produces real output; neither is mocked.
