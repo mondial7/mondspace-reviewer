@@ -1,58 +1,90 @@
 /* mondspace-reviewer — hand-written, BEM. No framework. */
 
 :root {
-  /* Deep universe: a near-black hull with a faint blue cast, so instrument
-     colours read as lit rather than printed. The three surfaces are only a few
-     points apart — on a background this dark, a small step is plenty of
-     separation, and a large one looks like grey boxes floating in space. */
-  --bg: #05070e;
-  --bg-raised: #0c0f1b;
-  --panel: #090c16;
-  --hull: #03040a;
-  /* Bright enough that a panel edge reads on near-black — at #1b2136 the
-     borders measured 1.22:1 against the panel and simply vanished. */
-  --rule: #2b3455;
+  /* The Jobs Cockpit palette (ADR 0049). A slate hull rather than a black one:
+     #0d1117 has enough blue in it to read as a surface, and the three greys
+     above it are close enough together that a panel edge is a step rather than
+     a box. Everything here is a token because a colour written into a rule
+     belongs to no theme, and no theme can then override it. */
+  --bg: #0d1117;
+  --bg-raised: #151b23;
+  /* The hover ground. Dense interfaces are mostly rows and cards, and a row
+     that lifts under the pointer is the cheapest affordance there is. */
+  --bg-hover: #1c2530;
+  --panel: #151b23;
+  --hull: #0a0e14;
 
-  /* Starlight, not white: pure white on near-black glares. */
-  --fg: #ccd4ec;
-  --fg-dim: #737e9e;
+  /* Two rules, not one. The strong one separates regions — a rail from the
+     work, a card from the page. The soft one separates rows inside a region,
+     where a full-strength line reads as a table nobody asked for. */
+  --rule: #262d38;
+  --rule-soft: #1d232c;
 
-  /* Signal colours are pushed brighter and slightly desaturated so they hold up
-     against a near-black ground without vibrating on it. */
-  --add: #4fdc95;
-  --del: #ff6b83;
-  --hunk: #5cc2ff;
-  --accent: #a78bfa;
-  --stated: #4fdc95;
-  --inferred: #ffcc70;
-  /* A third class beside those two, and it needs a colour of its own or the
-     distinction is a word nobody reads (ADR 0043). Cool and definite: not the
-     green of "the agent said so", not the amber of "something guessed this". */
-  --reported: #5cc2ff;
+  /* Three steps of text, and each has a job: what you read, what labels what
+     you read, and what is only there when you look for it. Two steps is not
+     enough for an interface this dense — the labels end up shouting or
+     vanishing. */
+  --fg: #e6edf3;
+  --fg-dim: #8b98a8;
+  --fg-faint: #5d6b7d;
 
-  /* The isometric field is solid geometry, not type. On a dark ground the two
-     wants coincide, so these repeat the signal colours; on a light one they
-     part company, because a colour dark enough to read as a word is mud as a
-     200px block. Anything painted rather than written uses these. */
-  --solid-add: #4fdc95;
-  --solid-del: #ff6b83;
-  --solid-ctx: #a78bfa;
+  /* Mint, at two strengths. The bright one is for type and marks; the dim one
+     is a border and a focus ring, where the bright one glares. */
+  --accent: #4dd4ac;
+  --accent-dim: #1f6f5c;
+  /* Tints of the accent, kept as tokens so a control can be filled with the
+     accent without being painted in it. */
+  --accent-wash: rgba(77, 212, 172, 0.12);
+  --accent-wash-strong: rgba(77, 212, 172, 0.2);
+  --accent-edge: rgba(77, 212, 172, 0.3);
 
-  /* Two faint nebulae behind the whole page. They are tokens rather than
-     literals because a colour written into a rule belongs to no theme, so no
-     theme can override it — which is how these two stayed dark on the light
-     page while nothing in the light block looked wrong. */
-  --nebula-a: #150f2e;
-  --nebula-b: #06182b;
+  /* Two more signals, and only two. Warm is "you should look at this"; hot is
+     "this is wrong". A fourth would have to mean something, and nothing here
+     does. */
+  --warm: #f0a04b;
+  --hot: #f2637e;
+  --blue: #58a6ff;
+
+  --add: #4dd4ac;
+  --del: #f2637e;
+  --hunk: #58a6ff;
+  --stated: #4dd4ac;
+  --inferred: #f0a04b;
+  /* A third class beside stated and inferred, and it needs a colour of its own
+     or the distinction is a word nobody reads (ADR 0043). */
+  --reported: #58a6ff;
+
+  /* The isometric field is solid geometry, not type: anything painted rather
+     than written uses these. */
+  --solid-add: #4dd4ac;
+  --solid-del: #f2637e;
+  --solid-ctx: #58a6ff;
+
+  /* The backdrop, all but extinguished. It was two nebulae on near-black,
+     which is a different room from this one: on a slate ground a visible cloud
+     reads as a smudge on the screen. What is left is a shift of a few points,
+     enough that the page is not a flat fill. */
+  --nebula-a: #101823;
+  --nebula-b: #0c141d;
 
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-  /* The page is monospace because most of it is git talking. A model's
-     sentences are set in this instead — see "Narration" below. System faces
-     only: msr is offline software and must not fetch a font from anywhere. */
-  --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+  /* The interface is set in the system sans and the work is set in mono
+     (ADR 0049). System faces only: msr is offline software and must not fetch
+     a font from anywhere. */
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui,
     "Helvetica Neue", Arial, sans-serif;
-  --panel-glow: inset 0 1px 0 rgba(167, 139, 250, 0.06);
+
+  /* Two radii. The large one is a surface, the small one is a control; using
+     one number for both makes buttons look like cards. */
+  --radius: 10px;
+  --radius-sm: 7px;
+
+  --panel-glow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
   --gutter: clamp(0.75rem, 1.6vw, 1.25rem);
+
+  /* Native controls — select popups, scrollbars, date pickers — follow this.
+     Without it they render light-on-dark and look pasted in. */
+  color-scheme: dark;
 }
 
 /* Light is reachable two ways: by the operating system's preference, and by an
@@ -71,20 +103,31 @@
   --rule: #dcdce6;
   --fg: #1e1e30;
   --fg-dim: #5f6076;
-  --add: #1d7a45;
-  --del: #b3283f;
-  --hunk: #0d6a86;
-  --accent: #6d3fb5;
-  --stated: #1d7a45;
-  --inferred: #7a5c00;
-  --reported: #0d6a86;
+  --bg-hover: #f2f2f7;
+  --rule-soft: #e8e8ef;
+  --fg-faint: #8286a0;
+  --accent: #0f8a6a;
+  --accent-dim: #7fcdb8;
+  --accent-wash: rgba(15, 138, 106, 0.09);
+  --accent-wash-strong: rgba(15, 138, 106, 0.16);
+  --accent-edge: rgba(15, 138, 106, 0.28);
+  --warm: #a35a00;
+  --hot: #c62c46;
+  --blue: #1f6feb;
+  --add: #0f8a6a;
+  --del: #c62c46;
+  --hunk: #1f6feb;
+  --stated: #0f8a6a;
+  --inferred: #a35a00;
+  --reported: #1f6feb;
   --solid-add: #35b06f;
   --solid-del: #ef5f76;
-  --solid-ctx: #8e6ae8;
-  --nebula-a: #efeaff;
-  --nebula-b: #e6f0f8;
+  --solid-ctx: #58a6ff;
+  --nebula-a: #f1f3f8;
+  --nebula-b: #eef2f7;
   --panel-glow: 0 1px 2px rgba(20, 20, 45, 0.07);
-  }
+  color-scheme: light;
+}
 }
 
 :root[data-theme="light"] {
@@ -95,19 +138,30 @@
   --rule: #dcdce6;
   --fg: #1e1e30;
   --fg-dim: #5f6076;
-  --add: #1d7a45;
-  --del: #b3283f;
-  --hunk: #0d6a86;
-  --accent: #6d3fb5;
-  --stated: #1d7a45;
-  --inferred: #7a5c00;
-  --reported: #0d6a86;
+  --bg-hover: #f2f2f7;
+  --rule-soft: #e8e8ef;
+  --fg-faint: #8286a0;
+  --accent: #0f8a6a;
+  --accent-dim: #7fcdb8;
+  --accent-wash: rgba(15, 138, 106, 0.09);
+  --accent-wash-strong: rgba(15, 138, 106, 0.16);
+  --accent-edge: rgba(15, 138, 106, 0.28);
+  --warm: #a35a00;
+  --hot: #c62c46;
+  --blue: #1f6feb;
+  --add: #0f8a6a;
+  --del: #c62c46;
+  --hunk: #1f6feb;
+  --stated: #0f8a6a;
+  --inferred: #a35a00;
+  --reported: #1f6feb;
   --solid-add: #35b06f;
   --solid-del: #ef5f76;
-  --solid-ctx: #8e6ae8;
-  --nebula-a: #efeaff;
-  --nebula-b: #e6f0f8;
+  --solid-ctx: #58a6ff;
+  --nebula-a: #f1f3f8;
+  --nebula-b: #eef2f7;
   --panel-glow: 0 1px 2px rgba(20, 20, 45, 0.07);
+  color-scheme: light;
 }
 
 /* Solarized (Ethan Schoonover), both ways round.
@@ -138,6 +192,17 @@
   --nebula-a: #06323d;
   --nebula-b: #052a33;
   --panel-glow: inset 0 1px 0 rgba(130, 135, 205, 0.08);
+  --bg-hover: #0a4653;
+  --rule-soft: #114652;
+  --fg-faint: #5d7b81;
+  --accent-dim: #4a4f8f;
+  --accent-wash: rgba(130, 135, 205, 0.14);
+  --accent-wash-strong: rgba(130, 135, 205, 0.22);
+  --accent-edge: rgba(130, 135, 205, 0.32);
+  --warm: #b58900;
+  --hot: #e56462;
+  --blue: #2f93d9;
+  color-scheme: dark;
 }
 
 :root[data-theme="solarized-light"] {
@@ -161,6 +226,17 @@
   --nebula-a: #f7edd6;
   --nebula-b: #f2efdd;
   --panel-glow: 0 1px 2px rgba(88, 110, 117, 0.10);
+  --bg-hover: #f2ecd8;
+  --rule-soft: #ece4cd;
+  --fg-faint: #8a9296;
+  --accent-dim: #a4a8dd;
+  --accent-wash: rgba(99, 105, 193, 0.10);
+  --accent-wash-strong: rgba(99, 105, 193, 0.18);
+  --accent-edge: rgba(99, 105, 193, 0.30);
+  --warm: #8f6c00;
+  --hot: #c02b28;
+  --blue: #2076b3;
+  color-scheme: light;
 }
 
 * { box-sizing: border-box; }
@@ -176,10 +252,59 @@
   padding: 0;
   background: var(--bg);
   color: var(--fg);
-  font-family: var(--mono);
+  /* The interface is set in the system sans; the work is set in mono
+     (ADR 0049). Everything that is git talking — a path, a diff, a sha, a
+     rule id, a log line — asks for mono below and gets it. Everything that is
+     msr talking is prose, and prose in a monospace face reads as output
+     rather than as an interface. */
+  font-family: var(--sans);
   font-size: 14px;
-  line-height: 1.55;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
 }
+
+/* What stays mono, and why: it is a thing you compare, count or copy. */
+code, pre, kbd, samp { font-family: var(--mono); }
+
+/* ── Controls ───────────────────────────────────────────────────────────────
+   One shape for everything you can type into or press: a soft-cornered box on
+   the ground colour, a rule around it, and a mint ring when it has the focus.
+   Without this, every control in the app carried its own idea of a border
+   radius and a padding, and the page read as five interfaces stacked. */
+
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+select,
+textarea {
+  font: inherit;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  padding: 0.4rem 0.6rem;
+  outline: none;
+}
+
+input::placeholder, textarea::placeholder { color: var(--fg-faint); }
+
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):focus,
+select:focus,
+textarea:focus,
+button:focus-visible,
+a:focus-visible {
+  border-color: var(--accent-dim);
+  box-shadow: 0 0 0 3px var(--accent-wash);
+}
+
+select { cursor: pointer; }
+button { cursor: pointer; font: inherit; }
+
+/* A link that nothing else styles. There was no such rule before, so those
+   links rendered in the browser's own violet — the one colour on the page that
+   belonged to no theme and answered to nothing. */
+a { color: var(--blue); text-underline-offset: 2px; }
+a:hover { color: var(--accent); }
+
+::selection { background: var(--accent-wash-strong); color: var(--fg); }
 
 /* Content blocks carry the gutter; the nav rail spans the full width above them
    so it looks identical on every page. */
@@ -203,7 +328,8 @@
 .queue__empty { color: var(--fg-dim); }
 
 /* Unit */
-.unit { background: var(--bg-raised); border: 1px solid var(--rule); border-radius: 6px; }
+.unit { background: var(--bg-raised); border: 1px solid var(--rule); border-radius: var(--radius); }
+.unit:hover { border-color: var(--accent-dim); }
 .unit__disclosure { }
 .unit__summary {
   display: flex; align-items: baseline; gap: 0.75rem; flex-wrap: wrap;
@@ -272,7 +398,7 @@
 /* Diff — scrolls instead of truncating (the TUI could not) */
 .diff {
   margin: 0.75rem 0 0; padding: 0.6rem 0.8rem;
-  background: var(--bg); border: 1px solid var(--rule); border-radius: 4px;
+  background: var(--bg); border: 1px solid var(--rule); border-radius: var(--radius-sm);
   overflow-x: auto; max-height: 32rem; overflow-y: auto;
 }
 .diff--empty { color: var(--fg-dim); }
@@ -287,7 +413,7 @@
 .annotate__btn {
   padding: 0.3rem 0.6rem; cursor: pointer; font: inherit;
   background: var(--bg); color: var(--fg);
-  border: 1px solid var(--rule); border-radius: 4px;
+  border: 1px solid var(--rule); border-radius: var(--radius-sm);
 }
 .annotate__btn:hover { border-color: var(--accent); }
 .annotate__btn--ok { color: var(--add); }
@@ -356,7 +482,7 @@
 .masthead__focus {
   margin-left: auto; padding: 0.15rem 0.5rem; cursor: pointer;
   font: inherit; color: var(--fg-dim);
-  background: transparent; border: 1px solid var(--rule); border-radius: 4px;
+  background: transparent; border: 1px solid var(--rule); border-radius: var(--radius-sm);
 }
 .masthead__focus:hover { color: var(--fg); border-color: var(--accent); }
 .masthead__focus[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
@@ -386,7 +512,7 @@
   position: relative; z-index: 1;
   margin: 0 0 1.25rem; padding: 0.8rem 0.9rem;
   background: color-mix(in srgb, var(--bg-raised) 82%, transparent);
-  border: 1px solid var(--rule); border-radius: 6px;
+  border: 1px solid var(--rule); border-radius: var(--radius-sm);
   backdrop-filter: blur(6px);
 }
 .page--focus .ask { background: var(--bg-raised); backdrop-filter: none; }
@@ -399,12 +525,12 @@
 .ask__input {
   flex: 1; padding: 0.35rem 0.5rem; font: inherit;
   background: var(--bg); color: var(--fg);
-  border: 1px solid var(--rule); border-radius: 4px;
+  border: 1px solid var(--rule); border-radius: var(--radius-sm);
 }
 .ask__btn {
   padding: 0.35rem 0.8rem; cursor: pointer; font: inherit;
   color: var(--accent); background: var(--bg);
-  border: 1px solid var(--rule); border-radius: 4px;
+  border: 1px solid var(--rule); border-radius: var(--radius-sm);
 }
 .ask__btn:hover { border-color: var(--accent); }
 .session__agent { color: var(--fg-dim); }
@@ -414,7 +540,7 @@
 .reanalyse__btn {
   padding: 0.25rem 0.6rem; cursor: pointer; font: inherit;
   color: var(--fg-dim); background: var(--bg);
-  border: 1px dashed var(--rule); border-radius: 4px;
+  border: 1px dashed var(--rule); border-radius: var(--radius-sm);
 }
 .reanalyse__btn:hover { color: var(--accent); border-color: var(--accent); }
 .detail__model { color: var(--fg-dim); }
@@ -484,7 +610,7 @@
   position: absolute; right: 0; top: calc(100% + 0.4rem); z-index: 40;
   min-width: 15.5rem;
   background: var(--panel);
-  border: 1px solid var(--rule); border-radius: 8px;
+  border: 1px solid var(--rule); border-radius: var(--radius);
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
   padding: 0.25rem;
   display: flex; flex-direction: column;
@@ -493,7 +619,7 @@
 .thememenu__item {
   font: inherit; font-size: 0.78rem; text-align: left;
   display: flex; flex-direction: column; gap: 0.05rem;
-  padding: 0.35rem 0.55rem; border-radius: 5px;
+  padding: 0.35rem 0.55rem; border-radius: var(--radius-sm);
   background: transparent; border: 0; color: var(--fg); cursor: pointer;
 }
 .thememenu__item:hover, .thememenu__item:focus-visible {
@@ -523,7 +649,7 @@
 .palette__sheet {
   width: min(560px, 92vw);
   background: var(--panel);
-  border: 1px solid var(--accent); border-radius: 10px;
+  border: 1px solid var(--accent); border-radius: var(--radius);
   box-shadow: 0 18px 60px rgba(0, 0, 0, 0.72);
   overflow: hidden;
 }
@@ -537,7 +663,7 @@
 .palette__list { list-style: none; margin: 0; padding: 0.3rem; max-height: 46vh; overflow-y: auto; }
 .palette__item {
   display: flex; justify-content: space-between; gap: 1rem; align-items: baseline;
-  padding: 0.45rem 0.7rem; border-radius: 6px; cursor: pointer; min-width: 0;
+  padding: 0.45rem 0.7rem; border-radius: var(--radius-sm); cursor: pointer; min-width: 0;
 }
 .palette__item[data-selected="true"] { background: color-mix(in srgb, var(--accent) 22%, transparent); }
 .palette__label { color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -579,7 +705,7 @@
 
 .storynav__link {
   display: flex; align-items: center; gap: 0.55rem;
-  padding: 0.32rem 0.5rem; border-radius: 6px;
+  padding: 0.32rem 0.5rem; border-radius: var(--radius-sm);
   color: var(--fg-dim); text-decoration: none;
 }
 .storynav__link:hover {
@@ -619,7 +745,7 @@ button .ico, a .ico, summary .ico { margin-right: 0.35em; }
   font: inherit; font-size: 0.9rem; line-height: 1; cursor: pointer;
   align-self: flex-end;
   color: var(--fg-dim); background: transparent;
-  border: 1px solid var(--rule); border-radius: 6px;
+  border: 1px solid var(--rule); border-radius: var(--radius-sm);
   padding: 0.1rem 0.5rem; margin-top: 0.4rem;
 }
 .sidenav__fold:hover { color: var(--accent); border-color: var(--accent); }
@@ -746,9 +872,10 @@ button .ico, a .ico, summary .ico { margin-right: 0.35em; }
   gap: 0.75rem; align-items: baseline;
   padding: 0.45rem 0.7rem;
   background: var(--bg-raised);
-  border: 1px solid var(--rule); border-radius: 4px;
+  border: 1px solid var(--rule-soft); border-radius: var(--radius-sm);
   font-size: 0.9rem;
 }
+.activity__row:hover { background: var(--bg-hover); border-color: var(--rule); }
 .activity__when { color: var(--fg-dim); font-variant-numeric: tabular-nums; }
 .activity__session { color: var(--hunk); font-size: 0.78rem; }
 .activity__action {
@@ -783,7 +910,7 @@ button .ico, a .ico, summary .ico { margin-right: 0.35em; }
 .hero__retrybtn {
   font: inherit; font-size: 0.9rem; cursor: pointer;
   color: var(--bg); background: var(--accent);
-  border: none; border-radius: 4px; padding: 0.45rem 0.9rem;
+  border: none; border-radius: var(--radius-sm); padding: 0.45rem 0.9rem;
 }
 .hero__retrybtn:hover { filter: brightness(1.1); }
 .hero__retryhint, .hero__retry--busy { color: var(--fg-dim); font-size: 0.85rem; }
@@ -856,19 +983,19 @@ button .ico, a .ico, summary .ico { margin-right: 0.35em; }
   flex: 1; min-width: 0;
   font: inherit; font-size: 0.78rem;
   color: var(--fg); background: var(--panel);
-  border: 1px solid var(--rule); border-radius: 8px;
+  border: 1px solid var(--rule); border-radius: var(--radius);
   padding: 0.45rem 0.6rem; cursor: pointer;
 }
 .switcher__select:hover { border-color: var(--accent); }
 .switcher__go {
   font: inherit; font-size: 0.75rem; cursor: pointer;
   color: var(--bg); background: var(--accent);
-  border: none; border-radius: 8px; padding: 0.4rem 0.7rem;
+  border: none; border-radius: var(--radius); padding: 0.4rem 0.7rem;
 }
 
 /* The model's reading of the session, at the top of the panel. */
 .brief {
-  border: 1px solid var(--rule); border-radius: 10px;
+  border: 1px solid var(--rule); border-radius: var(--radius);
   background: var(--panel); box-shadow: var(--panel-glow);
   padding: 0.8rem 0.9rem;
   min-width: 0;
@@ -895,7 +1022,7 @@ button .ico, a .ico, summary .ico { margin-right: 0.35em; }
 .cockpit__story, .cockpit__changes {
   min-height: 0; min-width: 0;
   overflow-y: auto; overscroll-behavior: contain;
-  border: 1px solid var(--rule); border-radius: 10px;
+  border: 1px solid var(--rule); border-radius: var(--radius);
   background: var(--panel); box-shadow: var(--panel-glow);
   padding: 0.9rem 1rem;
   scroll-behavior: smooth;
@@ -934,7 +1061,7 @@ button .ico, a .ico, summary .ico { margin-right: 0.35em; }
   font: inherit; font-size: 0.85rem; line-height: 1;
   padding: 0.1rem 0.35rem; cursor: pointer;
   color: var(--fg-dim); background: transparent;
-  border: 1px solid var(--rule); border-radius: 6px;
+  border: 1px solid var(--rule); border-radius: var(--radius-sm);
 }
 
 .storyrail__fold:hover { color: var(--accent); border-color: var(--accent); }
@@ -976,7 +1103,7 @@ button .ico, a .ico, summary .ico { margin-right: 0.35em; }
 
 .chron__chapter {
   padding: 0.8rem 0.6rem; border-bottom: 1px solid var(--rule);
-  border-left: 2px solid transparent; border-radius: 4px;
+  border-left: 2px solid transparent; border-radius: var(--radius-sm);
   cursor: pointer;                       /* clicking brings its files up */
   transition: opacity 0.2s ease, border-color 0.2s ease, background 0.2s ease;
 }
@@ -1034,7 +1161,7 @@ button .ico, a .ico, summary .ico { margin-right: 0.35em; }
 .cockpit__pulse {
   position: relative;
   min-height: 0; min-width: 0;
-  border: 1px solid var(--rule); border-radius: 10px;
+  border: 1px solid var(--rule); border-radius: var(--radius);
   background: var(--panel);
   box-shadow: var(--panel-glow);
   overflow: hidden;
@@ -1070,7 +1197,7 @@ button .ico, a .ico, summary .ico { margin-right: 0.35em; }
 .pulseinfo__open {
   list-style: none; cursor: pointer; line-height: 1;
   display: inline-flex; padding: 0.2rem;
-  border-radius: 6px; color: var(--fg-dim);
+  border-radius: var(--radius-sm); color: var(--fg-dim);
 }
 .pulseinfo__open::-webkit-details-marker { display: none; }
 .pulseinfo__open:hover { color: var(--accent); }
@@ -1081,7 +1208,7 @@ button .ico, a .ico, summary .ico { margin-right: 0.35em; }
   width: 15rem;
   padding: 0.6rem 0.7rem;
   background: var(--panel);
-  border: 1px solid var(--rule); border-radius: 8px;
+  border: 1px solid var(--rule); border-radius: var(--radius);
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
 }
 .pulseinfo__title {
@@ -1118,7 +1245,7 @@ button .ico, a .ico, summary .ico { margin-right: 0.35em; }
 .stat {
   min-width: 0;
   background: var(--panel);
-  border: 1px solid var(--rule); border-radius: 8px;
+  border: 1px solid var(--rule); border-radius: var(--radius);
   padding: 0.55rem 0.7rem;
   display: flex; flex-direction: column; gap: 0.15rem;
 }
@@ -1155,13 +1282,13 @@ button .ico, a .ico, summary .ico { margin-right: 0.35em; }
   min-height: 0; min-width: 0;
   overflow-y: auto;                    /* the only scrolling region */
   overscroll-behavior: contain;
-  border: 1px solid var(--rule); border-radius: 10px;
+  border: 1px solid var(--rule); border-radius: var(--radius);
   background: var(--panel);
   box-shadow: var(--panel-glow);
   padding: 0.6rem 1rem 1rem;
 }
 .post {
-  border-bottom: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule-soft);
   padding: 0.7rem 0;
   min-width: 0;                        /* a grid child must shrink to scroll */
 }
@@ -1177,7 +1304,7 @@ button .ico, a .ico, summary .ico { margin-right: 0.35em; }
 /* The diff reuses the review page's .diff__line rules; this only bounds it. */
 .post__diff {
   margin: 0; padding: 0.5rem 0.7rem;
-  background: var(--bg); border: 1px solid var(--rule); border-radius: 4px;
+  background: var(--bg); border: 1px solid var(--rule); border-radius: var(--radius-sm);
   max-height: 22rem;
   overflow: auto;                      /* wide or tall diffs scroll themselves */
   font-size: 0.78rem; line-height: 1.45;
@@ -1246,7 +1373,7 @@ button:disabled:hover, .btn:disabled:hover {
 .setting {
   margin: 0.9rem 0 0;
   padding: 0.85rem 0.95rem;
-  border: 1px solid var(--rule); border-radius: 10px;
+  border: 1px solid var(--rule); border-radius: var(--radius);
   background: color-mix(in srgb, var(--bg-raised) 55%, transparent);
 }
 .setting__head {
@@ -1320,7 +1447,7 @@ button:disabled:hover, .btn:disabled:hover {
 .field__input {
   font: inherit; font-size: 0.82rem;
   color: var(--fg); background: var(--bg-raised);
-  border: 1px solid var(--rule); border-radius: 8px;
+  border: 1px solid var(--rule); border-radius: var(--radius);
   padding: 0.45rem 0.6rem;
   min-width: 0;
 }
@@ -1330,7 +1457,7 @@ button:disabled:hover, .btn:disabled:hover {
 /* The one button style the settings forms use. */
 .btn {
   font: inherit; font-size: 0.8rem; cursor: pointer;
-  border-radius: 8px; padding: 0.42rem 0.9rem;
+  border-radius: var(--radius); padding: 0.42rem 0.9rem;
   border: 1px solid var(--rule); background: transparent; color: var(--fg);
 }
 .btn:hover { border-color: var(--accent); color: var(--accent); }
@@ -1363,40 +1490,50 @@ button:disabled:hover, .btn:disabled:hover {
   text-decoration: none;
   white-space: nowrap;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--radius);
 }
 
-/* Primary: the thing this card exists to let you do. At most one per card. */
+/* Primary: the thing this card exists to let you do. At most one per card.
+   Tinted rather than filled (ADR 0049): a solid mint slab is the brightest
+   thing on a slate page by a distance, and every card having one turned the
+   cockpit into a row of buttons with some text between them. The tint, the
+   mint type and the mint edge are still unmistakably the loudest control in
+   any card — next to the outlined ones, which is the only comparison that
+   matters. */
 .act--primary {
   font-size: 0.85rem;
   font-weight: 600;
-  padding: 0.5rem 1rem;
-  color: var(--bg);
-  background: var(--accent);
-  border-color: var(--accent);
+  padding: 0.45rem 0.95rem;
+  color: var(--accent);
+  background: var(--accent-wash);
+  border-color: var(--accent-edge);
+  border-radius: var(--radius-sm);
 }
 
-.act--primary:hover { color: var(--bg); filter: brightness(1.1); }
+.act--primary:hover { background: var(--accent-wash-strong); color: var(--accent); }
 
 /* Secondary: a real action, just not the one you came for. */
 .act--secondary {
   font-size: 0.78rem;
-  padding: 0.36rem 0.75rem;
+  padding: 0.34rem 0.7rem;
   color: var(--fg);
+  background: var(--bg);
   border-color: var(--rule);
+  border-radius: var(--radius-sm);
 }
 
-.act--secondary:hover { border-color: var(--accent); color: var(--accent); }
+.act--secondary:hover { background: var(--bg-hover); border-color: var(--accent-dim); color: var(--fg); }
 
 /* Quiet: housekeeping. It reads as a link because that is what it is. */
 .act--quiet {
   font-size: 0.74rem;
-  padding: 0.3rem 0.2rem;
+  padding: 0.3rem 0.4rem;
   color: var(--fg-dim);
   background: none;
+  border-radius: var(--radius-sm);
 }
 
-.act--quiet:hover { color: var(--accent); }
+.act--quiet:hover { color: var(--accent); background: none; }
 
 .act:disabled { opacity: 0.55; cursor: default; filter: none; }
 
@@ -1428,7 +1565,7 @@ button:disabled:hover, .btn:disabled:hover {
   display: flex; flex-direction: column; gap: 0.15rem;
   min-width: 0;
   background: var(--panel);
-  border: 1px solid var(--rule); border-radius: 10px;
+  border: 1px solid var(--rule); border-radius: var(--radius);
   box-shadow: var(--panel-glow);
   padding: 0.6rem;
 }
@@ -1439,7 +1576,7 @@ button:disabled:hover, .btn:disabled:hover {
 }
 .subnav__link {
   display: flex; flex-direction: column; gap: 0.05rem;
-  padding: 0.4rem 0.55rem; border-radius: 6px;
+  padding: 0.4rem 0.55rem; border-radius: var(--radius-sm);
   text-decoration: none; color: var(--fg);
   border-left: 2px solid transparent;
 }
@@ -1502,7 +1639,7 @@ button:disabled:hover, .btn:disabled:hover {
 }
 .board__panel {
   background: var(--panel);
-  border: 1px solid var(--rule); border-radius: 10px;
+  border: 1px solid var(--rule); border-radius: var(--radius);
   box-shadow: var(--panel-glow);
   padding: 1rem 1.1rem;
   min-width: 0;
@@ -1513,7 +1650,7 @@ button:disabled:hover, .btn:disabled:hover {
 }
 .board__row {
   display: flex; justify-content: space-between; gap: 1rem;
-  padding: 0.4rem 0; border-bottom: 1px solid var(--rule);
+  padding: 0.4rem 0; border-bottom: 1px solid var(--rule-soft);
   font-size: 0.88rem; min-width: 0;
 }
 .board__row:last-child { border-bottom: none; }
@@ -1526,7 +1663,7 @@ button:disabled:hover, .btn:disabled:hover {
 .board__val--down { color: var(--del); }
 .board__session {
   display: flex; gap: 0.6rem; align-items: baseline; flex-wrap: wrap;
-  padding: 0.5rem 0; border-bottom: 1px solid var(--rule); min-width: 0;
+  padding: 0.5rem 0; border-bottom: 1px solid var(--rule-soft); min-width: 0;
 }
 .board__session:last-child { border-bottom: none; }
 .board__id { color: var(--hunk); text-decoration: none; font-weight: 700; }
@@ -1567,7 +1704,7 @@ button:disabled:hover, .btn:disabled:hover {
   flex: 0 0 auto;
   padding: 0.35rem 0.5rem;
   background: var(--bg); color: var(--fg);
-  border: 1px solid var(--rule); border-radius: 4px;
+  border: 1px solid var(--rule); border-radius: var(--radius-sm);
   font: inherit; line-height: 1.4;
   resize: vertical;
   min-height: 2.6rem;
@@ -1582,9 +1719,9 @@ button:disabled:hover, .btn:disabled:hover {
 .post__open {
   font: inherit; font-size: 0.72rem; cursor: pointer; white-space: nowrap;
   color: var(--fg-dim); background: transparent;
-  border: 1px solid var(--rule); border-radius: 6px; padding: 0.3rem 0.6rem;
+  border: 1px solid var(--rule); border-radius: var(--radius-sm); padding: 0.3rem 0.6rem;
 }
-.post__open:hover { color: var(--accent); border-color: var(--accent); }
+.post__open:hover { color: var(--fg); background: var(--bg-hover); border-color: var(--accent-dim); }
 
 /* ── Detail / tree switch ───────────────────────────────────────────────────*/
 .viewswitch { display: flex; gap: 0.3rem; margin-bottom: 0.6rem; }
@@ -1593,7 +1730,12 @@ button:disabled:hover, .btn:disabled:hover {
   cursor: pointer; color: var(--fg-dim); background: transparent;
   border: 1px solid var(--rule); border-radius: 999px; padding: 0.2rem 0.7rem;
 }
-.viewswitch__btn[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
+.viewswitch__btn:hover { color: var(--fg); border-color: var(--accent-dim); }
+.viewswitch__btn[aria-pressed="true"] {
+  color: var(--accent);
+  background: var(--accent-wash);
+  border-color: var(--accent-edge);
+}
 
 .tree { list-style: none; margin: 0; padding: 0; font-size: 0.82rem; }
 .tree__row { display: flex; gap: 0.5rem; align-items: baseline; padding: 0.12rem 0; min-width: 0; }
@@ -1610,7 +1752,7 @@ button:disabled:hover, .btn:disabled:hover {
 }
 .overlay__sheet {
   width: min(1100px, 94vw); height: min(88vh, 900px);
-  background: var(--panel); border: 1px solid var(--accent); border-radius: 10px;
+  background: var(--panel); border: 1px solid var(--accent); border-radius: var(--radius);
   box-shadow: 0 24px 70px rgba(0, 0, 0, 0.78);
   display: flex; flex-direction: column; overflow: hidden;
 }
@@ -1623,7 +1765,7 @@ button:disabled:hover, .btn:disabled:hover {
 .overlay__pos { color: var(--fg-dim); font-size: 0.78rem; font-variant-numeric: tabular-nums; }
 .overlay__nav, .overlay__close {
   font: inherit; cursor: pointer; color: var(--fg-dim); background: transparent;
-  border: 1px solid var(--rule); border-radius: 6px; padding: 0.15rem 0.55rem;
+  border: 1px solid var(--rule); border-radius: var(--radius-sm); padding: 0.15rem 0.55rem;
 }
 .overlay__nav:hover:not(:disabled), .overlay__close:hover { color: var(--accent); border-color: var(--accent); }
 .overlay__nav:disabled { opacity: 0.35; cursor: default; }
@@ -1633,7 +1775,7 @@ button:disabled:hover, .btn:disabled:hover {
 .versions__list { list-style: none; margin: 0 0 0.8rem; padding: 0; font-size: 0.78rem; }
 .versions__item {
   display: flex; gap: 0.7rem; align-items: baseline; flex-wrap: wrap;
-  padding: 0.3rem 0.5rem; border-radius: 5px; cursor: pointer; min-width: 0;
+  padding: 0.3rem 0.5rem; border-radius: var(--radius-sm); cursor: pointer; min-width: 0;
 }
 .versions__item:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
 .versions__item--current { background: color-mix(in srgb, var(--accent) 20%, transparent); }
@@ -1654,13 +1796,13 @@ button:disabled:hover, .btn:disabled:hover {
 .addrepo__input {
   flex: 1; min-width: 0; font: inherit; font-size: 0.8rem;
   color: var(--fg); background: var(--bg);
-  border: 1px solid var(--rule); border-radius: 6px; padding: 0.4rem 0.6rem;
+  border: 1px solid var(--rule); border-radius: var(--radius-sm); padding: 0.4rem 0.6rem;
 }
 .addrepo__input:focus { outline: none; border-color: var(--accent); }
 .addrepo__btn {
   font: inherit; font-size: 0.75rem; cursor: pointer; white-space: nowrap;
   color: var(--bg); background: var(--accent);
-  border: none; border-radius: 6px; padding: 0.4rem 0.8rem;
+  border: none; border-radius: var(--radius-sm); padding: 0.4rem 0.8rem;
 }
 .addrepo__err { margin: 0.5rem 0 0; color: var(--del); font-size: 0.78rem; }
 
@@ -1718,7 +1860,7 @@ button:disabled:hover, .btn:disabled:hover {
   min-height: 3rem; max-height: 16rem;
   padding: 0.5rem 0.6rem; font: inherit; line-height: 1.45;
   color: var(--fg); background: var(--bg);
-  border: 1px solid var(--rule); border-radius: 6px;
+  border: 1px solid var(--rule); border-radius: var(--radius-sm);
   transition: min-height 0.18s ease, border-color 0.18s ease;
 }
 .ask__input:focus { outline: none; border-color: var(--accent); min-height: 7rem; }
@@ -1732,13 +1874,13 @@ button:disabled:hover, .btn:disabled:hover {
 .ask__btn {
   font: inherit; font-size: 0.8rem; cursor: pointer;
   color: var(--bg); background: var(--accent);
-  border: none; border-radius: 6px; padding: 0.35rem 0.9rem;
+  border: none; border-radius: var(--radius-sm); padding: 0.35rem 0.9rem;
 }
 .ask__cancel {
   font: inherit; cursor: pointer; line-height: 1;
   display: inline-flex; align-items: center; justify-content: center;
   color: var(--fg-dim); background: transparent;
-  border: 1px solid var(--rule); border-radius: 6px; padding: 0.35rem;
+  border: 1px solid var(--rule); border-radius: var(--radius-sm); padding: 0.35rem;
 }
 .ask__cancel .ico { margin: 0; width: 0.95rem; height: 0.95rem; }
 .ask__cancel:hover:not(:disabled) { color: var(--del); border-color: var(--del); }
@@ -1773,7 +1915,7 @@ button:disabled:hover, .btn:disabled:hover {
 }
 .md__code {
   margin: 0 0 0.6rem; padding: 0.5rem 0.7rem; overflow-x: auto;
-  background: var(--bg); border: 1px solid var(--rule); border-radius: 4px;
+  background: var(--bg); border: 1px solid var(--rule); border-radius: var(--radius-sm);
   font-size: 0.8rem; line-height: 1.5;
 }
 .md__code code { background: none; border: none; padding: 0; }
@@ -1846,7 +1988,7 @@ button:disabled:hover, .btn:disabled:hover {
 .reviewcard__inner {
   display: flex; flex-direction: column; gap: 0.5rem; min-width: 0;
   padding: 0.7rem 0.9rem;
-  border: 1px solid var(--rule); border-radius: 10px;
+  border: 1px solid var(--rule); border-radius: var(--radius);
   background: var(--panel); box-shadow: var(--panel-glow);
   font-size: 0.82rem;
 }
@@ -1964,7 +2106,7 @@ button:disabled:hover, .btn:disabled:hover {
   padding: 0.6rem 0.7rem 0.6rem 0.85rem;
   border: 1px solid var(--rule);
   border-left: 3px solid var(--kind, var(--accent));
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   background: var(--bg-raised);
   box-shadow: 0 6px 20px rgb(0 0 0 / 28%), var(--panel-glow);
   color: var(--fg);
@@ -2046,7 +2188,7 @@ a.toast:hover { border-color: var(--kind, var(--accent)); }
   padding: 0.75rem 0.9rem;
   border: 1px solid var(--inferred);
   border-left-width: 3px;
-  border-radius: 8px;
+  border-radius: var(--radius);
   /* Tinted, not alarming: new work is the normal state of watching an agent,
      not an error. */
   background: color-mix(in srgb, var(--inferred) 7%, var(--bg-raised));
@@ -2120,7 +2262,7 @@ a.toast:hover { border-color: var(--kind, var(--accent)); }
 .pending__btn {
   padding: 0.3rem 0.7rem;
   border: 1px solid var(--rule);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--bg-raised);
   color: var(--fg);
   font: inherit;
@@ -2188,7 +2330,7 @@ a.toast:hover { border-color: var(--kind, var(--accent)); }
   margin: 0.35rem 0;
   padding: 0.45rem 0.55rem;
   border: 1px solid var(--rule);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--bg);
   color: var(--fg);
   font: inherit;
@@ -2235,7 +2377,7 @@ a.toast:hover { border-color: var(--kind, var(--accent)); }
   justify-self: end;
   padding: 0.1rem 0.4rem;
   border: 1px solid var(--rule);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: var(--bg);
   color: var(--fg);
   font-family: var(--mono);
@@ -2275,7 +2417,7 @@ a.toast:hover { border-color: var(--kind, var(--accent)); }
   position: relative;
   padding: 1rem 1.2rem 1rem 3.4rem;
   border: 1px solid var(--rule);
-  border-radius: 10px;
+  border-radius: var(--radius);
   background: var(--panel);
   box-shadow: var(--panel-glow);
 }
@@ -2354,7 +2496,7 @@ a.toast:hover { border-color: var(--kind, var(--accent)); }
   padding: 0.7rem 0.85rem;
   border: 1px solid var(--rule);
   border-top: 2px solid var(--rule);
-  border-radius: 9px;
+  border-radius: var(--radius);
   background: var(--panel);
   box-shadow: var(--panel-glow);
 }
@@ -2621,7 +2763,7 @@ a.toast:hover { border-color: var(--kind, var(--accent)); }
   min-height: 0;
   padding: 0.6rem 0.7rem;
   border: 1px solid var(--rule);
-  border-radius: 9px;
+  border-radius: var(--radius);
   background: var(--panel);
   box-shadow: var(--panel-glow);
 }
@@ -2710,7 +2852,7 @@ a.toast:hover { border-color: var(--kind, var(--accent)); }
 }
 /* A tag rides the commit it names rather than taking a row beside it. */
 .log__tag {
-  padding: 0 0.28rem; margin-right: 0.25rem; border-radius: 4px;
+  padding: 0 0.28rem; margin-right: 0.25rem; border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--stated) 20%, transparent);
   color: var(--stated); font-size: 0.62rem;
 }
@@ -2858,7 +3000,7 @@ a.toast:hover { border-color: var(--kind, var(--accent)); }
   padding: 0.7rem 0.85rem;
   border: 1px solid var(--rule);
   border-left: 3px solid var(--hunk);
-  border-radius: 9px;
+  border-radius: var(--radius);
   background: var(--panel);
   box-shadow: var(--panel-glow);
 }
@@ -2937,7 +3079,7 @@ a.toast:hover { border-color: var(--kind, var(--accent)); }
   margin-top: 0.25rem;
   padding: 0.22rem 0.6rem;
   border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--rule));
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   color: var(--accent);
   font-size: 0.74rem;
   text-decoration: none;
@@ -2961,7 +3103,7 @@ a.log__branch:hover { text-decoration: underline; }
 .hidden__inner {
   padding: 0.4rem 0.7rem;
   border: 1px dashed var(--rule);
-  border-radius: 8px;
+  border-radius: var(--radius);
   background: color-mix(in srgb, var(--fg-dim) 5%, transparent);
 }
 
@@ -3196,7 +3338,7 @@ a.log__branch:hover { text-decoration: underline; }
   margin-bottom: 0.9rem;
   padding: 0.6rem 0.8rem;
   border: 1px solid var(--rule);
-  border-radius: 9px;
+  border-radius: var(--radius);
   background: var(--panel);
 }
 
@@ -3308,7 +3450,7 @@ a.log__branch:hover { text-decoration: underline; }
   margin: 0.2rem 0 0.1rem;
   padding: 0.7rem 0.85rem;
   border: 1px dashed var(--rule);
-  border-radius: 9px;
+  border-radius: var(--radius);
   background: var(--bg-raised, transparent);
 }
 
@@ -3397,7 +3539,7 @@ a.log__branch:hover { text-decoration: underline; }
   padding: 0 0.28rem;
   border: 1px solid var(--rule);
   border-bottom-width: 2px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: var(--bg);
   font-family: var(--mono);
   font-size: 0.92em;
@@ -3448,7 +3590,7 @@ a.log__branch:hover { text-decoration: underline; }
   padding: 0.4rem 0.6rem;
   border: 1px solid var(--rule);
   border-left: 3px solid var(--fg-dim);
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   font-size: 0.74rem;
   color: var(--fg-dim);
 }
