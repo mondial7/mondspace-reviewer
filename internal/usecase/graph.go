@@ -71,10 +71,18 @@ type GraphView struct {
 	Lanes  int
 	Width  int
 	Height int
+	// anchors is which branch names have a dot to point at. History is
+	// bounded, so a branch whose tip is older than the window has a card in
+	// the list and nothing to link to.
+	anchors map[string]bool
 }
 
 // Any reports whether there is anything to draw.
 func (v GraphView) Any() bool { return len(v.Nodes) > 0 }
+
+// Has reports whether this branch name is drawn, so a list beside the picture
+// can offer a link only where there is somewhere to go.
+func (v GraphView) Has(branch string) bool { return v.anchors[branch] }
 
 // LayOutGraph places commits into lanes and works out the lines between them.
 //
@@ -197,6 +205,7 @@ func LayOutGraph(commits []domain.GraphCommit) GraphView {
 		})
 	}
 
+	view.anchors = claimed
 	view.Lanes = len(lanes)
 	view.Width = GraphPad*2 + max(1, view.Lanes)*LaneWidth
 	view.Height = GraphPad*2 + len(commits)*RowHeight
