@@ -118,7 +118,7 @@ func scanTarget(ctx context.Context, targetID string) {
 	// change's own diff: there is no version of them that was already there.
 	found = append(found, usecase.FlagFindings(units, diffs)...)
 	if rulings, err := jsonl.New(entry.out).LoadDismissals(targetID); err == nil {
-		found = usecase.ApplyDismissals(found, rulings)
+		found = usecase.ApplyDismissals(found, rulingsWith(entry.repo, rulings))
 	}
 
 	scannersMu.Lock()
@@ -190,7 +190,7 @@ func verifyTarget(ctx context.Context, targetID string) error {
 
 	store := jsonl.New(entry.out)
 	if rulings, err := store.LoadDismissals(targetID); err == nil {
-		found = usecase.ApplyDismissals(found, rulings)
+		found = usecase.ApplyDismissals(found, rulingsWith(entry.repo, rulings))
 	}
 
 	scannersMu.Lock()
@@ -252,8 +252,66 @@ func dismissReported() web.DismissFunc {
 		}
 		scannersMu.Unlock()
 
+		// And where a dismissal actually lives (ADR 0054). The rulings file
+		// above is per target and per session; the findings store is the branch,
+		// which is what a reviewer means when they say they have seen this
+		// before.
+		dismissInStore(entry.repo, key, verdict)
+
 		return store.SaveDismissals(targetID, rulings)
 	}
+}
+
+// rulingsWith adds what was decided on the command line to what was decided on
+// the page (ADR 0054).
+//
+// A dismissal is a dismissal wherever it was made, and a reviewer who waves a
+// finding away in `msr findings` and then opens the cockpit should not be shown
+// it again as though nobody had looked. The page's own file wins where the two
+// disagree: it is the one being written as you watch.
+func rulingsWith(repo string, page map[string]domain.Verdict) map[string]domain.Verdict {
+	stored, err := items.New(sharedDir(repo, "")).All()
+	if err != nil {
+		return page
+	}
+
+	merged := make(map[string]domain.Verdict, len(stored)+len(page))
+	for _, item := range stored {
+		if item.Verdict != "" {
+			merged[item.Key()] = item.Verdict
+		}
+	}
+	for key, verdict := range page {
+		merged[key] = verdict
+	}
+	return merged
+}
+
+// dismissInStore carries a ruling made on the page into the findings store.
+//
+// Both halves are keyed the same way — producer, rule, path, message, hashed
+// (contract.Item.Key) — because both come out of the same decoder. A ruling on
+// something the store has never heard of is not an error: the store only knows
+// about a target that has been scanned through it.
+//
+// Best effort: a reviewer dismissing a finding must not see a failure because
+// of a file they have never been told about.
+func dismissInStore(repo, key string, verdict domain.Verdict) {
+	store := items.New(sharedDir(repo, ""))
+	stored, err := store.All()
+	if err != nil {
+		return
+	}
+
+	var ruled []contract.Item
+	for _, item := range stored {
+		if item.Key() != key || item.Verdict == verdict {
+			continue
+		}
+		item.Verdict = verdict
+		ruled = append(ruled, item)
+	}
+	_ = store.Append(ruled...)
 }
 
 // toolsOf is what the settings page says about the analysers: what was looked

@@ -336,3 +336,32 @@ func TestPromoteWritesTheBacklogOnce(t *testing.T) {
 		t.Errorf("a second promotion said %q, want nothing new", again)
 	}
 }
+
+// A dismissal is a dismissal wherever it was made. The page and the command
+// line used to write to different files and read only their own, so the same
+// finding could be settled in one and outstanding in the other.
+func TestARulingOnTheCommandLineReachesThePage(t *testing.T) {
+	repo, _ := repoWithAFinding(t)
+	// No --dir: both halves use the repository's own shared directory, which is
+	// where a cockpit reviewing it looks.
+	msr(t, "scan", "--repo="+repo, "--since=start")
+	id := firstID(t, msr(t, "findings", "--repo="+repo))
+	msr(t, "findings", "dismiss", id, "--repo="+repo)
+
+	merged := rulingsWith(repo, map[string]domain.Verdict{})
+
+	stored, err := storeAt(t, filepath.Join(repo, ".mondspace")).All()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range stored {
+		if item.ID != id {
+			continue
+		}
+		if merged[item.Key()] != domain.VerdictDismissed {
+			t.Errorf("the page would still show %s as outstanding", id)
+		}
+		return
+	}
+	t.Fatalf("%s is not in the store", id)
+}
