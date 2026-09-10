@@ -1,0 +1,12 @@
+<!-- The rest of a text that was cut to fit its card, behind the same icon-and-
+     sheet the cards use for anything you read once (ADR 0050). A details
+     element, so it opens with no JavaScript; escape and the scrim close it. -->
+<details class="cardinfo cardinfo--inline">
+  <summary class="cardinfo__more" aria-label="Read {{ .Label }}">…read more</summary>
+  <div class="cardinfo__scrim">
+    <div class="cardinfo__sheet" role="dialog" aria-modal="true" aria-label="{{ .Label }}">
+      <p class="cardinfo__title">{{ .Label }}</p>
+      <p class="cardinfo__prose">{{ .Text }}</p>
+    </div>
+  </div>
+</details>

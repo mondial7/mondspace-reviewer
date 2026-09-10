@@ -3822,6 +3822,29 @@ func funcs() template.FuncMap {
 		// have to: text is kept whole and shortened where it is shown, so the
 		// ellipsis on a card has somewhere to expand to (ADR 0041).
 		"brief": usecase.Brief,
+		// Whether `brief` would have cut it. The card shows the short form and
+		// keeps the whole thing behind "read more", and the only way to know
+		// whether to offer that is to ask the same question the cutter asks —
+		// hence the same whitespace collapsing, rather than a raw length that
+		// disagrees with it on any text with a newline in it.
+		"longer": func(text string, max int) bool {
+			return len(strings.Join(strings.Fields(text), " ")) > max
+		},
+		// Two values into a partial. Go's templates take one argument, and the
+		// alternative to this is the same twelve lines of markup written out
+		// once per place that needs it — which is how two dialogs come to close
+		// in two different ways.
+		"dict": func(pairs ...any) map[string]any {
+			out := make(map[string]any, len(pairs)/2)
+			for i := 0; i+1 < len(pairs); i += 2 {
+				key, ok := pairs[i].(string)
+				if !ok {
+					continue
+				}
+				out[key] = pairs[i+1]
+			}
+			return out
+		},
 		// A model answers in markdown whether or not it was asked to. Rendered,
 		// not trusted: the text is escaped before any markup is added.
 		"markdown": renderMarkdown,

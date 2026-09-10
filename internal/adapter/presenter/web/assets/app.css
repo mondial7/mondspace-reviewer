@@ -1066,6 +1066,7 @@ button .ico, a .ico, summary .ico { margin-right: 0.35em; }
   overflow-wrap: anywhere;
 }
 .brief__text { margin: 0.4rem 0 0; color: var(--fg-dim); font-size: 0.83rem; line-height: 1.5; }
+.brief__task { overflow-wrap: anywhere; }
 .brief__src { margin: 0.5rem 0 0; font-size: 0.7rem; color: var(--fg-dim); opacity: 0.85; }
 .brief__busy { margin: 0.5rem 0 0; font-size: 0.75rem; color: var(--fg-dim); }
 .brief__retry { margin: 0.5rem 0 0; }
@@ -1211,35 +1212,6 @@ button .ico, a .ico, summary .ico { margin-right: 0.35em; }
 .post[data-active="true"] { box-shadow: inset 2px 0 0 var(--accent); padding-left: 0.6rem; }
 
 .cockpit__scene { position: absolute; inset: 0; width: 100%; height: 100%; }
-.brief__pulse .cockpit__status {
-  position: absolute; left: 0.5rem; bottom: 0.4rem; z-index: 1;
-  font-size: 0.6rem;
-}
-.brief__pulse .pulseinfo { top: 0.3rem; right: 0.35rem; }
-/* Anchored to the card, not to the sliver it sits in: a 15rem panel inside a
-   10rem column is a panel hanging off the side of the page. */
-.brief__pulse .pulseinfo__panel { right: 0; left: auto; width: 15rem; max-width: 60vw; }
-
-/* The card closes under the float, so a short sentence cannot leave the
-   picture hanging out of the bottom of it. */
-.brief::after { content: ""; display: block; clear: both; }
-/* Big enough to read at a glance, which is the only reason they are here. The
-   font stack is the system's emoji font: the page is monospace, and monospace
-   renders half of these as tofu. */
-.brief__emoji {
-  margin: 0.15rem 0 0.35rem;
-  display: flex; gap: 0.3rem; flex-wrap: wrap;
-  font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
-  font-size: 1.15rem; line-height: 1;
-}
-.brief__title {
-  margin: 0; font-size: 1rem; line-height: 1.3; color: var(--fg);
-  overflow-wrap: anywhere;
-}
-.brief__text { margin: 0.4rem 0 0; color: var(--fg-dim); font-size: 0.83rem; line-height: 1.5; }
-.brief__src { margin: 0.5rem 0 0; font-size: 0.7rem; color: var(--fg-dim); opacity: 0.85; }
-.brief__busy { margin: 0.5rem 0 0; font-size: 0.75rem; color: var(--fg-dim); }
-.brief__retry { margin: 0.5rem 0 0; }
 
 /* The two reading columns scroll independently but track each other. */
 .cockpit__story, .cockpit__changes {
@@ -3749,6 +3721,25 @@ a.log__branch:hover { text-decoration: underline; }
   overflow-y: auto;
   cursor: default;
 }
+/* The same sheet, opened from a link at the end of a text that was cut rather
+   than from an icon in a corner. */
+.cardinfo--inline { position: static; display: inline; }
+.cardinfo__more {
+  list-style: none; cursor: pointer;
+  display: inline; color: var(--accent);
+  font-size: 0.8rem; white-space: nowrap;
+}
+.cardinfo__more::-webkit-details-marker { display: none; }
+.cardinfo__more:hover { text-decoration: underline; }
+
+/* Whatever was typed at an agent, printed as it was typed. Wrapped anywhere,
+   because a prompt with a diff in it has lines nothing can break politely. */
+.cardinfo__prose {
+  margin: 0;
+  color: var(--fg); font-size: 0.85rem; line-height: 1.6;
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+
 .cardinfo__title {
   margin: 0 0 0.5rem;
   color: var(--fg-dim);
